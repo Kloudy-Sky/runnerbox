@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { type } from "arktype";
 
-const API = "https://api.github.com";
+export const GITHUB_API = "https://api.github.com";
+// owner/name. Dots are allowed in names like .github, but not `..`, which would change the API path.
+export const REPO_NAME = /^[\w-]+\/(?!\.\.?$)[\w.-]+$/;
 const PAGE_SIZE = 100;
 // GitHub stops returning results past this many when a run list is filtered.
 const FILTERED_RESULT_CAP = 1000;
@@ -41,6 +43,14 @@ const JobPage = type({ jobs: Job.array() });
 export type WorkflowRun = typeof WorkflowRun.infer;
 export type GitHubJob = typeof Job.infer;
 
+export function githubHeaders(token: string) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+}
+
 // Prefers GITHUB_TOKEN, then the local gh login. The token only needs read access to Actions.
 export function resolveToken() {
   const fromEnv = process.env.GITHUB_TOKEN;
@@ -58,13 +68,7 @@ export function createGitHubClient(token: string) {
     const query = new URLSearchParams(
       Object.entries(params).map(([key, value]) => [key, String(value)]),
     );
-    const response = await fetch(`${API}/${path}?${query}`, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
+    const response = await fetch(`${GITHUB_API}/${path}?${query}`, { headers: githubHeaders(token) });
     const remaining = Number(response.headers.get("x-ratelimit-remaining") ?? Infinity);
     const limit = Number(response.headers.get("x-ratelimit-limit") ?? Infinity);
     if (remaining < Math.min(REQUESTS_TO_LEAVE, limit * SHARE_TO_LEAVE)) {

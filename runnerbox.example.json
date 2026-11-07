@@ -1,0 +1,22 @@
+{
+  "name": "example",
+  "scope": { "repo": "owner/name" },
+  "label": "example-runner",
+  "slots": 1,
+  "image": "runnerbox-base",
+  "tokenFile": "/home/you/.config/runnerbox/example.token",
+  "vm": {
+    "host": "ci@192.168.122.10",
+    "keyFile": "/home/you/.config/runnerbox/vm_key",
+    "knownHostsFile": "/home/you/.config/runnerbox/known_hosts"
+  },
+  "limits": {
+    "memory": "3600m",
+    "memoryReservation": "1500m",
+    "memorySwap": "5g",
+    "cpus": 4,
+    "pids": 4096,
+    "shmSize": "1g"
+  },
+  "env": { "EXAMPLE_MAX_WORKERS": "2" }
+}

@@ -1,6 +1,6 @@
 # Threat model
 
-This describes the intended design. **None of the runner controls exist in this repo yet.** Each one is marked done here when its code lands. Today this repo only has `runnerbox report`, which reads job history from GitHub.
+This describes the intended design. **Coded** means the control is in this repo and unit tested, but hasn't yet run a real job. **Design** means it isn't in this repo yet.
 
 ## What we assume
 
@@ -10,13 +10,13 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 | Asset | Threat | Control | Status |
 | --- | --- | --- | --- |
-| The GitHub token that mints runners | A job steals it | It stays on the host. The VM only ever receives a single-use registration. | Design |
-| A job's registration | It shows up in container metadata | It reaches the container on stdin, so it never appears in `docker inspect`. | Design |
+| The GitHub token that mints runners | A job steals it | It stays on the host in a `600` file, and `up` refuses a looser one. The VM only ever receives a single-use registration. | Coded |
+| A job's registration | It shows up in container metadata or SSH arguments | It reaches the container on stdin, so it never appears in `docker inspect` or on the host's process list. | Coded |
 | The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Design |
 | Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Design |
-| Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Design |
-| The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Design |
-| Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Design |
+| Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Coded |
+| The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Coded |
+| Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Coded |
 
 ## What isn't protected
 
@@ -32,6 +32,8 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 **Secrets given to a job.** Everything in the job can read them, including every dependency it installs.
 
+**The registration inside the VM.** The entrypoint passes it to the runner as an argument, so every step of the job, and root in the VM, can read it with `ps`. It works for one job, which limits what it's worth.
+
 **Public repositories.** Anyone can open a pull request on one, and that can run their code on your machine. Use private repositories only, and restrict the runner group to the repositories that need it.
 
 **The image.** Parts of the base image come from package registries at build time. A compromised package gets into every job until you rebuild.
@@ -44,7 +46,8 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 - Don't run jobs holding production or deploy credentials next to untrusted code. If you run them here anyway, you're accepting the container escape risk above for those credentials.
 - Don't share the host with anything you can't afford to expose.
-- Give the host a token that can only manage runners, not an admin login.
+- Give the host a token that can only manage runners, not an admin login. A repository-scoped token needs the Administration permission, which can do much more, so prefer an org-scoped one.
+- Give each install on a VM its own `name`. Installs sharing a name remove each other's containers, and installs sharing a VM still share everything in the container escape risk above.
 
 ## This repository's own CI
 

@@ -22,3 +22,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -t runnerbox-base image
+      # Proves the runner and Node it installed start on this image, as the image's own user.
+      - run: docker run --rm --entrypoint ./bin/Runner.Listener runnerbox-base --version
+      - run: docker run --rm --entrypoint bash runnerbox-base -c '/opt/hostedtoolcache/node/*/x64/bin/node --version'
