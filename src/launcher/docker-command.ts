@@ -8,8 +8,9 @@ export function shellQuote(value: string) {
 // name. A shared name would let one install kill another's running job.
 export const containerName = (installName: string, slot: number) => `${installName}-slot${slot}`;
 
-// The command the VM runs for one slot. It clears whatever the slot left behind, then becomes the
-// container, so the job ends when the SSH session does.
+// The command the VM runs for one slot. It clears whatever the slot left behind, which also kills
+// a job still running there, then becomes the container's client. Ending SSH doesn't stop a running
+// container, so this removal is what ends it.
 export function dockerRunCommand({ name, image, limits, env }: LauncherConfig, slot: number) {
   const container = shellQuote(containerName(name, slot));
   return [

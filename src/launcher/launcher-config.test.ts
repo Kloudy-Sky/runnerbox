@@ -24,6 +24,9 @@ test("values that could smuggle in SSH options or shell are rejected", async () 
     { env: { "A;evil": "1" } },
     { limits: { ...config.limits, memory: "1g --privileged" } },
     { tokenFile: "relative/token" },
+    { tokenFile: "/has space/token" },
+    { env: { VALUE: "a\0b" } },
+    { scope: { repo: "../.." } },
   ]) {
     assert.ok(LauncherConfig({ ...config, ...bad }) instanceof type.errors, JSON.stringify(bad));
   }

@@ -1,19 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { type } from "arktype";
+import { REPO_NAME } from "../github/github-client.ts";
 
-const AbsolutePath = type("/^\\/[^\\0]*$/");
+// No whitespace, because SSH splits its known-hosts option on spaces.
+const AbsolutePath = type("/^\\/\\S*$/");
 const MemorySize = type("/^[0-9]+[bkmg]$/");
 
-// The file a project keeps next to its workflows. Unknown keys are errors, so a typo in a limit
-// can't silently run jobs without it.
+// One install's settings, kept on its host because they name local paths and the VM's address.
+// Unknown keys are errors, so a typo in a limit can't silently run jobs without it.
 export const LauncherConfig = type({
   "+": "reject",
   // Prefixes this install's containers and runners, so two installs can share a VM.
   name: "/^[a-z0-9][a-z0-9-]*$/",
-  scope: type({ "+": "reject", org: "/^[A-Za-z0-9-]+$/" }).or({
-    "+": "reject",
-    repo: "/^[\\w.-]+\\/[\\w.-]+$/",
-  }),
+  scope: type({ "+": "reject", org: "/^[A-Za-z0-9-]+$/" }).or({ "+": "reject", repo: type(REPO_NAME) }),
   label: "/^[\\w.-]+$/",
   slots: "1 <= number.integer <= 64",
   image: "/^[a-z0-9][a-z0-9._\\/:@-]*$/",
@@ -34,7 +33,7 @@ export const LauncherConfig = type({
     pids: "number.integer > 0",
     shmSize: MemorySize,
   },
-  env: { "+": "reject", "[/^[A-Za-z_][A-Za-z0-9_]*$/]": "string" },
+  env: { "+": "reject", "[/^[A-Za-z_][A-Za-z0-9_]*$/]": "/^[^\\0]*$/" },
 });
 
 export type LauncherConfig = typeof LauncherConfig.infer;

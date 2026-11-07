@@ -11,7 +11,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | Asset | Threat | Control | Status |
 | --- | --- | --- | --- |
 | The GitHub token that mints runners | A job steals it | It stays on the host in a `600` file, and `up` refuses a looser one. The VM only ever receives a single-use registration. | Coded |
-| A job's registration | It shows up in container metadata | It reaches the container on stdin, so it never appears in `docker inspect` or in process arguments. | Coded |
+| A job's registration | It shows up in container metadata or SSH arguments | It reaches the container on stdin, so it never appears in `docker inspect` or on the host's process list. | Coded |
 | The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Design |
 | Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Design |
 | Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Coded |
@@ -31,6 +31,8 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 **Cloud metadata outside link-local.** Some providers serve instance data from other addresses, such as Azure's 168.63.129.16 and Oracle Cloud's 192.0.0.192. The filter doesn't block those, so add them yourself if you run on a cloud machine.
 
 **Secrets given to a job.** Everything in the job can read them, including every dependency it installs.
+
+**The registration inside the VM.** The entrypoint passes it to the runner as an argument, so every step of the job, and root in the VM, can read it with `ps`. It works for one job, which limits what it's worth.
 
 **Public repositories.** Anyone can open a pull request on one, and that can run their code on your machine. Use private repositories only, and restrict the runner group to the repositories that need it.
 

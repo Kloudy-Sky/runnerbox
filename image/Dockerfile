@@ -1,5 +1,6 @@
 # The minimal image one job runs in, thrown away afterwards. Add your project's tools in your own
 # image: start FROM this one, install as root, and end with USER runner.
+# Dependabot updates the FROM line. Update the runner and Node versions and checksums by hand.
 FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
 ARG RUNNER_VERSION=2.338.2
 ARG RUNNER_SHA256=baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40
@@ -21,5 +22,6 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
 RUN mkdir -p /home/runner/_work && chown -R runner:runner /home/runner /opt/hostedtoolcache
 ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache AGENT_TOOLSDIRECTORY=/opt/hostedtoolcache
 USER runner
-# The single-use registration arrives on stdin, so it never appears in `docker inspect`.
+# The single-use registration arrives on stdin, so it never appears in `docker inspect`. It does
+# become an argument of the runner process, which jobs and root in the VM can see.
 ENTRYPOINT ["/bin/bash", "-c", "read -r JIT && exec ./run.sh --jitconfig \"$JIT\""]

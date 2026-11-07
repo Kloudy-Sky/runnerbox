@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { createGitHubClient, resolveToken } from "./github/github-client.ts";
+import { createGitHubClient, REPO_NAME, resolveToken } from "./github/github-client.ts";
 import { startRunners } from "./launcher/start-runners.ts";
 import { formatStepComparison, formatSummary } from "./tracking/format-report.ts";
 import { createJobLog, defaultLogPath } from "./tracking/job-log.ts";
@@ -48,7 +48,7 @@ async function main() {
     positionals[0] !== "report" ||
     positionals.length !== 1 ||
     !repo ||
-    !/^[\w.-]+\/[\w.-]+$/.test(repo) ||
+    !REPO_NAME.test(repo) ||
     !days
   ) {
     console.error(USAGE);
@@ -87,5 +87,6 @@ async function main() {
 
 main().catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
+  // Exit outright. Other slots may still be looping, and a service manager needs to restart them.
+  process.exit(1);
 });

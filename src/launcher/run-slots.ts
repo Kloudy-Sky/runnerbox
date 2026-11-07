@@ -1,5 +1,8 @@
 const MINT_RETRY_MS = 60_000;
 const NEXT_RUNNER_MS = 5_000;
+// A real job takes longer than this. A faster failure means the VM, SSH or image is broken, and
+// retrying right away would mint a registration every few seconds.
+const FAST_FAILURE_MS = 60_000;
 
 type SlotActions = {
   mint: (runnerName: string) => Promise<string>;
@@ -31,7 +34,9 @@ async function runSlot(installName: string, slot: number, actions: SlotActions) 
       continue;
     }
 
-    log(`slot ${slot}: ${runnerName} finished (${await runContainer(slot, registration)})`);
-    await wait(NEXT_RUNNER_MS);
+    const startedAt = now();
+    const exitCode = await runContainer(slot, registration);
+    log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
+    await wait(exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS ? MINT_RETRY_MS : NEXT_RUNNER_MS);
   }
 }

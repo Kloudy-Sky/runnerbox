@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import { type } from "arktype";
 
 export const GITHUB_API = "https://api.github.com";
+// owner/name. Dots are allowed in names like .github, but not `..`, which would change the API path.
+export const REPO_NAME = /^[\w-]+\/(?!\.\.?$)[\w.-]+$/;
 const PAGE_SIZE = 100;
 // GitHub stops returning results past this many when a run list is filtered.
 const FILTERED_RESULT_CAP = 1000;

@@ -1,10 +1,10 @@
 # Runs one install as a user service: systemctl --user enable --now runnerbox@<name>
 # Expects this repo at ~/runnerbox and its config at ~/.config/runnerbox/<name>.json.
 # Run `loginctl enable-linger` once so it starts at boot without a login.
+# `node` must be on the user service manager's PATH, which a version manager's shell setup doesn't reach.
 # Restarting this service kills running jobs.
 [Unit]
 Description=runnerbox runners (%i)
-After=network-online.target
 
 [Service]
 WorkingDirectory=%h/runnerbox

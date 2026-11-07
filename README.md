@@ -45,7 +45,7 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 - `vm.knownHostsFile` must already hold the VM's host key. SSH refuses to connect otherwise.
 - `env` sets environment variables in every job's container. Test runners size their worker counts from the VM's CPUs, not the container's share, so cap them here.
 
-Stopping or restarting `up` kills running jobs.
+Restarting `up` removes each slot's container, which kills any job running there. Stopping it, or lowering `slots`, can leave containers running in the VM until their job times out, so remove those with `docker rm -f`. If the VM, SSH or image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
 
 ## How a project uses it
 
