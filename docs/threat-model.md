@@ -1,6 +1,6 @@
 # Threat model
 
-This describes the intended design. **None of these controls exist in this repo yet.** Each one is marked done here when its code lands.
+This describes the intended design. **None of the runner controls exist in this repo yet.** Each one is marked done here when its code lands. Today this repo only has `runnerbox report`, which reads job history from GitHub.
 
 ## What we assume
 
@@ -36,7 +36,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 **The image.** Parts of the base image come from package registries at build time. A compromised package gets into every job until you rebuild.
 
-**Tracking data.** A job can write whatever it likes to its own output, so reports can't trust anything a job says about itself unless GitHub's data confirms it.
+**Tracking data.** A job can write whatever it likes to its own output, so reports can't trust anything a job says about itself unless GitHub's data confirms it. The local job log holds job and branch names and is readable by anyone with access to your account on that machine.
 
 **Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed.
 

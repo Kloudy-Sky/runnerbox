@@ -2,7 +2,7 @@
 
 Throwaway GitHub Actions runners on your own hardware, with job tracking that shows what's slow, flaky or broken.
 
-**Status: nothing works yet.** This repo is public from its first commit, and the code is still to come. Don't point CI at it.
+**Status: early.** Only `runnerbox report` works today. There are no runners yet, so don't point CI at this.
 
 ## What it will do
 
@@ -10,6 +10,23 @@ Throwaway GitHub Actions runners on your own hardware, with job tracking that sh
 - Mint a single-use registration for each job on the host, so the VM holds no credential that outlives a job.
 - Record every job as one line of NDJSON in a local file. No server needed. OTLP export is optional.
 - Answer four questions: why was this job slow, is this test flaky, was this failure infrastructure or code, and what are we saving.
+
+## Job history
+
+`runnerbox report` needs Node 22.18 or newer and read access to the repository's Actions. It uses `GITHUB_TOKEN`, or your `gh` login if that isn't set.
+
+```bash
+pnpm install
+pnpm runnerbox report --repo owner/name
+pnpm runnerbox report --repo owner/name --since 30d
+pnpm runnerbox report --repo owner/name --job test --offline
+```
+
+The first command summarizes each job per runner type: runs, failures, failures that passed on retry, jobs that never got a runner, and how long jobs took and queued. `--job` compares one job's steps across runner types, which shows where a slower runner spends its time.
+
+Each job becomes one line in `~/.local/state/runnerbox/<owner>__<name>.ndjson`, or under `XDG_STATE_HOME` if that's set. Syncs resume where they stopped. Job and branch names can be private, so the log stays outside your checkout.
+
+Syncing makes at least one GitHub request per run, so a busy repository can take a while. It stops with 1,000 requests left in the hourly limit, because that limit is shared with everything else using the same account. Run it again after the reset to continue.
 
 ## How a project uses it
 
@@ -32,7 +49,7 @@ Use tagged releases only.
 ## Build order
 
 1. README and threat model.
-2. `runnerbox report`: job history from GitHub's API. It needs read access and nothing installed on a runner machine.
+2. `runnerbox report`: job history from GitHub's API. Done.
 3. Launcher, configured instead of hardcoded.
 4. Scripted VM setup. The test is a stranger following this README on a clean machine.
 5. Machine stats per job, and JUnit results to find flaky tests.
