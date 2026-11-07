@@ -26,6 +26,8 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 **The internet.** Jobs can reach any public address, and the VM's DNS can carry data out too. A job can send out anything it can read, including its own secrets.
 
+**Public addresses of your own machines.** The filter only blocks private ranges. If the host or a LAN service also has a public IPv4 address, a job can reach it that way, so firewall those services or add their addresses to the filter.
+
 **Cloud metadata outside link-local.** Some providers serve instance data from other addresses, such as Azure's 168.63.129.16 and Oracle Cloud's 192.0.0.192. The filter doesn't block those, so add them yourself if you run on a cloud machine.
 
 **Secrets given to a job.** Everything in the job can read them, including every dependency it installs.
