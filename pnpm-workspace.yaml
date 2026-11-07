@@ -1,0 +1,2 @@
+# Wait three days before installing a new release, so a hijacked package has time to be caught.
+minimumReleaseAge: 4320
