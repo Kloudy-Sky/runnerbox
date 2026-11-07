@@ -1,0 +1,47 @@
+# Threat model
+
+This describes the intended design. **None of these controls exist in this repo yet.** Each one is marked done here when its code lands.
+
+## What we assume
+
+Anything that runs in a job may be hostile, including a compromised dependency. The machine owner and the people who can edit the runner config are trusted.
+
+## What's protected
+
+| Asset | Threat | Control | Status |
+| --- | --- | --- | --- |
+| The GitHub token that mints runners | A job steals it | It stays on the host. The VM only ever receives a single-use registration. | Design |
+| A job's registration | It shows up in container metadata | It reaches the container on stdin, so it never appears in `docker inspect`. | Design |
+| The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Design |
+| Cloud metadata services | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Design |
+| Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Design |
+| The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Design |
+| Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Design |
+
+## What isn't protected
+
+**Container escape.** This is the risk to think about first. Only the container is thrown away. The VM persists between jobs, concurrent jobs share its kernel and Docker daemon, and jobs have passwordless sudo inside their container. A kernel or container runtime bug would let a job read a neighbouring job's secrets and stay in the VM to read later ones. It doesn't need to break out of the VM to do this.
+
+**VM escape.** A hypervisor bug gives a job the host, including the token that mints runners, plus everything else on that machine.
+
+**The internet.** Jobs can reach any public address, and the VM's DNS can carry data out too. A job can send out anything it can read, including its own secrets.
+
+**Secrets given to a job.** Everything in the job can read them, including every dependency it installs.
+
+**Public repositories.** Anyone can open a pull request on one, and that can run their code on your machine. Use private repositories only, and restrict the runner group to the repositories that need it.
+
+**The image.** Parts of the base image come from package registries at build time. A compromised package gets into every job until you rebuild.
+
+**Tracking data.** A job can write whatever it likes to its own output, so reports can't trust anything a job says about itself unless GitHub's data confirms it.
+
+**Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed.
+
+## What we recommend
+
+- Don't run jobs holding production or deploy credentials next to untrusted code. If you run them here anyway, you're accepting the container escape risk above for those credentials.
+- Don't share the host with anything you can't afford to expose.
+- Give the host a token that can only manage runners, not an admin login.
+
+## This repository's own CI
+
+This repo is public, so its CI only uses GitHub-hosted runners. It must never use a self-hosted one.
