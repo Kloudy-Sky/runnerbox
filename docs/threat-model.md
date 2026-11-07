@@ -13,7 +13,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | The GitHub token that mints runners | A job steals it | It stays on the host. The VM only ever receives a single-use registration. | Design |
 | A job's registration | It shows up in container metadata | It reaches the container on stdin, so it never appears in `docker inspect`. | Design |
 | The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Design |
-| Cloud metadata services | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Design |
+| Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Design |
 | Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Design |
 | The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Design |
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Design |
@@ -25,6 +25,8 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 **VM escape.** A hypervisor bug gives a job the host, including the token that mints runners, plus everything else on that machine.
 
 **The internet.** Jobs can reach any public address, and the VM's DNS can carry data out too. A job can send out anything it can read, including its own secrets.
+
+**Cloud metadata outside link-local.** Some providers serve instance data from other addresses, such as Azure's 168.63.129.16 and Oracle Cloud's 192.0.0.192. The filter doesn't block those, so add them yourself if you run on a cloud machine.
 
 **Secrets given to a job.** Everything in the job can read them, including every dependency it installs.
 

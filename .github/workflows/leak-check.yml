@@ -2,6 +2,7 @@ name: leak-check
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -17,3 +18,5 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: node scripts/leak-check.ts
+        env:
+          PR_METADATA: "${{ github.head_ref }} ${{ github.event.pull_request.title }} ${{ github.event.pull_request.body }}"

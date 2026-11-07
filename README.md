@@ -19,7 +19,7 @@ A workflow only names a label:
 runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}
 ```
 
-Your project never imports runnerbox code, so changing that variable moves your CI on or off it.
+Your project never imports runnerbox code, so changing that variable moves your CI on or off it. Containers get no Docker socket, so jobs that use `services:`, `container:`, Docker actions or `docker build` must stay on another runner. The base image is minimal, so anything else a job expects from `ubuntu-24.04` goes in your image layer.
 
 | runnerbox owns | Your project owns |
 | --- | --- |
