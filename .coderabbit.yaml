@@ -1,0 +1,7 @@
+# Keeps CodeRabbit quiet here. Claude Code reviews this repo's PRs.
+reviews:
+  auto_review:
+    enabled: false
+  review_status: false
+chat:
+  auto_reply: false
