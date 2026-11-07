@@ -1,0 +1,16 @@
+# Runs one install as a user service: systemctl --user enable --now runnerbox@<name>
+# Expects this repo at ~/runnerbox and its config at ~/.config/runnerbox/<name>.json.
+# Run `loginctl enable-linger` once so it starts at boot without a login.
+# Restarting this service kills running jobs.
+[Unit]
+Description=runnerbox runners (%i)
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/runnerbox
+ExecStart=/usr/bin/env node src/cli.ts up --config %E/runnerbox/%i.json
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

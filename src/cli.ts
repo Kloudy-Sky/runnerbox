@@ -1,16 +1,20 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { createGitHubClient, resolveToken } from "./github/github-client.ts";
+import { startRunners } from "./launcher/start-runners.ts";
 import { formatStepComparison, formatSummary } from "./tracking/format-report.ts";
 import { createJobLog, defaultLogPath } from "./tracking/job-log.ts";
 import { compareSteps, summarizeJobs } from "./tracking/report.ts";
 import { DAY_MS, syncJobs } from "./tracking/sync-jobs.ts";
 
-const USAGE = `Usage: runnerbox report --repo <owner/name> [options]
+const USAGE = `Usage:
+  runnerbox up --config <file>
+  runnerbox report --repo <owner/name> [options]
 
-Copies job history from GitHub to a local log, then summarizes it.
+up: keeps runners waiting for jobs in the VM until stopped.
+report: copies job history from GitHub to a local log, then summarizes it.
 
-Options:
+Report options:
   --repo <owner/name>  Repository to report on
   --since <days>d      How far back to report (default: 7d)
   --workflow <name>    Only include this workflow
@@ -22,6 +26,7 @@ async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {
+      config: { type: "string" },
       repo: { type: "string" },
       since: { type: "string", default: "7d" },
       workflow: { type: "string" },
@@ -32,6 +37,10 @@ async function main() {
   });
 
   if (values.help) return console.log(USAGE);
+
+  if (positionals[0] === "up" && positionals.length === 1 && values.config) {
+    return startRunners(values.config);
+  }
 
   const { repo, since: sinceArg, workflow, job, offline } = values;
   const days = /^(\d+)d$/.exec(sinceArg)?.[1];
