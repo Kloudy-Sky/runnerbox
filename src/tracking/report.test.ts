@@ -80,6 +80,31 @@ test("a failure counts as passed on retry only if a later attempt of that run pa
   assert.equal(summary?.passedOnRetry, 1);
 });
 
+test("a timeout counts as a failure, and same-named jobs in other workflows stay separate", () => {
+  const summaries = summarizeJobs([
+    record({ workflow: "ci", runId: 1, attempt: 1, conclusion: "timed_out" }),
+    record({ workflow: "ci", runId: 1, attempt: 2, conclusion: "success" }),
+    record({ workflow: "nightly", conclusion: "success" }),
+  ]);
+
+  assert.deepEqual(
+    summaries.map((row) => [row.workflow, row.failed, row.passedOnRetry]),
+    [["ci", 1, 1], ["nightly", 0, 0]],
+  );
+});
+
+test("compareSteps ignores skipped steps", () => {
+  const { steps } = compareSteps(
+    [
+      record({ steps: [{ name: "deploy", conclusion: "skipped", ms: 0 }] }),
+      record({ steps: [{ name: "deploy", conclusion: "success", ms: 300_000 }] }),
+    ],
+    "test",
+  );
+
+  assert.equal(steps[0]?.p50MsByRunnerType.get("box"), 300_000);
+});
+
 test("compareSteps shows each step's median per runner type from passing runs only", () => {
   const step = (ms: number) => [{ name: "unit tests", conclusion: "success", ms }];
   const { runnerTypes, steps } = compareSteps(

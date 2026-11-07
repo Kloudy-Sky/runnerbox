@@ -1,6 +1,7 @@
 import { elapsedMs, type JobRecord } from "./job-record.ts";
 
 export type JobSummary = {
+  workflow: string | null;
   job: string;
   runnerType: string;
   ran: number;
@@ -28,11 +29,12 @@ export function runnerType({ labels }: Pick<JobRecord, "labels">) {
 const durationMs = (record: JobRecord) => elapsedMs(record.startedAt, record.completedAt);
 const queueMs = (record: JobRecord) => elapsedMs(record.createdAt, record.startedAt);
 const present = <T>(value: T | null): value is T => value !== null;
+const isFailure = ({ conclusion }: JobRecord) => conclusion === "failure" || conclusion === "timed_out";
 
 export function summarizeJobs(records: readonly JobRecord[]): JobSummary[] {
   // A job skipped by its `if:` was never meant to run, so it says nothing about runners.
   const considered = records.filter((record) => record.conclusion !== "skipped");
-  const groups = Map.groupBy(considered, (record) => `${record.job}\0${runnerType(record)}`);
+  const groups = Map.groupBy(considered, (record) => `${record.workflow}\0${record.job}\0${runnerType(record)}`);
   const retried = failuresThatPassedOnRetry(considered);
 
   return [...groups.values()]
@@ -43,10 +45,11 @@ export function summarizeJobs(records: readonly JobRecord[]): JobSummary[] {
       const first = group[0]!;
 
       return {
+        workflow: first.workflow,
         job: first.job,
         runnerType: runnerType(first),
         ran: ran.length,
-        failed: ran.filter((record) => record.conclusion === "failure").length,
+        failed: ran.filter(isFailure).length,
         passedOnRetry: group.filter((record) => retried.has(record.jobId)).length,
         noRunner: group.length - ran.length,
         p50Ms: percentile(durations, 50),
@@ -60,7 +63,7 @@ export function summarizeJobs(records: readonly JobRecord[]): JobSummary[] {
 
 // Job IDs that failed on a machine and then passed on a later attempt of the same run.
 function failuresThatPassedOnRetry(records: readonly JobRecord[]) {
-  const sameJob = Map.groupBy(records, (record) => `${record.runId}\0${record.job}`);
+  const sameJob = Map.groupBy(records, (record) => `${record.runId}\0${record.workflow}\0${record.job}`);
   const retried = new Set<number>();
 
   for (const attempts of sameJob.values()) {
@@ -69,7 +72,7 @@ function failuresThatPassedOnRetry(records: readonly JobRecord[]) {
       ...attempts.filter((record) => record.conclusion === "success").map((record) => record.attempt),
     );
     for (const record of attempts) {
-      if (record.runner !== null && record.conclusion === "failure" && record.attempt < lastPass) {
+      if (record.runner !== null && isFailure(record) && record.attempt < lastPass) {
         retried.add(record.jobId);
       }
     }
@@ -101,7 +104,7 @@ export function compareSteps(records: readonly JobRecord[], job: string): StepCo
           percentile(
             group
               .flatMap((record) => record.steps)
-              .filter((step) => step.name === name)
+              .filter((step) => step.name === name && step.conclusion !== "skipped")
               .map((step) => step.ms)
               .filter(present),
             50,

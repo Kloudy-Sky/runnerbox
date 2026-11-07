@@ -1,12 +1,14 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { type } from "arktype";
-import { JobRecord } from "./job-record.ts";
+import { distinctJobs, JobRecord } from "./job-record.ts";
 
 // The log lives outside any checkout because job and branch names can be private.
 export function defaultLogPath(repo: string) {
-  const stateHome = process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
+  // The XDG spec says to ignore relative paths, which could also land inside a checkout.
+  const configured = process.env.XDG_STATE_HOME;
+  const stateHome = configured && isAbsolute(configured) ? configured : join(homedir(), ".local", "state");
   return join(stateHome, "runnerbox", `${repo.replace("/", "__")}.ndjson`);
 }
 
@@ -28,8 +30,10 @@ export function createJobLog(path: string) {
         if (parsed) records.push(parsed);
         else skipped++;
       }
-      if (skipped > 0) console.error(`Warning: skipped ${skipped} unreadable lines in ${path}`);
-      return records;
+      if (skipped > 0) {
+        console.error(`Warning: skipped ${skipped} unreadable lines. Jobs may be missing, so delete ${path} to rebuild it.`);
+      }
+      return distinctJobs(records);
     },
 
     async append(records: readonly JobRecord[]) {

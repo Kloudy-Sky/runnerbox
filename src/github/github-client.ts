@@ -8,6 +8,8 @@ const FILTERED_RESULT_CAP = 1000;
 // The rate limit belongs to the user, not to this tool, and that user's other tools may mint
 // runners. Stopping early means a large sync can't leave them unable to start jobs.
 const REQUESTS_TO_LEAVE = 1000;
+// Actions tokens have a much smaller hourly limit, where a fixed floor would stop every sync.
+const SHARE_TO_LEAVE = 0.2;
 
 const WorkflowRun = type({ id: "number", run_attempt: "number" });
 const RunPage = type({ total_count: "number", workflow_runs: WorkflowRun.array() });
@@ -64,7 +66,8 @@ export function createGitHubClient(token: string) {
       },
     });
     const remaining = Number(response.headers.get("x-ratelimit-remaining") ?? Infinity);
-    if (remaining < REQUESTS_TO_LEAVE) {
+    const limit = Number(response.headers.get("x-ratelimit-limit") ?? Infinity);
+    if (remaining < Math.min(REQUESTS_TO_LEAVE, limit * SHARE_TO_LEAVE)) {
       const reset = new Date(Number(response.headers.get("x-ratelimit-reset")) * 1000).toISOString();
       throw new Error(
         `Stopped with ${remaining} GitHub requests left, to keep some for other tools. Run this again after ${reset} to continue.`,

@@ -10,7 +10,7 @@ afterEach(() => {
 test("stops before using up the requests other tools need, without exposing the token", async () => {
   globalThis.fetch = async () =>
     new Response(JSON.stringify({ jobs: [] }), {
-      headers: { "x-ratelimit-remaining": "999", "x-ratelimit-reset": "1800000000" },
+      headers: { "x-ratelimit-limit": "5000", "x-ratelimit-remaining": "999", "x-ratelimit-reset": "1800000000" },
     });
 
   await assert.rejects(createGitHubClient("secret-token").jobs("acme/app", 1), (error: Error) => {
@@ -18,6 +18,15 @@ test("stops before using up the requests other tools need, without exposing the 
     assert.doesNotMatch(error.message, /secret-token/);
     return true;
   });
+});
+
+test("a token with a small hourly limit can still sync", async () => {
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ jobs: [] }), {
+      headers: { "x-ratelimit-limit": "1000", "x-ratelimit-remaining": "900" },
+    });
+
+  assert.deepEqual(await createGitHubClient("t").jobs("acme/app", 1), []);
 });
 
 test("reads every page of a run's jobs", async () => {

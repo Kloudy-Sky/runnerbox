@@ -25,7 +25,23 @@ export type JobRecord = typeof JobRecord.infer;
 
 export function elapsedMs(start: string | null | undefined, end: string | null | undefined) {
   if (!start || !end) return null;
-  return Date.parse(end) - Date.parse(start);
+  const ms = Date.parse(end) - Date.parse(start);
+  // Cancelled jobs can end "before" they start, and that time was never really spent.
+  return ms < 0 ? null : ms;
+}
+
+// Removes records repeated by overlapping syncs. It also removes the copies "re-run failed jobs"
+// makes of jobs that already passed: GitHub lists them under the new attempt with a new ID, but
+// the original runner and times.
+export function distinctJobs(records: readonly JobRecord[]) {
+  const byIdentity = new Map<string, JobRecord>();
+  for (const record of records) {
+    const identity = record.runner
+      ? [record.runId, record.workflow, record.job, record.runner, record.startedAt, record.completedAt].join("\0")
+      : String(record.jobId);
+    if (!byIdentity.has(identity)) byIdentity.set(identity, record);
+  }
+  return [...byIdentity.values()];
 }
 
 export function toJobRecord(repo: string, job: GitHubJob): JobRecord {

@@ -22,8 +22,9 @@ function table(rows: readonly (readonly string[])[]) {
 
 export function formatSummary(summaries: readonly JobSummary[]) {
   return table([
-    ["JOB", "RUNNER", "RAN", "FAILED", "PASSED ON RETRY", "NO RUNNER", "P50", "P90", "QUEUE P50", "TOTAL"],
+    ["WORKFLOW", "JOB", "RUNNER", "RAN", "FAILED", "PASSED ON RETRY", "NO RUNNER", "P50", "P90", "QUEUE P50", "TOTAL"],
     ...summaries.map((row) => [
+      row.workflow ?? "-",
       row.job,
       row.runnerType,
       String(row.ran),

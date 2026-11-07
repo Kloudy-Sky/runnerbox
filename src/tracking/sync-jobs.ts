@@ -20,7 +20,7 @@ type SyncOptions = {
   onRunSynced: (added: number) => void;
 };
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 const attemptKey = (runId: number, attempt: number) => `${runId}:${attempt}`;
 
 // Copies jobs from GitHub to the store. It appends after every run, so an interrupted sync resumes
@@ -38,7 +38,11 @@ export async function syncJobs({ repo, since, until, source, store, onRunSynced 
     for await (const run of source.runs(repo, day)) {
       if (attempts.has(attemptKey(run.id, run.run_attempt))) continue;
 
-      const fresh = (await source.jobs(repo, run.id))
+      const jobs = await source.jobs(repo, run.id);
+      // A rerun can start after the run was listed. Records never change, so wait until it ends.
+      if (jobs.some((job) => job.conclusion === null)) continue;
+
+      const fresh = jobs
         .filter((job) => !jobIds.has(job.id))
         .map((job) => toJobRecord(repo, job));
       await store.append(fresh);

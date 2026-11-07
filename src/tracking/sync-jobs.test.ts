@@ -60,6 +60,14 @@ test("a second sync fetches nothing new, and a rerun adds only its new jobs", as
   assert.deepEqual(rerun.records.map((record) => record.jobId), [10, 11]);
 });
 
+test("a run with an unfinished job waits for a later sync", async () => {
+  const unfinished = { ...githubJob(11, 1, 2), conclusion: null };
+  const { source, store, records } = fakes([{ id: 1, run_attempt: 2 }], [githubJob(10, 1, 1), unfinished]);
+
+  assert.equal(await syncJobs({ ...window, source, store }), 0);
+  assert.deepEqual(records, []);
+});
+
 test("every UTC day in the window is asked for, including both ends", async () => {
   const { source, store, days } = fakes([], []);
   await syncJobs({ ...window, source, store });
