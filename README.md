@@ -44,4 +44,4 @@ Read the [threat model](docs/threat-model.md) before you run this. Never use the
 
 ## License
 
-No license yet, so no rights are granted for now.
+[MIT](LICENSE)
