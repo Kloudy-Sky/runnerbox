@@ -38,47 +38,60 @@ fail() { echo "$*" >&2; exit 1; }
 for tool in virsh virt-install qemu-img xorriso curl sha256sum ssh; do
   command -v "$tool" >/dev/null || fail "$tool isn't installed."
 done
+virsh uri >/dev/null || fail "Can't manage $LIBVIRT_DEFAULT_URI as $(id -un). Join the libvirt group or use sudo."
 
-virsh net-info "$NETWORK" 2>/dev/null | grep -Eq '^Active: +yes' \
+# Check everything before changing anything, so a failure can't leave half a VM behind.
+virsh net-info "$NETWORK" | grep -Eq '^Active: +yes' \
   || fail "Network $NETWORK isn't running. Start it with virsh net-start and net-autostart."
-virsh pool-info "$POOL" 2>/dev/null | grep -Eq '^State: +running' \
+virsh pool-info "$POOL" | grep -Eq '^State: +running' \
   || fail "Storage pool $POOL isn't running. Start it with virsh pool-start and pool-autostart."
-if virsh dominfo "$NAME" >/dev/null 2>&1; then fail "VM $NAME already exists. Remove it first."; fi
-if virsh nwfilter-dumpxml "$FILTER" >/dev/null 2>&1; then fail "Filter $FILTER already exists. Remove it after its VM."; fi
 # Without this, traffic between guests on the bridge skips the filter's IP rules.
-[ "$(sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null)" = 1 ] \\
+[ "$(sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null)" = 1 ] \
   || fail "Run: sudo modprobe br_netfilter && sudo sysctl -w net.bridge.bridge-nf-call-iptables=1, and persist both."
+leftovers=()
+virsh dominfo "$NAME" >/dev/null 2>&1 && leftovers+=("VM $NAME")
+virsh nwfilter-dumpxml "$FILTER" >/dev/null 2>&1 && leftovers+=("filter $FILTER")
+for volume in "$NAME.qcow2" "$NAME-seed.iso"; do
+  virsh vol-info "$volume" --pool "$POOL" >/dev/null 2>&1 && leftovers+=("volume $volume")
+done
+virsh net-dumpxml "$NETWORK" | grep -Eq "mac='$MAC'|ip='$ADDRESS'" && leftovers+=("DHCP reservation for $ADDRESS")
+[ \${#leftovers[@]} -eq 0 ] || fail "Already exists: $(IFS=,; echo "\${leftovers[*]}"). See the README's rebuilding steps."
 
-if [ ! -f base.img ]; then
-  curl -fsSL "$IMAGE_URL" -o base.img.part
-  mv base.img.part base.img
+# The cache is named by checksum, so changing the configured image downloads the new one.
+IMAGE="base-$IMAGE_SHA256.img"
+if [ ! -f "$IMAGE" ]; then
+  curl -fsSL "$IMAGE_URL" -o "$IMAGE.part"
+  mv "$IMAGE.part" "$IMAGE"
 fi
-echo "$IMAGE_SHA256  base.img" | sha256sum -c --quiet - || fail "base.img doesn't match the configured sha256."
+echo "$IMAGE_SHA256  $IMAGE" | sha256sum -c --quiet - || fail "$IMAGE doesn't match its checksum. Delete it and run again."
 
 # virt-install's --cloud-init didn't apply its config in testing, so the seed is a plain cidata ISO.
 xorriso -as mkisofs -quiet -volid cidata -joliet -rock -o seed.iso seed/
 
-virsh vol-create-as "$POOL" "$NAME.qcow2" "$(stat -c %s base.img)" --format qcow2
-virsh vol-upload --pool "$POOL" "$NAME.qcow2" base.img
+# The reservation goes first, because libvirt rejects an address outside the network.
+virsh net-update "$NETWORK" add-last ip-dhcp-host "<host mac='$MAC' name='$NAME' ip='$ADDRESS'/>" --live --config
+virsh nwfilter-define filter.xml
+
+virsh vol-create-as "$POOL" "$NAME.qcow2" "$(stat -c %s "$IMAGE")" --format qcow2
+virsh vol-upload --pool "$POOL" "$NAME.qcow2" "$IMAGE"
 virsh vol-resize "$NAME.qcow2" ${diskGiB}G --pool "$POOL"
 virsh vol-create-as "$POOL" "$NAME-seed.iso" "$(stat -c %s seed.iso)" --format raw
 virsh vol-upload --pool "$POOL" "$NAME-seed.iso" seed.iso
 
-virsh nwfilter-define filter.xml
-virsh net-update "$NETWORK" add-last ip-dhcp-host "<host mac='$MAC' name='$NAME' ip='$ADDRESS'/>" --live --config
-
-virt-install --name "$NAME" --memory ${memoryMiB} --vcpus ${cpus} --cpu host-passthrough --osinfo ubuntu24.04 --import \\
-  --disk "vol=$POOL/$NAME.qcow2,bus=virtio" --disk "vol=$POOL/$NAME-seed.iso,device=cdrom" \\
-  --network "network=$NETWORK,model=virtio,mac=$MAC,filterref=$FILTER" \\
+virt-install --name "$NAME" --memory ${memoryMiB} --vcpus ${cpus} --cpu host-passthrough --osinfo ubuntu24.04 --import \
+  --disk "vol=$POOL/$NAME.qcow2,bus=virtio" --disk "vol=$POOL/$NAME-seed.iso,device=cdrom" \
+  --network "network=$NETWORK,model=virtio,mac=$MAC,filterref=$FILTER" \
   --graphics none --noautoconsole --autostart
 
 # The first login pins the VM's host key. It's a fresh VM on a private bridge only this host reaches.
 SSH=(ssh -i "$SSH_KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=5 -o UserKnownHostsFile=known_hosts)
 rm -f known_hosts
+reachable=
 for _ in $(seq 60); do
-  if "\${SSH[@]}" -o StrictHostKeyChecking=accept-new "ci@$ADDRESS" true 2>/dev/null; then break; fi
+  if "\${SSH[@]}" -o StrictHostKeyChecking=accept-new "ci@$ADDRESS" true 2>/dev/null; then reachable=1; break; fi
   sleep 5
 done
+[ -n "$reachable" ] || fail "The VM didn't answer SSH at $ADDRESS within 5 minutes. Check virsh console $NAME."
 # Exit code 2 means it finished with warnings only.
 "\${SSH[@]}" -o StrictHostKeyChecking=yes "ci@$ADDRESS" 'cloud-init status --wait --long || [ $? -eq 2 ]'
 echo "VM $NAME is ready at ci@$ADDRESS. Its host key is in $(pwd)/known_hosts."

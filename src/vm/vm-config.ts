@@ -26,5 +26,8 @@ export type VmConfig = typeof VmConfig.infer;
 export async function loadVmConfig(path: string): Promise<VmConfig> {
   const config = VmConfig(JSON.parse(await readFile(path, "utf8")));
   if (config instanceof type.errors) throw new Error(`Invalid config ${path}:\n${config.summary}`);
+  if (config.network.address === config.network.gateway) {
+    throw new Error(`Invalid config ${path}: network.address can't be the gateway.`);
+  }
   return config;
 }

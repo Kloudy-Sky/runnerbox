@@ -3,10 +3,12 @@ name: vm
 # Builds the VM from `runnerbox vm render` on a clean machine, then checks its firewall from inside.
 on:
   pull_request:
-    paths: ["src/vm/**", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+    paths:
+      ["src/vm/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   push:
     branches: [main]
-    paths: ["src/vm/**", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+    paths:
+      ["src/vm/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   workflow_dispatch:
 
 permissions:
@@ -88,4 +90,19 @@ jobs:
           host_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
           sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$dir/out/known_hosts" ci@192.168.122.10 \
-            "curl -fsS --max-time 5 -o /dev/null http://192.168.122.1:8080 && curl -fsS --max-time 5 -o /dev/null http://$host_ip:8080 && echo 'ok: both answer without the filter'"
+            HOST_IP="$host_ip" bash -s <<'EOF'
+          set -e
+          curl -fsS --max-time 5 -o /dev/null http://192.168.122.1:8080
+          curl -fsS --max-time 5 -o /dev/null "http://$HOST_IP:8080"
+          echo "ok: the gateway and the host's private address answer without the filter"
+          # Report only: whether these answer depends on the runner, so a no here means CI can't prove
+          # that check, not that the filter is wrong.
+          if curl -s --max-time 5 -o /dev/null http://169.254.169.254/; then
+            echo "ok: link-local metadata answers without the filter"
+          else echo "note: link-local metadata doesn't answer here even without the filter"; fi
+          iface=$(ip -o -4 route show default | awk '{print $5}')
+          self=$(ip -6 -o addr show dev "$iface" scope link | awk '{print $4}' | cut -d/ -f1)
+          if ping -6 -c 3 -W 2 -I "$iface" ff02::1 | grep 'bytes from' | grep -vq "$self"; then
+            echo "ok: IPv6 gets replies without the filter"
+          else echo "note: IPv6 gets no replies here even without the filter"; fi
+          EOF

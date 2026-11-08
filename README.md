@@ -46,8 +46,8 @@ node runnerbox.js vm render --config vm.json --out ~/.local/share/runnerbox/vm
 Copy [`runnerbox.vm.example.json`](runnerbox.vm.example.json) to start. `render` only writes files: a cloud-init seed, the network filter and `create.sh`. Read `create.sh` before you run it. It downloads and checks the cloud image, defines the filter, reserves the VM's address in the libvirt network, boots the VM, and pins its SSH host key in `known_hosts` on first login.
 
 - **Base image:** use Ubuntu 24.04. Its default kernel stays on 6.8 through updates.
-- **Firewall:** the VM can reach the internet and the gateway's DNS, and nothing in private, CGNAT or link-local ranges, so not the host, your LAN, a tailnet or cloud metadata. IPv6 is dropped. Only the host can SSH in. CI builds the VM on a clean machine and checks all of this from inside it.
-- **Rebuilding:** `create.sh` won't replace an existing VM or filter. Remove the VM first (`virsh destroy`, `virsh undefine`, then delete its two volumes), then the filter (`virsh nwfilter-undefine`), then the DHCP reservation (`virsh net-update <network> delete ip-dhcp-host`).
+- **Firewall:** the VM can reach the internet and the gateway's DNS. It can't reach private, CGNAT, link-local, multicast or broadcast addresses, so not the host's private addresses, your LAN, a tailnet or cloud metadata. IPv6 is dropped, and the VM can only send from its own MAC and reserved address. Only the host can SSH in. CI builds the VM on a clean machine and checks this from inside it. Public addresses of your own machines are still reachable, as the [threat model](docs/threat-model.md) explains.
+- **Rebuilding:** `create.sh` checks for a VM, filter, volumes or DHCP reservation left from an earlier run before it changes anything, and stops if it finds one. Remove the VM first (`virsh destroy`, `virsh undefine`, then delete its two volumes), then the filter (`virsh nwfilter-undefine`), then the DHCP reservation (`virsh net-update <network> delete ip-dhcp-host`).
 
 ## Runners
 

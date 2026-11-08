@@ -52,3 +52,12 @@ test("render refuses a key file that isn't one public key", async () => {
   await writeFile(keyFile, "ssh-ed25519 AAAA one\nssh-ed25519 BBBB two\n");
   await assert.rejects(renderVm({ ...config, sshPublicKeyFile: keyFile }, join(dir, "out")), /isn't one SSH public key/);
 });
+
+test("the filter pins the VM to its reserved address and drops multicast and broadcast", () => {
+  const xml = networkFilterXml(config);
+  const ownAddress = `<parameter name='IP' value='${config.network.address}'/>`;
+  assert.ok(xml.includes(`<filterref filter='no-ip-spoofing'>${ownAddress}</filterref>`));
+  assert.ok(xml.includes(`<filterref filter='no-arp-spoofing'>${ownAddress}</filterref>`));
+  assert.ok(xml.includes("dstipaddr='224.0.0.0' dstipmask='4'"));
+  assert.ok(xml.includes("dstipaddr='255.255.255.255' dstipmask='32'"));
+});
