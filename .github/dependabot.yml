@@ -3,6 +3,9 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    # Its pin is named in claude-review.yml's deny list, so it's updated by hand.
+    ignore:
+      - dependency-name: anthropics/claude-code-action
   - package-ecosystem: docker
     directory: /image
     schedule: { interval: weekly }
