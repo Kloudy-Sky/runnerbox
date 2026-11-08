@@ -18,6 +18,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Tested |
 | The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Tested |
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |
+| The host and VM's memory | Overcommitted jobs push both into swap | `up` registers a runner only while the host's and VM's `MemAvailable` are above `memoryFloor`, and removes idle runners when memory drops. It can't take back a job a runner already has. | Coded |
 
 ## What isn't protected
 
