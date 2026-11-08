@@ -75,3 +75,18 @@ jobs:
           check "IPv6 is dropped" "! ping -6 -c 3 -W 2 -I $iface ff02::1 | grep 'bytes from' | grep -vq '$self'"
           exit $failed
           EOF
+
+      # Proves the checks above can fail: with a filter that accepts everything, the same targets answer.
+      - name: Control, with the filter opened up
+        run: |
+          dir="$RUNNER_TEMP/vm"
+          cat > "$dir/open.xml" <<'EOF'
+          <filter name='runnerbox-isolated' chain='root'>
+            <rule action='accept' direction='inout' priority='500'><all/></rule>
+          </filter>
+          EOF
+          sudo virsh nwfilter-define "$dir/open.xml"
+          host_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+          sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$dir/out/known_hosts" ci@192.168.122.10 \
+            "curl -fsS --max-time 5 -o /dev/null http://192.168.122.1:8080 && curl -fsS --max-time 5 -o /dev/null http://$host_ip:8080 && echo 'ok: both answer without the filter'"
