@@ -6,7 +6,8 @@
 # action's commit, and the setup-bun commit its action.yml uses, added in Settings > Actions.
 # The session can only write through the action's comment tools, which redact secrets. Tag mode
 # also grants file edits, git and a push wrapper; --disallowedTools takes them back, and deny beats
-# allow.
+# allow. Anyone can comment on a public PR, and tag mode puts comments in the prompt, so reads of
+# /proc (where the token sits in the environment) and the runner's temp files are denied too.
 #
 # One review per PR: when it opens, leaves draft or is reopened, never on a push. Close and reopen
 # a PR to review it again.
@@ -62,4 +63,4 @@ jobs:
             --model claude-opus-5-5
             --max-turns 40
             --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment"
-            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(git:*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/1d6de8cb0c237e7c15e9e1bdf973826ebae490cc/scripts/git-push.sh:*),mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(git:*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/1d6de8cb0c237e7c15e9e1bdf973826ebae490cc/scripts/git-push.sh:*),mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,Read(//proc/**),Grep(//proc/**),Glob(//proc/**),Read(//home/runner/work/_temp/**),Grep(//home/runner/work/_temp/**),Glob(//home/runner/work/_temp/**)"

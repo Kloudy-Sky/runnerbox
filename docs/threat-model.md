@@ -53,3 +53,5 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 ## This repository's own CI
 
 This repo is public, so its CI only uses GitHub-hosted runners. It must never use a self-hosted one.
+
+The Claude review job holds the PR author's personal Claude token. It skips PRs from forks, which get no secrets anyway, can only write PR comments, and can't read `/proc` or the runner's temp files, where a prompt planted in a PR comment would look for the token.
