@@ -1,0 +1,14 @@
+{
+  "name": "runnerbox",
+  "cpus": 6,
+  "memoryMiB": 4608,
+  "diskGiB": 60,
+  "swapGiB": 4,
+  "baseImage": {
+    "url": "https://cloud-images.ubuntu.com/releases/noble/release-20261017/ubuntu-24.04-server-cloudimg-amd64.img",
+    "sha256": "04e8f2461a16a44e78a370284471f29616cdd9baf1893df25807b71f985b6c94"
+  },
+  "network": { "name": "default", "gateway": "192.168.122.1", "address": "192.168.122.10" },
+  "pool": "default",
+  "sshPublicKeyFile": "/home/you/.config/runnerbox/vm_key.pub"
+}

@@ -33,6 +33,22 @@ Each job becomes one line in `~/.local/state/runnerbox/<owner>__<name>.ndjson`, 
 
 Syncing makes at least one GitHub request per run, so a busy repository can take a while. It stops with 1,000 requests left in the hourly limit, or 20% for tokens with a small limit, because that limit is shared with everything else using the same account. Run it again after the reset to continue.
 
+## VM setup
+
+Jobs run in containers inside one VM, behind a libvirt network filter. The host needs KVM, libvirt (`qemu-system-x86`, `libvirt-daemon-system`, `virtinst`) and `xorriso`, plus `br_netfilter` loaded with `net.bridge.bridge-nf-call-iptables=1`.
+
+```bash
+ssh-keygen -t ed25519 -N '' -f ~/.config/runnerbox/vm_key
+node runnerbox.js vm render --config vm.json --out ~/.local/share/runnerbox/vm
+~/.local/share/runnerbox/vm/create.sh
+```
+
+Copy [`runnerbox.vm.example.json`](runnerbox.vm.example.json) to start. `render` only writes files: a cloud-init seed, the network filter and `create.sh`. Read `create.sh` before you run it. It downloads and checks the cloud image, defines the filter, reserves the VM's address in the libvirt network, boots the VM, and pins its SSH host key in `known_hosts` on first login.
+
+- **Base image:** use Ubuntu 24.04. Its default kernel stays on 6.8 through updates.
+- **Firewall:** the VM can reach the internet and the gateway's DNS, and nothing in private, CGNAT or link-local ranges, so not the host, your LAN, a tailnet or cloud metadata. IPv6 is dropped. Only the host can SSH in. CI builds the VM on a clean machine and checks all of this from inside it.
+- **Rebuilding:** `create.sh` won't replace an existing VM or filter. Remove the VM first (`virsh destroy`, `virsh undefine`, then delete its two volumes), then the filter (`virsh nwfilter-undefine`), then the DHCP reservation (`virsh net-update <network> delete ip-dhcp-host`).
+
 ## Runners
 
 `runnerbox up` keeps runners waiting in a VM you've already set up with Docker and your image. Each one gets a registration that works for one job, then a fresh container.
@@ -75,7 +91,7 @@ Use tagged releases only.
 1. README and threat model.
 2. `runnerbox report`: job history from GitHub's API. Done.
 3. Launcher, configured instead of hardcoded. Passed its first real test.
-4. Scripted VM setup. The test is a stranger following this README on a clean machine.
+4. Scripted VM setup. CI builds it on a clean machine.
 5. Machine stats per job, and JUnit results to find flaky tests.
 6. Tagged release.
 
