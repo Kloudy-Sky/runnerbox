@@ -2,6 +2,8 @@
 # Claude subscription. The brief is .claude/commands/pr-review.md, which a developer can also run
 # locally as /pr-review <number>. The action is pinned to a reviewed commit, and Dependabot leaves
 # it alone, because this job holds a personal token and the deny list below names that commit.
+# The repo only allows GitHub's own actions plus listed commits, so a new pin also needs this
+# action's commit, and the setup-bun commit its action.yml uses, added in Settings > Actions.
 # The session can only write through the action's comment tools, which redact secrets. Tag mode
 # also grants file edits, git and a push wrapper; --disallowedTools takes them back, and deny beats
 # allow.
