@@ -35,7 +35,7 @@ Syncing makes at least one GitHub request per run, so a busy repository can take
 
 ## VM setup
 
-Jobs run in containers inside one VM, behind a libvirt network filter. The host needs KVM, libvirt (`qemu-system-x86`, `libvirt-daemon-system`, `virtinst`) and `xorriso`, plus `br_netfilter` loaded with `net.bridge.bridge-nf-call-iptables=1`.
+Jobs run in containers inside one VM, behind a libvirt network filter. The host needs KVM, libvirt (`qemu-system-x86`, `qemu-utils`, `libvirt-daemon-system`, `virtinst`) and `xorriso`, plus `br_netfilter` loaded with `net.bridge.bridge-nf-call-iptables=1`.
 
 ```bash
 ssh-keygen -t ed25519 -N '' -f ~/.config/runnerbox/vm_key

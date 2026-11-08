@@ -35,6 +35,10 @@ ${Object.entries(vars).map(([key, value]) => `${key}=${q(value)}`).join("\n")}
 
 fail() { echo "$*" >&2; exit 1; }
 
+for tool in virsh virt-install qemu-img xorriso curl sha256sum ssh; do
+  command -v "$tool" >/dev/null || fail "$tool isn't installed."
+done
+
 if virsh dominfo "$NAME" >/dev/null 2>&1; then fail "VM $NAME already exists. Remove it first."; fi
 if virsh nwfilter-dumpxml "$FILTER" >/dev/null 2>&1; then fail "Filter $FILTER already exists. Remove it after its VM."; fi
 # Without this, traffic between guests on the bridge skips the filter's IP rules.
