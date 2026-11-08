@@ -15,7 +15,7 @@ function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0
       mint: async (name: string) => {
         events.push(`mint ${name}`);
         if (mintFails) throw new Error("GitHub returned 401");
-        return `registration-for-${name}`;
+        return { runnerId: 7, jitConfig: `registration-for-${name}` };
       },
       runContainer: async (slot: number, registration: string) => {
         events.push(`run ${slot} ${registration}`);
@@ -69,4 +69,19 @@ test("slots run separately under their own names", async () => {
 
   assert.ok(events.includes("mint box-1-1700000000"));
   assert.ok(events.includes("mint box-2-1700000000"));
+});
+
+test("a slot's runner counts as registered only while its container runs", async () => {
+  const { actions } = fakes();
+  const registered = new Map<number, number>();
+  const seen: (number | undefined)[] = [];
+  const runContainer = actions.runContainer;
+  actions.runContainer = async (slot, registration) => {
+    seen.push(registered.get(slot));
+    return runContainer(slot, registration);
+  };
+
+  await assert.rejects(runSlots("box", 1, actions, registered), Stop);
+  assert.deepEqual(seen, [7]);
+  assert.equal(registered.size, 0);
 });

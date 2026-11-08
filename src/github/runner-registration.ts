@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import { GITHUB_API, githubHeaders } from "./github-client.ts";
 
-const Registration = type({ encoded_jit_config: "string" });
+const Registration = type({ encoded_jit_config: "string", runner: { id: "number" } });
 
 export type RunnerScope = { org: string } | { repo: string };
 
@@ -12,10 +12,12 @@ type RegistrationRequest = {
   label: string;
 };
 
-// Asks GitHub for a registration that works for one job. Treat the result as a secret.
+const runnersPath = (scope: RunnerScope) =>
+  `${GITHUB_API}/${"org" in scope ? `orgs/${scope.org}` : `repos/${scope.repo}`}/actions/runners`;
+
+// Asks GitHub for a registration that works for one job. Treat `jitConfig` as a secret.
 export async function mintRegistration({ scope, token, runnerName, label }: RegistrationRequest) {
-  const owner = "org" in scope ? `orgs/${scope.org}` : `repos/${scope.repo}`;
-  const response = await fetch(`${GITHUB_API}/${owner}/actions/runners/generate-jitconfig`, {
+  const response = await fetch(`${runnersPath(scope)}/generate-jitconfig`, {
     method: "POST",
     headers: githubHeaders(token),
     body: JSON.stringify({
@@ -29,5 +31,11 @@ export async function mintRegistration({ scope, token, runnerName, label }: Regi
 
   const body = Registration(await response.json());
   if (body instanceof type.errors) throw new Error("GitHub's response had no registration");
-  return body.encoded_jit_config;
+  return { runnerId: body.runner.id, jitConfig: body.encoded_jit_config };
+}
+
+// Removes a runner that hasn't taken a job yet. GitHub refuses to remove one that is running a job.
+export async function removeRunner({ scope, token, runnerId }: { scope: RunnerScope; token: string; runnerId: number }) {
+  const response = await fetch(`${runnersPath(scope)}/${runnerId}`, { method: "DELETE", headers: githubHeaders(token) });
+  if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
 }
