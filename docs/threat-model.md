@@ -1,6 +1,6 @@
 # Threat model
 
-This describes the intended design. **Tested** means the control is in this repo and held in a real test run. **Coded** means it's in this repo and unit tested only. **Design** means it isn't in this repo yet.
+This describes the intended design. **Tested** means the control is in this repo and held in a real test run. **Tested in CI** means CI builds it on a clean machine and checks it, but it hasn't run real jobs yet. **Coded** means it's in this repo and unit tested only. **Design** means it isn't in this repo yet.
 
 ## What we assume
 
@@ -12,8 +12,9 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | --- | --- | --- | --- |
 | The GitHub token that mints runners | A job steals it | It stays on the host in a `600` file, and `up` refuses a looser one. The VM only ever receives a single-use registration. | Tested |
 | A job's registration | It shows up in container metadata or SSH arguments | It reaches the container on stdin, so it never appears in `docker inspect` or on the host's process list. | Tested |
-| The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Design |
-| Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Design |
+| The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, multicast, broadcast and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Tested in CI, except IPv6, which CI's network can't show |
+| Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Tested in CI |
+| Other machines on the bridge | Root in the VM spoofs the gateway's or another guest's address | The filter only lets the VM send from its own MAC and reserved IP, in both IP and ARP. | Coded |
 | Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Tested |
 | The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Tested |
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |

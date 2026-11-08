@@ -1,0 +1,108 @@
+name: vm
+
+# Builds the VM from `runnerbox vm render` on a clean machine, then checks its firewall from inside.
+on:
+  pull_request:
+    paths:
+      ["src/vm/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+  push:
+    branches: [main]
+    paths:
+      ["src/vm/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  vm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable && pnpm install --frozen-lockfile && pnpm build
+
+      - name: Set up KVM and libvirt
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends \
+            qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-daemon-config-network dnsmasq-base virtinst xorriso
+          sudo modprobe br_netfilter && sudo sysctl -w net.bridge.bridge-nf-call-iptables=1
+          sudo virsh pool-define-as default dir --target /var/lib/libvirt/images
+          sudo virsh pool-start default
+          sudo virsh net-info default | grep -Eq '^Active: +yes' || sudo virsh net-start default
+
+      - name: Render and create the VM
+        run: |
+          dir="$RUNNER_TEMP/vm" && mkdir -p "$dir"
+          ssh-keygen -q -t ed25519 -N '' -f "$dir/key"
+          # A smaller VM than the example, to fit the runner.
+          jq --arg key "$dir/key.pub" '.sshPublicKeyFile = $key | .cpus = 2 | .memoryMiB = 2048 | .diskGiB = 12 | .swapGiB = 1' \
+            runnerbox.vm.example.json > "$dir/vm.json"
+          node --no-experimental-strip-types dist/runnerbox.js vm render --config "$dir/vm.json" --out "$dir/out"
+          sudo "$dir/out/create.sh"
+
+      - name: Check the VM from inside
+        run: |
+          dir="$RUNNER_TEMP/vm"
+          # Something on the host to try to reach, on the gateway and on the runner's own private address.
+          python3 -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 &
+          host_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+          sleep 1 && curl -fsS --max-time 5 -o /dev/null "http://$host_ip:8080"
+
+          sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$dir/out/known_hosts" ci@192.168.122.10 \
+            HOST_IP="$host_ip" bash -s <<'EOF'
+          failed=0
+          check() { if eval "$2" >/dev/null 2>&1; then echo "ok: $1"; else echo "FAILED: $1"; failed=1; fi; }
+          blocked() { if curl -s --max-time 5 -o /dev/null "$2"; then echo "FAILED: reached $1"; failed=1; else echo "ok: $1 blocked"; fi; }
+
+          check "kernel is 6.x ($(uname -r))" 'uname -r | grep -q "^6\."'
+          check "ci can use Docker" 'docker version --format "{{.Server.Version}}"'
+          check "swap is on" 'swapon --show | grep -q /swapfile'
+          check "GitHub is reachable" 'curl -fsS --max-time 10 https://api.github.com'
+          blocked "the gateway" http://192.168.122.1:8080
+          blocked "the host's private address" "http://$HOST_IP:8080"
+          blocked "link-local metadata" http://169.254.169.254/
+
+          # Any IPv6 reply from another machine means IPv6 isn't dropped.
+          iface=$(ip -o -4 route show default | awk '{print $5}')
+          self=$(ip -6 -o addr show dev "$iface" scope link | awk '{print $4}' | cut -d/ -f1)
+          check "IPv6 is dropped" "! ping -6 -c 3 -W 2 -I $iface ff02::1 | grep 'bytes from' | grep -vq '$self'"
+          exit $failed
+          EOF
+
+      # Proves the checks above can fail: with a filter that accepts everything, the same targets answer.
+      - name: Control, with the filter opened up
+        run: |
+          dir="$RUNNER_TEMP/vm"
+          # Redefining a filter in place needs its existing uuid.
+          uuid=$(sudo virsh nwfilter-dumpxml runnerbox-isolated | sed -n 's|.*<uuid>\(.*\)</uuid>.*|\1|p')
+          printf "<filter name='runnerbox-isolated' chain='root'><uuid>%s</uuid><rule action='accept' direction='inout' priority='500'><all/></rule></filter>\n" \
+            "$uuid" > "$dir/open.xml"
+          sudo virsh nwfilter-define "$dir/open.xml"
+          host_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+          sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$dir/out/known_hosts" ci@192.168.122.10 \
+            HOST_IP="$host_ip" bash -s <<'EOF'
+          set -e
+          curl -fsS --max-time 5 -o /dev/null http://192.168.122.1:8080
+          curl -fsS --max-time 5 -o /dev/null "http://$HOST_IP:8080"
+          echo "ok: the gateway and the host's private address answer without the filter"
+          # Report only: whether these answer depends on the runner, so a no here means CI can't prove
+          # that check, not that the filter is wrong.
+          if curl -s --max-time 5 -o /dev/null http://169.254.169.254/; then
+            echo "ok: link-local metadata answers without the filter"
+          else echo "note: link-local metadata doesn't answer here even without the filter"; fi
+          iface=$(ip -o -4 route show default | awk '{print $5}')
+          self=$(ip -6 -o addr show dev "$iface" scope link | awk '{print $4}' | cut -d/ -f1)
+          if ping -6 -c 3 -W 2 -I "$iface" ff02::1 | grep 'bytes from' | grep -vq "$self"; then
+            echo "ok: IPv6 gets replies without the filter"
+          else echo "note: IPv6 gets no replies here even without the filter"; fi
+          EOF

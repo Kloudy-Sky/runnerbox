@@ -6,12 +6,16 @@ import { formatStepComparison, formatSummary } from "./tracking/format-report.ts
 import { createJobLog, defaultLogPath } from "./tracking/job-log.ts";
 import { compareSteps, summarizeJobs } from "./tracking/report.ts";
 import { DAY_MS, syncJobs } from "./tracking/sync-jobs.ts";
+import { renderVm } from "./vm/render-vm.ts";
+import { loadVmConfig } from "./vm/vm-config.ts";
 
 const USAGE = `Usage:
   runnerbox up --config <file>
+  runnerbox vm render --config <file> --out <dir>
   runnerbox report --repo <owner/name> [options]
 
 up: keeps runners waiting for jobs in the VM until stopped.
+vm render: writes the VM's cloud-init seed, firewall and a create.sh to run on the host.
 report: copies job history from GitHub to a local log, then summarizes it.
 
 Report options:
@@ -27,6 +31,7 @@ async function main() {
     allowPositionals: true,
     options: {
       config: { type: "string" },
+      out: { type: "string" },
       repo: { type: "string" },
       since: { type: "string", default: "7d" },
       workflow: { type: "string" },
@@ -40,6 +45,11 @@ async function main() {
 
   if (positionals[0] === "up" && positionals.length === 1 && values.config) {
     return startRunners(values.config);
+  }
+
+  if (positionals[0] === "vm" && positionals[1] === "render" && positionals.length === 2 && values.config && values.out) {
+    const written = await renderVm(await loadVmConfig(values.config), values.out);
+    return console.log(`Wrote ${written.join(", ")} to ${values.out}. Review create.sh, then run it on the host.`);
   }
 
   const { repo, since: sinceArg, workflow, job, offline } = values;
