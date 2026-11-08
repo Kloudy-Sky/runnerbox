@@ -1,6 +1,6 @@
 # Threat model
 
-This describes the intended design. **Coded** means the control is in this repo and unit tested, but hasn't yet run a real job. **Design** means it isn't in this repo yet.
+This describes the intended design. **Tested** means the control is in this repo and held in a real test run. **Coded** means it's in this repo and unit tested only. **Design** means it isn't in this repo yet.
 
 ## What we assume
 
@@ -10,13 +10,13 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 | Asset | Threat | Control | Status |
 | --- | --- | --- | --- |
-| The GitHub token that mints runners | A job steals it | It stays on the host in a `600` file, and `up` refuses a looser one. The VM only ever receives a single-use registration. | Coded |
-| A job's registration | It shows up in container metadata or SSH arguments | It reaches the container on stdin, so it never appears in `docker inspect` or on the host's process list. | Coded |
+| The GitHub token that mints runners | A job steals it | It stays on the host in a `600` file, and `up` refuses a looser one. The VM only ever receives a single-use registration. | Tested |
+| A job's registration | It shows up in container metadata or SSH arguments | It reaches the container on stdin, so it never appears in `docker inspect` or on the host's process list. | Tested |
 | The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Design |
 | Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Design |
-| Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Coded |
-| The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Coded |
-| Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Coded |
+| Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Tested |
+| The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Tested |
+| Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |
 
 ## What isn't protected
 
@@ -32,7 +32,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 **Secrets given to a job.** Everything in the job can read them, including every dependency it installs.
 
-**The registration inside the VM.** The entrypoint passes it to the runner as an argument, so every step of the job, and root in the VM, can read it with `ps`. It works for one job, which limits what it's worth.
+**The registration inside the VM.** The entrypoint passes it to the runner as an argument, so every step of the job, and root in the VM, can read it with `ps`. Passing it in an environment variable wouldn't help, because jobs run as the same user with sudo and could read it from `/proc`. It works for one job, the one already running, which limits what it's worth.
 
 **Public repositories.** Anyone can open a pull request on one, and that can run their code on your machine. Use private repositories only, and restrict the runner group to the repositories that need it.
 

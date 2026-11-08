@@ -2,7 +2,7 @@
 
 Throwaway GitHub Actions runners on your own hardware, with job tracking that shows what's slow, flaky or broken.
 
-**Status: early.** `runnerbox report` works today. `runnerbox up` is written and unit tested, but it hasn't run a real job yet, and VM setup isn't scripted. Don't point real CI at this.
+**Status: early.** `runnerbox report` works today. `runnerbox up` has passed one real test, three jobs on a test repository, but VM setup isn't scripted. Don't point real CI at this yet.
 
 ## What it will do
 
@@ -50,7 +50,7 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 - `vm.knownHostsFile` must already hold the VM's host key. SSH refuses to connect otherwise.
 - `env` sets environment variables in every job's container. Test runners size their worker counts from the VM's CPUs, not the container's share, so cap them here.
 
-Restarting `up` removes each slot's container, which kills any job running there. Stopping it, or lowering `slots`, can leave containers running in the VM until their job times out, so remove those with `docker rm -f`. If the VM, SSH or image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
+Restarting `up` removes each slot's container, which kills any job running there. Stopping it, or lowering `slots`, can leave containers running in the VM until their job times out, so remove those with `docker rm -f`. Stopping `up` removes runners still waiting for a job, but not ones running a job. If the VM, SSH or image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
 
 ## How a project uses it
 
@@ -74,7 +74,7 @@ Use tagged releases only.
 
 1. README and threat model.
 2. `runnerbox report`: job history from GitHub's API. Done.
-3. Launcher, configured instead of hardcoded. Written, and being tested.
+3. Launcher, configured instead of hardcoded. Passed its first real test.
 4. Scripted VM setup. The test is a stranger following this README on a clean machine.
 5. Machine stats per job, and JUnit results to find flaky tests.
 6. Tagged release.
