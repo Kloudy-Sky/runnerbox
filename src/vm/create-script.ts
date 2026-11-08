@@ -39,6 +39,10 @@ for tool in virsh virt-install qemu-img xorriso curl sha256sum ssh; do
   command -v "$tool" >/dev/null || fail "$tool isn't installed."
 done
 
+virsh net-info "$NETWORK" 2>/dev/null | grep -Eq '^Active: +yes' \
+  || fail "Network $NETWORK isn't running. Start it with virsh net-start and net-autostart."
+virsh pool-info "$POOL" 2>/dev/null | grep -Eq '^State: +running' \
+  || fail "Storage pool $POOL isn't running. Start it with virsh pool-start and pool-autostart."
 if virsh dominfo "$NAME" >/dev/null 2>&1; then fail "VM $NAME already exists. Remove it first."; fi
 if virsh nwfilter-dumpxml "$FILTER" >/dev/null 2>&1; then fail "Filter $FILTER already exists. Remove it after its VM."; fi
 # Without this, traffic between guests on the bridge skips the filter's IP rules.
