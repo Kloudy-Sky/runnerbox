@@ -1,0 +1,66 @@
+# Claude reviews each ready pull request for bugs and against AGENTS.md, on the author's own
+# Claude subscription. The brief is .claude/commands/pr-review.md, which a developer can also run
+# locally as /pr-review <number>. The action is pinned to a reviewed commit, and Dependabot leaves
+# it alone, because this job holds a personal token and the deny list below names that commit.
+# The repo only allows GitHub's own actions plus listed commits, so a new pin also needs this
+# action's commit, and the setup-bun commit its action.yml uses, added in Settings > Actions.
+# The session can only write through the action's comment tools, which redact secrets. Tag mode
+# also grants file edits, git and a push wrapper; --disallowedTools takes them back, and deny beats
+# allow. Anyone can comment on a public PR, and tag mode puts comments in the prompt, so reads of
+# /proc (where the token sits in the environment) and the runner's temp files are denied too.
+#
+# One review per PR: when it opens, leaves draft or is reopened, never on a push. Close and reopen
+# a PR to review it again.
+#
+# Secrets: CLAUDE_CODE_OAUTH_TOKEN_<github login>, from `claude setup-token` run by that author.
+# A PR whose author has none is skipped with a notice. A fork's PR gets no secrets, so it's skipped
+# too, which also keeps untrusted PRs away from the token.
+name: claude-review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  review:
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read # actions/checkout
+      pull-requests: write # the review comments
+      id-token: write # the action's GitHub App token exchange
+    steps:
+      - id: token
+        env:
+          TOKEN: ${{ secrets[format('CLAUDE_CODE_OAUTH_TOKEN_{0}', github.event.pull_request.user.login)] }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [ -n "$TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No CLAUDE_CODE_OAUTH_TOKEN_${AUTHOR} secret, so no Claude review for this PR."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      # The action fetches the PR branch with the token checkout leaves behind, so this checkout
+      # keeps it. It's the job's own GITHUB_TOKEN, and the action removes it once it has checked out.
+      - if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: steps.token.outputs.present == 'true'
+        uses: anthropics/claude-code-action@1d6de8cb0c237e7c15e9e1bdf973826ebae490cc # v1
+        with:
+          claude_code_oauth_token: ${{ secrets[format('CLAUDE_CODE_OAUTH_TOKEN_{0}', github.event.pull_request.user.login)] }}
+          # Tag mode: the action opens the Claude comment the summary is written into.
+          track_progress: true
+          prompt: |
+            Follow .claude/commands/pr-review.md for pull request ${{ github.event.pull_request.number }} in ${{ github.repository }}. Wherever that file says $ARGUMENTS, use ${{ github.event.pull_request.number }}.
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 40
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment"
+            --disallowedTools "Edit,Write,MultiEdit,NotebookEdit,Bash(git:*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/1d6de8cb0c237e7c15e9e1bdf973826ebae490cc/scripts/git-push.sh:*),mcp__github_file_ops__commit_files,mcp__github_file_ops__delete_files,Read(//proc/**),Grep(//proc/**),Glob(//proc/**),Read(//home/runner/work/_temp/**),Grep(//home/runner/work/_temp/**),Glob(//home/runner/work/_temp/**)"
