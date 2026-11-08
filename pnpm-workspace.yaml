@@ -1,2 +1,5 @@
 # Wait three days before installing a new release, so a hijacked package has time to be caught.
 minimumReleaseAge: 4320
+# esbuild's install script only checks its binary, which works without it.
+ignoredBuiltDependencies:
+  - esbuild

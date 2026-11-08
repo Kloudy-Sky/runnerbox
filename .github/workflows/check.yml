@@ -22,6 +22,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm build
+      # Some distro Node builds can't strip types, so prove the release file doesn't need it.
+      - run: node --no-experimental-strip-types dist/runnerbox.js --help
 
   image:
     runs-on: ubuntu-24.04
