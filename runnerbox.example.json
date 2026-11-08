@@ -18,5 +18,6 @@
     "pids": 4096,
     "shmSize": "1g"
   },
-  "env": { "EXAMPLE_MAX_WORKERS": "2" }
+  "env": { "EXAMPLE_MAX_WORKERS": "2" },
+  "memoryFloor": { "hostMiB": 500, "vmMiB": 1500 }
 }

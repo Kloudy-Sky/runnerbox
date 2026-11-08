@@ -5,13 +5,25 @@ import { runSlots } from "./run-slots.ts";
 // runSlots never returns on its own, so a wait after the given count ends the test.
 class Stop extends Error {}
 
-function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0 } = {}) {
+// `rooms` answers roomForJob in turn, then there's room. A memory check registered with `every`
+// runs once while the container does.
+function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0, rooms = [] as (string | null)[] } = {}) {
   const events: string[] = [];
+  const checks: (() => Promise<void>)[] = [];
   let waits = 0;
   let time = 1_700_000_000_000;
   return {
     events,
     actions: {
+      roomForJob: async () => rooms.shift() ?? null,
+      release: async (runnerId: number) => {
+        events.push(`release ${runnerId}`);
+        return true;
+      },
+      every: (_ms: number, check: () => Promise<void>) => {
+        checks.push(check);
+        return () => void events.push("stop watching");
+      },
       mint: async (name: string) => {
         events.push(`mint ${name}`);
         if (mintFails) throw new Error("GitHub returned 401");
@@ -19,6 +31,7 @@ function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0
       },
       runContainer: async (slot: number, registration: string) => {
         events.push(`run ${slot} ${registration}`);
+        for (const check of checks.splice(0)) await check();
         time += jobMs;
         return exitCode;
       },
@@ -39,6 +52,7 @@ test("each runner gets its own registration, and the next starts after a short w
   assert.deepEqual(events, [
     "mint box-1-1700000000",
     "run 1 registration-for-box-1-1700000000",
+    "stop watching",
     "log slot 1: box-1-1700000000 finished (0)",
     "wait 5000",
   ]);
@@ -84,4 +98,25 @@ test("a slot's runner counts as registered only while its container runs", async
   await assert.rejects(runSlots("box", 1, actions, registered), Stop);
   assert.deepEqual(seen, [7]);
   assert.equal(registered.size, 0);
+});
+
+test("a slot registers nothing while memory is short, and says so once each way", async () => {
+  const { actions, events } = fakes({ rooms: ["the VM is short", "the VM is short"], waitsBeforeStop: 3 });
+  await assert.rejects(runSlots("box", 1, actions), Stop);
+
+  assert.deepEqual(events.slice(0, 5), [
+    "log slot 1: waiting for memory: the VM is short",
+    "wait 15000",
+    "wait 15000",
+    "log slot 1: memory is back above the floor",
+    "mint box-1-1700000000",
+  ]);
+});
+
+test("an idle runner is removed when memory drops while it waits for a job", async () => {
+  const { actions, events } = fakes({ rooms: [null, "the host is short"] });
+  await assert.rejects(runSlots("box", 1, actions), Stop);
+
+  assert.ok(events.includes("release 7"));
+  assert.ok(events.includes("log slot 1: removed idle box-1-1700000000: the host is short"));
 });

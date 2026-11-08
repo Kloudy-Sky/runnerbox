@@ -1,8 +1,10 @@
+import { readFile } from "node:fs/promises";
 import { setTimeout as wait } from "node:timers/promises";
 import { mintRegistration, removeRunner } from "../github/runner-registration.ts";
-import { runInVm } from "../vm/run-in-vm.ts";
+import { readFromVm, runInVm } from "../vm/run-in-vm.ts";
 import { dockerRunCommand } from "./docker-command.ts";
 import { loadLauncherConfig } from "./launcher-config.ts";
+import { checkMemoryFloor } from "./memory-floor.ts";
 import { runSlots } from "./run-slots.ts";
 import { readTokenFile } from "./token-file.ts";
 
@@ -41,6 +43,29 @@ export async function startRunners(configPath: string) {
         }),
       runContainer: (slot, secret) =>
         runInVm({ vm: config.vm, command: dockerRunCommand(config, slot), secret }),
+      roomForJob: () =>
+        checkMemoryFloor(config.memoryFloor, {
+          host: () => readFile("/proc/meminfo", "utf8"),
+          vm: () => readFromVm({ vm: config.vm, command: "cat /proc/meminfo" }),
+        }),
+      release: async (runnerId) => {
+        try {
+          await removeRunner({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerId });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      every: (ms, check) => {
+        // A slow check (a hung SSH) skips ticks instead of piling up.
+        let checking = false;
+        const timer = setInterval(() => {
+          if (checking) return;
+          checking = true;
+          void check().finally(() => (checking = false));
+        }, ms);
+        return () => clearInterval(timer);
+      },
       wait: async (ms) => void (await wait(ms)),
       now: Date.now,
       log: console.log,

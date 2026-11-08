@@ -41,7 +41,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 **Tracking data.** A job can write whatever it likes to its own output, so reports can't trust anything a job says about itself unless GitHub's data confirms it. The local job log holds job and branch names and is readable by anyone with access to your account on that machine.
 
-**Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed.
+**Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed. `memoryFloor` keeps new runners from registering while the host or VM is short, but it can't take a job back once a runner has it.
 
 ## What we recommend
 
