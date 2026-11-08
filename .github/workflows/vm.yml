@@ -30,7 +30,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
           sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
           sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends \
-            qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-daemon-config-network virtinst xorriso
+            qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-daemon-config-network dnsmasq-base virtinst xorriso
           sudo modprobe br_netfilter && sudo sysctl -w net.bridge.bridge-nf-call-iptables=1
           sudo virsh pool-define-as default dir --target /var/lib/libvirt/images
           sudo virsh pool-start default
