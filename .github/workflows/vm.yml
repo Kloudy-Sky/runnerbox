@@ -80,11 +80,10 @@ jobs:
       - name: Control, with the filter opened up
         run: |
           dir="$RUNNER_TEMP/vm"
-          cat > "$dir/open.xml" <<'EOF'
-          <filter name='runnerbox-isolated' chain='root'>
-            <rule action='accept' direction='inout' priority='500'><all/></rule>
-          </filter>
-          EOF
+          # Redefining a filter in place needs its existing uuid.
+          uuid=$(sudo virsh nwfilter-dumpxml runnerbox-isolated | sed -n 's|.*<uuid>\(.*\)</uuid>.*|\1|p')
+          printf "<filter name='runnerbox-isolated' chain='root'><uuid>%s</uuid><rule action='accept' direction='inout' priority='500'><all/></rule></filter>\n" \
+            "$uuid" > "$dir/open.xml"
           sudo virsh nwfilter-define "$dir/open.xml"
           host_ip=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
           sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
