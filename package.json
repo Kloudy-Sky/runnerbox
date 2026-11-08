@@ -9,6 +9,7 @@
   "packageManager": "pnpm@10.28.1",
   "scripts": {
     "runnerbox": "node src/cli.ts",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/runnerbox.js",
     "test": "node --test \"src/**/*.test.ts\"",
     "typecheck": "tsc",
     "leak-check": "node scripts/leak-check.ts"
@@ -18,6 +19,7 @@
   },
   "devDependencies": {
     "@types/node": "26.6.6",
+    "esbuild": "0.28.2",
     "typescript": "7.0.2"
   }
 }

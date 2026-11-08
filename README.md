@@ -11,15 +11,20 @@ Throwaway GitHub Actions runners on your own hardware, with job tracking that sh
 - Record every job as one line of NDJSON in a local file. No server needed. OTLP export is optional.
 - Answer four questions: why was this job slow, is this test flaky, was this failure infrastructure or code, and what are we saving.
 
+## Install
+
+Download `runnerbox.js` and `runnerbox.js.sha256` from a [release](https://github.com/Kloudy-Sky/runnerbox/releases), check it with `sha256sum -c runnerbox.js.sha256`, and run it with Node 22.18 or newer. It's one file with its dependencies included, so there's nothing to install.
+
+To run from a checkout instead, use `pnpm install` and `pnpm runnerbox`. That needs a Node that can run TypeScript directly. Some distro builds, such as Ubuntu's `nodejs` package, can't, so get Node from nodejs.org or a version manager.
+
 ## Job history
 
-`runnerbox report` needs Node 22.18 or newer and read access to the repository's Actions. It uses `GITHUB_TOKEN`, or your `gh` login if that isn't set.
+`runnerbox report` needs read access to the repository's Actions. It uses `GITHUB_TOKEN`, or your `gh` login if that isn't set.
 
 ```bash
-pnpm install
-pnpm runnerbox report --repo owner/name
-pnpm runnerbox report --repo owner/name --since 30d
-pnpm runnerbox report --repo owner/name --job test --offline
+node runnerbox.js report --repo owner/name
+node runnerbox.js report --repo owner/name --since 30d
+node runnerbox.js report --repo owner/name --job test --offline
 ```
 
 The first command summarizes each job per runner type: runs, failures, failures that passed on retry, jobs that never got a runner, and how long jobs took and queued. `--job` compares one job's steps across runner types, which shows where a slower runner spends its time. If two workflows use the same job name, add `--workflow`.
@@ -34,7 +39,7 @@ Syncing makes at least one GitHub request per run, so a busy repository can take
 
 ```bash
 docker build -t runnerbox-base image   # in the VM
-pnpm runnerbox up --config /path/to/config.json   # on the host, never inside the VM
+node runnerbox.js up --config /path/to/config.json   # on the host, never inside the VM
 ```
 
 Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a service, use [`deploy/runnerbox@.service`](deploy/runnerbox@.service).
