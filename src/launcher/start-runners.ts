@@ -12,7 +12,7 @@ import { stateDir } from "../tracking/state-dir.ts";
 import { readFromVm, runInVm } from "../vm/run-in-vm.ts";
 import { dockerRunCommand, shellQuote } from "./docker-command.ts";
 import { every } from "./every.ts";
-import { type LauncherConfig, loadLauncherConfig } from "./launcher-config.ts";
+import { type LauncherConfig, loadLauncherConfig, type RunnerType } from "./launcher-config.ts";
 import { checkMemoryFloor } from "./memory-floor.ts";
 import { runSlots } from "./run-slots.ts";
 import { readTokenFile } from "./token-file.ts";
@@ -23,26 +23,32 @@ const SAMPLE_MS = 60_000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
+type RecordEvent = (event: LauncherEvent & { runnerType?: string }) => void;
+
 export async function startRunners(configPath: string) {
   const config = await loadLauncherConfig(configPath);
-  const registered = new Map<number, number>();
+  // Each runner type's slots, mapped to the runner each has registered and not seen finish.
+  const registered = config.runners.map(() => new Map<number, number>());
   // What `up` did and what the machines looked like, kept locally for `report`. See docs/analytics.md.
   const events = createRotatingLog(join(stateDir(), config.name, "events.ndjson"));
-  const record = (event: LauncherEvent) => void events.append({ time: new Date().toISOString(), ...event });
+  const record: RecordEvent = (event) => void events.append({ time: new Date().toISOString(), ...event });
   startSampler(config);
+  // One floor for every runner type, so together they can't overload the machines.
   const roomForJob = () =>
     checkMemoryFloor(config.memoryFloor, {
       host: () => readFile("/proc/meminfo", "utf8"),
       vm: () => readFromVm({ vm: config.vm, command: "cat /proc/meminfo" }),
     });
+  const remove = async (runnerId: number) =>
+    removeRunner({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerId });
 
   // A runner still waiting for a job would otherwise stay listed until GitHub notices it's gone.
   async function removeWaitingRunners() {
-    const token = await readTokenFile(config.tokenFile);
+    const runnerIds = registered.flatMap((slots) => [...slots.values()]);
     await Promise.all(
-      [...registered.values()].map(async (runnerId) => {
+      runnerIds.map(async (runnerId) => {
         try {
-          await removeRunner({ scope: config.scope, token, runnerId });
+          await remove(runnerId);
           console.log(`removed runner ${runnerId}`);
         } catch (error) {
           console.log(`could not remove runner ${runnerId}, it may be running a job: ${message(error)}`);
@@ -54,52 +60,48 @@ export async function startRunners(configPath: string) {
     process.once(signal, () => void removeWaitingRunners().finally(() => process.exit(0)));
   }
 
-  const image = await keepImage(config, roomForJob, record);
-
-  await runSlots(
-    config.name,
-    config.slots,
-    {
-      mint: async (runnerName) =>
-        mintRegistration({
-          scope: config.scope,
-          token: await readTokenFile(config.tokenFile),
-          runnerName,
-          label: config.label,
-        }),
-      runContainer: async (slot, secret, tag) => {
-        const exitCode = await runInVm({ vm: config.vm, command: dockerRunCommand(config, slot, tag), secret });
-        await image.prune();
-        return exitCode;
-      },
-      image: image.current,
-      roomForJob,
-      release: async (runnerId) => {
-        try {
-          await removeRunner({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerId });
-          return true;
-        } catch {
-          return false;
-        }
-      },
-      every,
-      wait: async (ms) => void (await wait(ms)),
-      now: Date.now,
-      log: console.log,
-      record,
-    },
-    registered,
+  await Promise.all(
+    config.runners.map(async (runner, index) => {
+      const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
+      const image = await keepImage(config, runner, roomForJob, recordForType);
+      await runSlots(
+        `${config.name}-${runner.name}`,
+        runner.slots,
+        {
+          mint: async (runnerName) =>
+            mintRegistration({
+              scope: config.scope,
+              token: await readTokenFile(config.tokenFile),
+              runnerName,
+              label: runner.label,
+            }),
+          runContainer: async (slot, secret, tag) => {
+            const command = dockerRunCommand(config.name, runner, slot, tag);
+            const exitCode = await runInVm({ vm: config.vm, command, secret });
+            await image.prune();
+            return exitCode;
+          },
+          image: image.current,
+          roomForJob,
+          release: (runnerId) => remove(runnerId).then(() => true, () => false),
+          every,
+          wait: async (ms) => void (await wait(ms)),
+          now: Date.now,
+          log: (line) => console.log(`${runner.name} ${line}`),
+          record: recordForType,
+        },
+        registered[index],
+      );
+    }),
   );
 }
 
-// Returns the image new containers should use, and a prune that removes old tags nothing uses. A
-// build context is built before any slot starts, then checked for changes every few minutes.
-async function keepImage(
-  config: LauncherConfig,
-  roomForJob: () => Promise<string | null>,
-  record: (event: LauncherEvent) => void,
-) {
-  const { image, vm } = config;
+// Returns the image a runner type's new containers should use, and a prune that removes old tags
+// nothing uses. A build context is built before that type's slots start, then checked for changes
+// every few minutes.
+async function keepImage(config: LauncherConfig, runner: RunnerType, roomForJob: () => Promise<string | null>, record: RecordEvent) {
+  const { vm } = config;
+  const { image } = runner;
   if (typeof image === "string") return { current: () => image, prune: async () => {} };
 
   const inVm = (command: string) => readFromVm({ vm, command }).then((output) => output.trim() === "yes");
@@ -109,21 +111,19 @@ async function keepImage(
     build: (tag) => buildInVm({ vm, context: image.context, tag }),
     remove: (tag) => inVm(`docker image rm ${shellQuote(tag)} >/dev/null 2>&1 && echo yes || echo no`),
     roomForJob,
-    log: console.log,
+    log: (line) => console.log(`${runner.name} ${line}`),
     record,
     now: Date.now,
   });
-  const refresh = () => keeper.refresh().catch((error: unknown) => console.log(`image: ${message(error)}`));
+  const report = (error: unknown) => console.log(`${runner.name} image: ${message(error)}`);
+  const refresh = () => keeper.refresh().catch(report);
 
   for (;;) {
     await refresh();
     const tag = keeper.current();
     if (tag) {
       every(IMAGE_CHECK_MS, refresh);
-      return {
-        current: () => keeper.current() ?? tag,
-        prune: () => keeper.prune().catch((error: unknown) => console.log(`image: ${message(error)}`)),
-      };
+      return { current: () => keeper.current() ?? tag, prune: () => keeper.prune().catch(report) };
     }
     await wait(IMAGE_RETRY_MS);
   }
