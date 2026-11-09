@@ -61,12 +61,17 @@ node runnerbox.js up --config /path/to/config.json   # on the host, never inside
 Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a service, use [`deploy/runnerbox@.service`](deploy/runnerbox@.service).
 
 - `name` prefixes this install's containers and runners, so give each install on a VM its own.
-- `image` is either a prebuilt image's reference, or `{ "name": "app-ci", "context": "/path/on/host" }`. A context is a directory holding your Dockerfile, which starts `FROM runnerbox-base`. `up` builds it in the VM, tagged by a hash of its files, before any slot starts. It checks every 5 minutes, and when a file has changed, it builds again, provided memory is above its floor. A runner waiting for a job is restarted on the new tag within about a minute, so the next job gets it, though a job queued in that minute still runs on the old one. A job already running finishes on the image it started with. Old tags are removed as soon as no container uses them. A failed build leaves new containers on the last good image.
 - `scope` is `{ "org": "name" }` or `{ "repo": "owner/name" }`. Prefer the narrowest one that works.
 - `tokenFile` must have `600` permissions. Use a fine-grained token that can only do this: "Self-hosted runners: Read and write" on the organization, or "Administration: Read and write" on one repository. The repository permission can do far more than mint runners, so an org token is safer when you have an org. There's no fallback to your `gh` login.
 - `vm.knownHostsFile` must already hold the VM's host key. SSH refuses to connect otherwise.
 - `memoryFloor` is the memory, in MiB, that the host and the VM must each have available before a slot registers a runner. While either is below its floor, slots wait, and a runner still waiting for a job is removed. A runner that's already running a job keeps it. Runners that registered while memory was fine can still take jobs that arrive at the same moment, so set the VM's floor to at least one job's `memoryReservation`. `0` turns a check off.
-- `env` sets environment variables in every job's container. Test runners size their worker counts from the VM's CPUs, not the container's share, so cap them here.
+- `runners` lists the kinds of runner this install offers, such as one per toolchain or size. Every kind checks the same `memoryFloor`, so together they share the machine, while each kind's `slots` caps how many of its runners wait at once. Each has:
+  - `name`, short, which names its containers (`<install>-<name>-slot<n>`) and runners.
+  - `label`, the `runs-on:` label its jobs ask for. Labels must differ between kinds.
+  - `slots`, how many of its runners wait for jobs at once.
+  - `image`, either a prebuilt image's reference, or `{ "name": "app-ci", "context": "/path/on/host" }`. A context is a directory holding your Dockerfile, which starts `FROM runnerbox-base`. `up` builds it in the VM, tagged by a hash of its files, before that kind's slots start. It checks every 5 minutes, and when a file has changed, it builds again, provided memory is above its floor. A runner waiting for a job is restarted on the new tag within about a minute, so the next job gets it, though a job queued in that minute still runs on the old one. A job already running finishes on the image it started with. Old tags are removed as soon as no container uses them. A failed build leaves new containers on the last good image.
+  - `limits`, the container's memory, CPU and process limits.
+  - `env`, environment variables set in every job's container. Test runners size their worker counts from the VM's CPUs, not the container's share, so cap them here.
 
 `up` records a sample of the host, the VM and its containers every minute, plus one line for each runner, memory wait and image build, in local files described in [docs/analytics.md](docs/analytics.md).
 
