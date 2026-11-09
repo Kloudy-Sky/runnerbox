@@ -1,21 +1,10 @@
 import { type } from "arktype";
+import type { Container } from "./sample-record.ts";
 
 // Parsers for what the sampler reads from Linux and Docker. Each returns undefined for input it
 // can't read, so one bad section leaves the rest of a sample intact.
 
 export type CpuCounters = { busy: number; total: number };
-
-export type Machine = {
-  totalMiB: number;
-  // The kernel's estimate of memory a new process could use without swapping.
-  availableMiB: number;
-  swapUsedMiB: number;
-  load1: number;
-  // Over the time since the previous sample. Absent on a sampler's first sample.
-  cpuBusyPercent?: number;
-};
-
-export type Container = { name: string; cpuPercent: number; memMiB: number };
 
 export function parseMeminfo(text: string) {
   const kib = (field: string) => {

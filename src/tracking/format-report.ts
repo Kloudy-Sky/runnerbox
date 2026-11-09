@@ -20,9 +20,14 @@ function table(rows: readonly (readonly string[])[]) {
     .join("\n");
 }
 
+const mib = (value: number | null) => (value === null ? "-" : `${value} MiB`);
+
+// Machine columns appear only when some job had samples, so a report without them stays narrow.
 export function formatSummary(summaries: readonly JobSummary[]) {
+  const machine = summaries.some((row) => row.vmLowP50MiB !== null || row.hostLowP50MiB !== null);
+  const machineHeader = machine ? ["VM LOW P50", "HOST LOW P50", "VM SWAP P90"] : [];
   return table([
-    ["WORKFLOW", "JOB", "RUNNER", "RAN", "FAILED", "PASSED ON RETRY", "NO RUNNER", "P50", "P90", "QUEUE P50", "TOTAL"],
+    ["WORKFLOW", "JOB", "RUNNER", "RAN", "FAILED", "PASSED ON RETRY", "NO RUNNER", "P50", "P90", "QUEUE P50", "QUEUE P90", "TOTAL", ...machineHeader],
     ...summaries.map((row) => [
       row.workflow ?? "-",
       row.job,
@@ -34,7 +39,9 @@ export function formatSummary(summaries: readonly JobSummary[]) {
       formatDuration(row.p50Ms),
       formatDuration(row.p90Ms),
       formatDuration(row.queueP50Ms),
+      formatDuration(row.queueP90Ms),
       formatDuration(row.totalMs),
+      ...(machine ? [mib(row.vmLowP50MiB), mib(row.hostLowP50MiB), mib(row.vmSwapP90MiB)] : []),
     ]),
   ]);
 }

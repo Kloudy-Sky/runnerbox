@@ -27,7 +27,7 @@ node runnerbox.js report --repo owner/name --since 30d
 node runnerbox.js report --repo owner/name --job test --offline
 ```
 
-The first command summarizes each job per runner type: runs, failures, failures that passed on retry, jobs that never got a runner, and how long jobs took and queued. `--job` compares one job's steps across runner types, which shows where a slower runner spends its time. If two workflows use the same job name, add `--workflow`.
+The first command summarizes each job per runner type: runs, failures, failures that passed on retry, jobs that never got a runner, and how long jobs took and queued. `--job` compares one job's steps across runner types, which shows where a slower runner spends its time. If two workflows use the same job name, add `--workflow`. `--by runner` groups by runner name without its trailing numbers instead of by label, which tells two launchers serving one label apart. On a host where `up` runs, the report also joins each job to the samples taken while it ran, and adds the median lowest memory available on the VM and host and the P90 of VM swap in use.
 
 Each job becomes one line in `~/.local/state/runnerbox/<owner>__<name>.ndjson`, or under `XDG_STATE_HOME` if that's set. Syncs resume where they stopped. Job and branch names can be private, so the log stays outside your checkout.
 
