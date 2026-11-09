@@ -6,7 +6,6 @@ import type { Container } from "./sample-record.ts";
 
 export type CpuCounters = { busy: number; total: number };
 
-
 export function parseMeminfo(text: string) {
   const kib = (field: string) => {
     const value = new RegExp(`^${field}:\\s+(\\d+) kB$`, "m").exec(text)?.[1];

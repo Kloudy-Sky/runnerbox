@@ -18,8 +18,6 @@ export const VM_SAMPLE_COMMAND =
 
 export type MachineText = { meminfo: string; loadavg: string; stat: string };
 
-// A machine that couldn't be read is left out, never written as zeros.
-
 type SamplerActions = {
   readHost: () => Promise<MachineText>;
   // VM_SAMPLE_COMMAND's output.

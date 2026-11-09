@@ -35,9 +35,13 @@ export function runnerType({ labels }: Pick<JobRecord, "labels">) {
   return labels.filter((label) => label !== "self-hosted").join(",") || "unknown";
 }
 
+// runnerbox names runners `<install>-<kind>-<slot>-<epoch seconds>`, and a kind can be all digits,
+// so exactly that suffix is removed. Other launchers' names lose every trailing number.
 export function runnerGroup(record: JobRecord, by: GroupBy) {
   if (by === "labels") return runnerType(record);
-  return record.runner?.replace(/([-_ ]\d+)+$/, "") || "none";
+  const { runner } = record;
+  if (!runner) return "none";
+  return /^(.+)-\d+-\d{10}$/.exec(runner)?.[1] ?? (runner.replace(/([-_ ]\d+)+$/, "") || runner);
 }
 
 // A job that never got a machine still has start and end times, so runner is the only proof it ran.

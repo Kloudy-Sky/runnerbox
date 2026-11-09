@@ -31,7 +31,7 @@ Every event has `time`, when it was written, and `startedAt` and `durationMs`. E
 
 ## In `report`
 
-On a host with sample files, `report` joins each job to the samples taken between its start and end, with 30 seconds of slack either side. For each group it shows the median of each job's lowest `availableMiB` on the VM and host, and the P90 of each job's highest VM `swapUsedMiB`. A job with no samples counts in `RAN` but not in these columns, so a group's machine figures can cover fewer jobs than it ran.
+On a host with sample files, `report` joins each job to the samples taken between its start and end, with 30 seconds of slack either side. For each group it shows the median of each job's lowest `availableMiB` on the VM and host, and the P90 of each job's highest VM `swapUsedMiB`. A job is joined only to samples from its own install, recognised by its runner name starting `<install>-`. Hosted runners and another launcher's runners get no machine figures, even one sharing the same VM. A job with no samples counts in `RAN` but not in these columns, so a group's machine figures can cover fewer jobs than it ran.
 
 ## Measurement traps
 

@@ -140,3 +140,11 @@ test("machine columns come from the samples joined to each job", () => {
   assert.equal(summary?.vmSwapP90MiB, 300);
   assert.equal(summary?.hostLowP50MiB, null);
 });
+
+test("runnerbox kinds named with digits stay apart when grouped by runner", () => {
+  const summaries = summarizeJobs(
+    [record({ runner: "rb-22-1-1794160988" }), record({ runner: "rb-24-1-1794160988" }), record({ runner: "box-2" })],
+    { by: "runner" },
+  );
+  assert.deepEqual(summaries.map((row) => row.runnerType).sort(), ["box", "rb-22", "rb-24"]);
+});

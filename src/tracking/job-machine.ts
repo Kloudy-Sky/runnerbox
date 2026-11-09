@@ -1,4 +1,5 @@
 import type { JobRecord } from "./job-record.ts";
+import type { InstallSample } from "./sample-log.ts";
 import type { Sample } from "./sample-record.ts";
 
 // GitHub's clock and the host's can disagree by seconds, so a sample just outside a job still counts.
@@ -8,8 +9,20 @@ const SLACK_MS = 30_000;
 // in use across its samples. A sample a minute misses spikes, so these are bounds, not peaks.
 export type JobMachine = { samples: number; vmLowMiB?: number; hostLowMiB?: number; vmSwapPeakMiB?: number };
 
-// Returns a lookup from a job to the samples taken while it ran. `samples` must be sorted by time.
-export function machineDuringJobs(samples: readonly Sample[]) {
+// Returns a lookup from a job to the samples its own install took while it ran. A job counts as an
+// install's when its runner is named `<install>-…`, which install names keep unambiguous. Other
+// runners, hosted ones or another launcher's, get nothing, since these samples aren't of their
+// machine. `samples` must be sorted by time.
+export function machineDuringJobs(samples: readonly InstallSample[]) {
+  const byInstall = Map.groupBy(samples, ({ install }) => install);
+  const lookups = new Map([...byInstall].map(([install, own]) => [install, lookupFor(own.map(({ sample }) => sample))]));
+  return (job: Pick<JobRecord, "runner" | "startedAt" | "completedAt">): JobMachine | undefined => {
+    const install = [...lookups.keys()].find((name) => job.runner?.startsWith(`${name}-`));
+    return install === undefined ? undefined : lookups.get(install)?.(job);
+  };
+}
+
+function lookupFor(samples: readonly Sample[]) {
   const times = samples.map((sample) => Date.parse(sample.time));
 
   // The index of the first sample at or after `ms`.
