@@ -8,7 +8,17 @@ class Stop extends Error {}
 
 // `rooms` answers roomForJob in turn, then there's room. A memory check registered with `every`
 // runs once while the container does.
-function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0, rooms = [] as (string | null)[] } = {}) {
+function fakes({
+  mintFails = false,
+  waitsBeforeStop = 1,
+  exitCode = 0,
+  jobMs = 0,
+  rooms = [] as (string | null)[],
+  images = [] as string[],
+} = {}) {
+  // `images` answers image() in turn, then stays on its last answer.
+  let image = images.shift() ?? "app:1";
+  const nextImage = () => (image = images.shift() ?? image);
   const events: string[] = [];
   const recorded: LauncherEvent[] = [];
   const checks: (() => Promise<void>)[] = [];
@@ -32,7 +42,8 @@ function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0
         if (mintFails) throw new Error("GitHub returned 401");
         return { runnerId: 7, jitConfig: `registration-for-${name}` };
       },
-      runContainer: async (slot: number, registration: string) => {
+      image: () => nextImage(),
+      runContainer: async (slot: number, registration: string, _image: string) => {
         events.push(`run ${slot} ${registration}`);
         for (const check of checks.splice(0)) await check();
         time += jobMs;
@@ -94,9 +105,9 @@ test("a slot's runner counts as registered only while its container runs", async
   const registered = new Map<number, number>();
   const seen: (number | undefined)[] = [];
   const runContainer = actions.runContainer;
-  actions.runContainer = async (slot, registration) => {
+  actions.runContainer = async (slot, registration, image) => {
     seen.push(registered.get(slot));
-    return runContainer(slot, registration);
+    return runContainer(slot, registration, image);
   };
 
   await assert.rejects(runSlots("box", 1, actions, registered), Stop);
@@ -142,4 +153,13 @@ test("each runner and each wait for memory becomes one event", async () => {
     exitCode: 0,
     released: false,
   });
+});
+
+test("an idle runner on an old image is removed so its next job gets the new one", async () => {
+  const { actions, events, recorded } = fakes({ images: ["app:1", "app:1", "app:2"] });
+  await assert.rejects(runSlots("box", 1, actions), Stop);
+
+  assert.ok(events.includes("release 7"));
+  assert.ok(events.includes("log slot 1: removed idle box-1-1700000000: new containers use app:2"));
+  assert.equal(recorded.find((event) => event.event === "runner")?.released, "image");
 });

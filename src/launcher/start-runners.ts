@@ -67,8 +67,12 @@ export async function startRunners(configPath: string) {
           runnerName,
           label: config.label,
         }),
-      runContainer: (slot, secret) =>
-        runInVm({ vm: config.vm, command: dockerRunCommand(config, slot, image()), secret }),
+      runContainer: async (slot, secret, tag) => {
+        const exitCode = await runInVm({ vm: config.vm, command: dockerRunCommand(config, slot, tag), secret });
+        await image.prune();
+        return exitCode;
+      },
+      image: image.current,
       roomForJob,
       release: async (runnerId) => {
         try {
@@ -88,15 +92,15 @@ export async function startRunners(configPath: string) {
   );
 }
 
-// Returns the image new containers should use. A build context is built before any slot starts,
-// then checked for changes every few minutes.
+// Returns the image new containers should use, and a prune that removes old tags nothing uses. A
+// build context is built before any slot starts, then checked for changes every few minutes.
 async function keepImage(
   config: LauncherConfig,
   roomForJob: () => Promise<string | null>,
   record: (event: LauncherEvent) => void,
 ) {
   const { image, vm } = config;
-  if (typeof image === "string") return () => image;
+  if (typeof image === "string") return { current: () => image, prune: async () => {} };
 
   const inVm = (command: string) => readFromVm({ vm, command }).then((output) => output.trim() === "yes");
   const keeper = createImageKeeper(image.name, {
@@ -116,7 +120,10 @@ async function keepImage(
     const tag = keeper.current();
     if (tag) {
       every(IMAGE_CHECK_MS, refresh);
-      return () => keeper.current() ?? tag;
+      return {
+        current: () => keeper.current() ?? tag,
+        prune: () => keeper.prune().catch((error: unknown) => console.log(`image: ${message(error)}`)),
+      };
     }
     await wait(IMAGE_RETRY_MS);
   }
