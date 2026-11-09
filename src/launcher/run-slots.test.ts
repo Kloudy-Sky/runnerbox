@@ -15,6 +15,8 @@ function fakes({
   jobMs = 0,
   rooms = [] as (string | null)[],
   images = [] as string[],
+  releasable = true,
+  checksPerRun = 1,
 } = {}) {
   // `images` answers image() in turn, then stays on its last answer.
   let image = images.shift() ?? "app:1";
@@ -31,7 +33,7 @@ function fakes({
       roomForJob: async () => rooms.shift() ?? null,
       release: async (runnerId: number) => {
         events.push(`release ${runnerId}`);
-        return true;
+        return releasable;
       },
       every: (_ms: number, check: () => Promise<void>) => {
         checks.push(check);
@@ -45,7 +47,7 @@ function fakes({
       image: () => nextImage(),
       runContainer: async (slot: number, registration: string, _image: string) => {
         events.push(`run ${slot} ${registration}`);
-        for (const check of checks.splice(0)) await check();
+        for (const check of checks.splice(0)) for (let tick = 0; tick < checksPerRun; tick++) await check();
         time += jobMs;
         return exitCode;
       },
@@ -162,4 +164,16 @@ test("an idle runner on an old image is removed so its next job gets the new one
   assert.ok(events.includes("release 7"));
   assert.ok(events.includes("log slot 1: removed idle box-1-1700000000: new containers use app:2"));
   assert.equal(recorded.find((event) => event.event === "runner")?.released, "image");
+});
+
+test("a runner that refused removal once is never asked again", async () => {
+  const { actions, events } = fakes({ images: ["app:1", "app:1", "app:2"], releasable: false, checksPerRun: 3 });
+  await assert.rejects(runSlots("box", 1, actions), Stop);
+  assert.equal(events.filter((event) => event === "release 7").length, 1);
+});
+
+test("a released runner's quick exit doesn't back off like a broken VM", async () => {
+  const { actions, events } = fakes({ images: ["app:1", "app:1", "app:2"], exitCode: 1, jobMs: 40_000 });
+  await assert.rejects(runSlots("box", 1, actions), Stop);
+  assert.equal(events.at(-1), "wait 5000");
 });
