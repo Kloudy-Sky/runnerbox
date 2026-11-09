@@ -20,14 +20,18 @@ export function createImageKeeper(name: string, actions: ImageActions) {
 
   async function refresh() {
     const tag = `${name}:${(await contextHash()).slice(0, 12)}`;
-    if (tag !== current) {
-      if (!(await existsInVm(tag))) {
+    // The current tag is checked too, so an image removed from the VM by any route gets rebuilt.
+    const exists = await existsInVm(tag);
+    if (tag !== current || !exists) {
+      if (!exists) {
         const short = await roomForJob();
         if (short) return log(`image: not building ${tag} yet: ${short}`);
         log(`image: building ${tag}`);
         if (!(await build(tag))) return log(`image: ${tag} failed to build, so new containers keep ${current ?? "nothing"}`);
       }
-      if (current) stale.add(current);
+      if (current && current !== tag) stale.add(current);
+      // Going back to an earlier context makes a stale tag current again.
+      stale.delete(tag);
       current = tag;
       log(`image: new containers use ${tag}`);
     }

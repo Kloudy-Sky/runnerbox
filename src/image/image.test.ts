@@ -40,12 +40,16 @@ function keeper({ inVm = [] as string[], builds = true, short = null as string |
   const image = createImageKeeper("app", {
     contextHash: async () => hash,
     existsInVm: async (tag) => inVm.includes(tag),
-    build: async (tag) => (events.push(`build ${tag}`), builds),
+    build: async (tag) => {
+      events.push(`build ${tag}`);
+      if (builds) inVm.push(tag);
+      return builds;
+    },
     remove: async (tag) => (events.push(`remove ${tag}`), removable),
     roomForJob: async () => short,
     log: () => {},
   });
-  return { image, events, change: (next: string) => (hash = next) };
+  return { image, events, inVm, change: (next: string) => (hash = next) };
 }
 
 test("a missing tag is built once, and an existing one is used as is", async () => {
@@ -97,4 +101,26 @@ test("the build streams the context to docker build in the VM", async () => {
   process.env.FAKE_EXIT = "1";
   assert.equal(await buildInVm({ vm, context: root, tag: "app:abc", sshBinary: ssh }), false);
   delete process.env.FAKE_EXIT;
+});
+
+test("going back to an earlier context never removes the image now in use", async () => {
+  const { image, events, change } = keeper({ removable: false });
+  await image.refresh();
+  change("bbbbbbbbbbbb2222");
+  await image.refresh();
+  change("aaaaaaaaaaaa1111");
+  events.length = 0;
+  await image.refresh();
+  await image.refresh();
+
+  assert.equal(image.current(), "app:aaaaaaaaaaaa");
+  assert.ok(!events.includes("remove app:aaaaaaaaaaaa"));
+});
+
+test("a current image that vanished from the VM is rebuilt", async () => {
+  const { image, events, inVm } = keeper();
+  await image.refresh();
+  inVm.length = 0;
+  await image.refresh();
+  assert.deepEqual(events, ["build app:aaaaaaaaaaaa", "build app:aaaaaaaaaaaa"]);
 });

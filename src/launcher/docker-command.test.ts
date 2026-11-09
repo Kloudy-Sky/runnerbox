@@ -27,3 +27,10 @@ test("env values reach docker literally, whatever they contain", async () => {
   });
   assert.ok(output.split("\n").includes(`VALUE=${value}`));
 });
+
+test("an image built from a context is never pulled", async () => {
+  const config = await loadLauncherConfig("runnerbox.example.json");
+  const built = { ...config, image: { name: "app", context: "/ci-image" } } as const;
+  assert.match(dockerRunCommand(built, 1, "app:abc"), / --pull never 'app:abc'$/);
+  assert.doesNotMatch(dockerRunCommand(config, 1, "runnerbox-base"), /--pull/);
+});
