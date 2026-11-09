@@ -72,6 +72,7 @@ test("each runner gets its own registration, and the next starts after a short w
     "mint box-1-1700000000",
     "run 1 registration-for-box-1-1700000000",
     "stop watching",
+    "release 7",
     "log slot 1: box-1-1700000000 finished (0)",
     "wait 5000",
   ]);
@@ -168,10 +169,11 @@ test("an idle runner on an old image is removed so its next job gets the new one
   assert.equal(recorded.find((event) => event.event === "runner")?.released, "image");
 });
 
-test("a runner that refused removal once is never asked again", async () => {
+test("a runner that refused removal is not asked again while its container runs", async () => {
   const { actions, events } = fakes({ images: ["app:1", "app:1", "app:2"], releasable: false, checksPerRun: 3 });
   await assert.rejects(runSlots("box", 1, actions), Stop);
-  assert.equal(events.filter((event) => event === "release 7").length, 1);
+  const whileRunning = events.slice(0, events.indexOf("stop watching"));
+  assert.equal(whileRunning.filter((event) => event === "release 7").length, 1);
 });
 
 test("a released runner's quick exit doesn't back off like a broken VM", async () => {
@@ -200,4 +202,11 @@ test("a runner minted after a drain began is removed, never started", async () =
   await runSlots("box", 1, actions);
   assert.ok(events.includes("release 7"));
   assert.ok(!events.some((event) => event.startsWith("run ")));
+});
+
+test("a runner's registration is removed once its container exits", async () => {
+  const { actions, events } = fakes();
+  await assert.rejects(runSlots("box", 1, actions), Stop);
+  const run = events.findIndex((event) => event.startsWith("run "));
+  assert.ok(events.indexOf("release 7") > run);
 });

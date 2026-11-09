@@ -99,6 +99,10 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
     });
     const exitCode = await runContainer(slot, registration.jitConfig, startedImage);
     stopWatching();
+    // A runner that finished its job is already gone, so this usually gets a refusal. One that exited
+    // without finishing, as when GitHub hands it a job just as that job is cancelled, would
+    // otherwise stay listed as offline.
+    if (!released) await release(registration.runnerId);
     registered.delete(slot);
     record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released });
     log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
