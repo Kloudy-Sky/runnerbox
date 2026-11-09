@@ -31,6 +31,8 @@ The first command summarizes each job per runner type: runs, failures, failures 
 
 `runnerbox summary --repo owner/name` prints a week's markdown from the local logs, without calling GitHub: the jobs that used the most runner time, what `up` did (runners, failures, runners removed for memory or a new image, memory waits, image builds), and how close each install's machines came to running out. `--redact` replaces every repo, workflow, job, runner, install and kind name with a hash keyed by `summary.key` in the state directory. A name hashes the same every week, so summaries can be compared, but the hashes can't be checked against guessed names without the key.
 
+To keep history and a summary current on the host, enable the timer in [`deploy/`](deploy): `systemctl --user enable --now runnerbox-report@owner__name.timer`, with `/` written as `__`. Each hour it syncs the last 2 days and writes a redacted 7-day summary to `~/.local/state/runnerbox/owner__name.summary.md`. It reads `GITHUB_TOKEN` from `~/.config/runnerbox/report.env`, which should be owner-only and hold a fine-grained token that can read the repository's Actions.
+
 Each job becomes one line in `~/.local/state/runnerbox/<owner>__<name>.ndjson`, or under `XDG_STATE_HOME` if that's set. Syncs resume where they stopped. Job and branch names can be private, so the log stays outside your checkout.
 
 Syncing makes at least one GitHub request per run, so a busy repository can take a while. It stops with 1,000 requests left in the hourly limit, or 20% for tokens with a small limit, because that limit is shared with everything else using the same account. Run it again after the reset to continue.
