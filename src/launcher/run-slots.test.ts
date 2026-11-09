@@ -169,7 +169,7 @@ test("an idle runner on an old image is removed so its next job gets the new one
   assert.equal(recorded.find((event) => event.event === "runner")?.released, "image");
 });
 
-test("a runner that refused removal once is never asked again", async () => {
+test("a runner that refused removal is not asked again while its container runs", async () => {
   const { actions, events } = fakes({ images: ["app:1", "app:1", "app:2"], releasable: false, checksPerRun: 3 });
   await assert.rejects(runSlots("box", 1, actions), Stop);
   const whileRunning = events.slice(0, events.indexOf("stop watching"));
