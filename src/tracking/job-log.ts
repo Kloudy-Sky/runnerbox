@@ -1,16 +1,10 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, join } from "node:path";
 import { type } from "arktype";
 import { distinctJobs, JobRecord } from "./job-record.ts";
+import { stateDir } from "./state-dir.ts";
 
-// The log lives outside any checkout because job and branch names can be private.
-export function defaultLogPath(repo: string) {
-  // The XDG spec says to ignore relative paths, which could also land inside a checkout.
-  const configured = process.env.XDG_STATE_HOME;
-  const stateHome = configured && isAbsolute(configured) ? configured : join(homedir(), ".local", "state");
-  return join(stateHome, "runnerbox", `${repo.replace("/", "__")}.ndjson`);
-}
+export const defaultLogPath = (repo: string) => join(stateDir(), `${repo.replace("/", "__")}.ndjson`);
 
 export function createJobLog(path: string) {
   return {

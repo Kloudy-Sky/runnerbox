@@ -48,6 +48,8 @@ function keeper({ inVm = [] as string[], builds = true, short = null as string |
     remove: async (tag) => (events.push(`remove ${tag}`), removable),
     roomForJob: async () => short,
     log: () => {},
+    record: () => {},
+    now: () => 0,
   });
   return { image, events, inVm, change: (next: string) => (hash = next) };
 }

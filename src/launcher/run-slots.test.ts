@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { LauncherEvent } from "../tracking/launcher-event.ts";
 import { runSlots } from "./run-slots.ts";
 
 // runSlots never returns on its own, so a wait after the given count ends the test.
@@ -9,11 +10,14 @@ class Stop extends Error {}
 // runs once while the container does.
 function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0, rooms = [] as (string | null)[] } = {}) {
   const events: string[] = [];
+  const recorded: LauncherEvent[] = [];
   const checks: (() => Promise<void>)[] = [];
   let waits = 0;
   let time = 1_700_000_000_000;
   return {
     events,
+    recorded,
+    advance: (ms: number) => (time += ms),
     actions: {
       roomForJob: async () => rooms.shift() ?? null,
       release: async (runnerId: number) => {
@@ -41,6 +45,7 @@ function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0
       },
       now: () => time,
       log: (message: string) => void events.push(`log ${message}`),
+      record: (event: LauncherEvent) => void recorded.push(event),
     },
   };
 }
@@ -119,4 +124,23 @@ test("an idle runner is removed when memory drops while it waits for a job", asy
 
   assert.ok(events.includes("release 7"));
   assert.ok(events.includes("log slot 1: removed idle box-1-1700000000: the host is short"));
+});
+
+test("each runner and each wait for memory becomes one event", async () => {
+  const { actions, recorded } = fakes({ rooms: ["the VM is short"], waitsBeforeStop: 2, jobMs: 90_000 });
+  await assert.rejects(runSlots("box", 1, actions), Stop);
+
+  assert.deepEqual(
+    recorded.map(({ event }) => event),
+    ["memory_wait", "runner"],
+  );
+  assert.deepEqual(recorded[1], {
+    event: "runner",
+    slot: 1,
+    runner: "box-1-1700000000",
+    startedAt: "2023-11-14T22:13:20.000Z",
+    durationMs: 90_000,
+    exitCode: 0,
+    released: false,
+  });
 });

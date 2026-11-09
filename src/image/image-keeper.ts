@@ -1,3 +1,5 @@
+import type { LauncherEvent } from "../tracking/launcher-event.ts";
+
 type ImageActions = {
   contextHash: () => Promise<string>;
   existsInVm: (tag: string) => Promise<boolean>;
@@ -8,13 +10,15 @@ type ImageActions = {
   // Why there's no memory for a build right now, or null when there is.
   roomForJob: () => Promise<string | null>;
   log: (message: string) => void;
+  record: (event: LauncherEvent) => void;
+  now: () => number;
 };
 
 // Keeps a project's image built in the VM, tagged by its build context's hash. New containers use
 // `current`; a running container keeps the image it started with, and older tags are removed once
 // nothing uses them.
 export function createImageKeeper(name: string, actions: ImageActions) {
-  const { contextHash, existsInVm, build, remove, roomForJob, log } = actions;
+  const { contextHash, existsInVm, build, remove, roomForJob, log, record, now } = actions;
   let current: string | null = null;
   const stale = new Set<string>();
 
@@ -27,7 +31,10 @@ export function createImageKeeper(name: string, actions: ImageActions) {
         const short = await roomForJob();
         if (short) return log(`image: not building ${tag} yet: ${short}`);
         log(`image: building ${tag}`);
-        if (!(await build(tag))) return log(`image: ${tag} failed to build, so new containers keep ${current ?? "nothing"}`);
+        const startedAt = now();
+        const ok = await build(tag);
+        record({ event: "image_build", tag, startedAt: new Date(startedAt).toISOString(), durationMs: now() - startedAt, ok });
+        if (!ok) return log(`image: ${tag} failed to build, so new containers keep ${current ?? "nothing"}`);
       }
       if (current && current !== tag) stale.add(current);
       // Going back to an earlier context makes a stale tag current again.
