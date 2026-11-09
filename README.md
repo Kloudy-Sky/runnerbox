@@ -81,7 +81,7 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 
 `up` records a sample of the host, the VM and its containers every minute, plus one line for each runner, memory wait and image build, in local files described in [docs/analytics.md](docs/analytics.md).
 
-Restarting `up` removes each slot's container, which kills any job running there. Stopping it, or lowering `slots`, can leave containers running in the VM until their job times out, so remove those with `docker rm -f`. Stopping `up` removes runners still waiting for a job, but not ones running a job. If the VM or SSH is down, slots log that they're waiting for memory and register nothing, unless `memoryFloor.vmMiB` is `0`. If the image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
+Stopping `up` (SIGTERM or Ctrl-C) drains it: no slot registers again, runners still waiting for a job are removed, and `up` exits once every busy job has finished. A second signal exits at once, and busy containers then finish in the VM on their own. Don't start `up` again while one is still running, because each slot starts by removing its container, which kills the job in it. The service unit gives a drain 30 minutes. Lowering `slots` can leave containers running in the VM until their job finishes, so remove those with `docker rm -f`. If the VM or SSH is down, slots log that they're waiting for memory and register nothing, unless `memoryFloor.vmMiB` is `0`. If the image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
 
 ## How a project uses it
 

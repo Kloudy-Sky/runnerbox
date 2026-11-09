@@ -17,6 +17,7 @@ function fakes({
   images = [] as string[],
   releasable = true,
   checksPerRun = 1,
+  stopAfterFirst = false,
 } = {}) {
   // `images` answers image() in turn, then stays on its last answer.
   let image = images.shift() ?? "app:1";
@@ -58,6 +59,7 @@ function fakes({
       now: () => time,
       log: (message: string) => void events.push(`log ${message}`),
       record: (event: LauncherEvent) => void recorded.push(event),
+      stopping: () => stopAfterFirst && events.some((event) => event.startsWith("run ")),
     },
   };
 }
@@ -176,4 +178,11 @@ test("a released runner's quick exit doesn't back off like a broken VM", async (
   const { actions, events } = fakes({ images: ["app:1", "app:1", "app:2"], exitCode: 1, jobMs: 40_000 });
   await assert.rejects(runSlots("box", 1, actions), Stop);
   assert.equal(events.at(-1), "wait 5000");
+});
+
+test("a draining slot finishes its runner, registers no other, and returns", async () => {
+  const { actions, events } = fakes({ stopAfterFirst: true, waitsBeforeStop: 99 });
+  await runSlots("box", 2, actions);
+  assert.equal(events.filter((event) => event.startsWith("mint")).length, 2);
+  assert.ok(!events.some((event) => event.startsWith("wait")));
 });
