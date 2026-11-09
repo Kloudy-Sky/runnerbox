@@ -13,6 +13,8 @@ Description=runnerbox job history and summary (%i)
 Type=oneshot
 WorkingDirectory=%h/runnerbox
 EnvironmentFile=-%E/runnerbox/report.env
+# The shell's `>` and `mkdir` follow the umask, so the summary comes out owner-only like the rest of the state directory.
+UMask=0077
 # `%%` is a literal `%` to systemd. The table goes nowhere; the job log and summary are what's kept.
 # A failed sync (`-`) doesn't stop the summary, which then covers what was already synced. The sync's
 # error is still in the journal: journalctl --user -u runnerbox-report@%i.
