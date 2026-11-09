@@ -115,11 +115,11 @@ export type StepComparison = {
 
 // Median time per step for each runner type, from successful runs of one job. Shows where a job
 // spends the extra time on a slower runner.
-export function compareSteps(records: readonly JobRecord[], job: string): StepComparison {
+export function compareSteps(records: readonly JobRecord[], job: string, by: GroupBy = "labels"): StepComparison {
   const passed = records.filter(
     (record) => record.job === job && record.runner !== null && record.conclusion === "success",
   );
-  const byType = Map.groupBy(passed, runnerType);
+  const byType = Map.groupBy(passed, (record) => runnerGroup(record, by));
   const stepNames = [...new Set(passed.flatMap((record) => record.steps.map((step) => step.name)))];
 
   return {

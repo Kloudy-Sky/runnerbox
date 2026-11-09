@@ -148,3 +148,12 @@ test("runnerbox kinds named with digits stay apart when grouped by runner", () =
   );
   assert.deepEqual(summaries.map((row) => row.runnerType).sort(), ["box", "rb-22", "rb-24"]);
 });
+
+test("the step comparison groups by runner too when asked", () => {
+  const { runnerTypes } = compareSteps(
+    [record({ runner: "old-box-1" }), record({ runner: "rb-linux-1-1794160988" })],
+    "test",
+    "runner",
+  );
+  assert.deepEqual(runnerTypes.sort(), ["old-box", "rb-linux"]);
+});

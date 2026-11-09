@@ -103,7 +103,7 @@ async function main() {
   if (workflows.size > 1) {
     throw new Error(`Job "${job}" is in ${workflows.size} workflows. Pick one with --workflow.`);
   }
-  console.log(formatStepComparison(compareSteps(records, job)));
+  console.log(formatStepComparison(compareSteps(records, job, by)));
 }
 
 main().catch((error: unknown) => {
