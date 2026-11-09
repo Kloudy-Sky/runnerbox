@@ -9,8 +9,9 @@ const MemorySize = type("/^[0-9]+[bkmg]$/");
 // One kind of runner: the label jobs ask for, and the container that serves them.
 const RunnerType = type({
   "+": "reject",
-  // Names this type's containers and runners, which GitHub caps in length, so keep it short.
-  name: "/^[a-z0-9][a-z0-9-]{0,19}$/",
+  // Names this type's containers and runners, which GitHub caps in length, so it's short. It has no
+  // `-`, which joins it to the install's name, so `<install>-<kind>` can't match another install's.
+  name: "/^[a-z0-9]{1,20}$/",
   label: "/^[\\w.-]+$/",
   // How many of this type's runners wait for jobs at once.
   slots: "1 <= number.integer <= 64",

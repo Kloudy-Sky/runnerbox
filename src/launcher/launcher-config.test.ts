@@ -41,6 +41,8 @@ test("values that could smuggle in SSH options or shell are rejected", async () 
   }
   for (const bad of [
     { name: "linux; evil" },
+    // With a `-`, install `ci` kind `rust-gpu` would share container names with install `ci-rust` kind `gpu`.
+    { name: "rust-gpu" },
     { image: "x $(evil)" },
     { env: { "A;evil": "1" } },
     { env: { VALUE: "a\0b" } },
