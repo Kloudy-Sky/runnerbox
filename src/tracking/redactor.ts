@@ -2,10 +2,14 @@ import { createHmac, randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+// What a name is, hashed with it so the same text in two columns, such as an install and a label
+// both called `ci`, gets two hashes and doesn't link the rows.
+export type NameField = "repo" | "workflow" | "job" | "runner" | "install" | "kind";
+
 // Hashes names with a key kept on the host, so a name hashes the same every week and summaries
 // can be compared, but nobody without the key can test guesses against them.
-export const createRedactor = (key: string) => (name: string) =>
-  `#${createHmac("sha256", key).update(name).digest("hex").slice(0, 8)}`;
+export const createRedactor = (key: string) => (field: NameField, name: string) =>
+  `#${createHmac("sha256", key).update(`${field}\0${name}`).digest("hex").slice(0, 8)}`;
 
 const KEY = /^[0-9a-f]{64}$/;
 

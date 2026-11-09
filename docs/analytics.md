@@ -37,7 +37,7 @@ On a host with sample files, `report` joins each job to the samples taken betwee
 
 `summary` reads the job log, the samples and the events, all from local files. Under **Launcher**, `Failed` counts runners whose container ended non-zero or lost SSH, not ones the slot removed on purpose, which are counted under the two `Released` columns. Under **Machines**, `VM available P10` is the level available memory was below in one sample in ten.
 
-With `--redact`, names are replaced by the first 8 hex digits of an HMAC-SHA256 keyed by `summary.key` (32 random bytes, owner-only), which `summary` creates on first use. Numbers, durations and dates aren't changed.
+With `--redact`, names are replaced by the first 8 hex digits of an HMAC-SHA256 of the column and the name, keyed by `summary.key` (32 random bytes, owner-only), which `summary` creates on first use. Hashing the column with the name means an install and a label with the same name get different hashes. Numbers, durations and dates aren't changed.
 
 ## Measurement traps
 
