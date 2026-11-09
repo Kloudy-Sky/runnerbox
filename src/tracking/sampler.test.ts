@@ -1,14 +1,23 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { parseContainer, parseMeminfo } from "./machine-sample.ts";
+import { execFileSync } from "node:child_process";
+import { parseContainer, parseCpuCounters, parseMeminfo } from "./machine-sample.ts";
 import { createRotatingLog } from "./rotating-log.ts";
-import { createSampler, type Sample } from "./sampler.ts";
+import { createSampler, type Sample, splitSections, VM_SAMPLE_COMMAND } from "./sampler.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-sampler-"));
 after(() => rm(dir, { recursive: true }));
+
+// A docker that fails like a timed-out one, and a timeout that just runs its command.
+const fakeBin = join(dir, "bin");
+await mkdir(fakeBin);
+await writeFile(join(fakeBin, "docker"), "#!/bin/bash\nexit 124\n");
+await writeFile(join(fakeBin, "timeout"), '#!/bin/bash\nshift; exec "$@"\n');
+await chmod(join(fakeBin, "docker"), 0o755);
+await chmod(join(fakeBin, "timeout"), 0o755);
 
 const meminfo = (availableMiB: number, swapFreeMiB: number) =>
   `MemTotal: ${4096 * 1024} kB\nMemFree: 1 kB\nMemAvailable: ${availableMiB * 1024} kB\nSwapTotal: ${4096 * 1024} kB\nSwapFree: ${swapFreeMiB * 1024} kB\n`;
@@ -54,10 +63,25 @@ test("a sample has both machines and every container, with CPU from the second s
 });
 
 test("the log rolls over past its size and keeps a bounded number of files", async () => {
-  const log = createRotatingLog(join(dir, "events.ndjson"), { maxBytes: 50, keep: 2 });
+  const logDir = join(dir, "logs");
+  const log = createRotatingLog(join(logDir, "events.ndjson"), { maxBytes: 50, keep: 2 });
   for (let index = 0; index < 20; index++) await log.append({ index, padding: "xxxxxxxxxx" });
 
-  assert.deepEqual((await readdir(dir)).sort(), ["events.ndjson", "events.ndjson.1", "events.ndjson.2"]);
-  const last = (await readFile(join(dir, "events.ndjson"), "utf8")).trim().split("\n").at(-1) ?? "";
+  assert.deepEqual((await readdir(logDir)).sort(), ["events.ndjson", "events.ndjson.1", "events.ndjson.2"]);
+  const last = (await readFile(join(logDir, "events.ndjson"), "utf8")).trim().split("\n").at(-1) ?? "";
   assert.equal(JSON.parse(last).index, 19);
+});
+
+test("guest time isn't counted twice, and steal isn't busy", () => {
+  // user=50 nice=0 system=0 idle=40 iowait=0 irq=0 softirq=0 steal=10 guest=50 guest_nice=0
+  assert.deepEqual(parseCpuCounters("cpu 50 0 0 40 0 0 0 10 50 0"), { busy: 50, total: 100 });
+});
+
+test("the VM command keeps its sections when Docker times out", () => {
+  const output = execFileSync("bash", ["-c", VM_SAMPLE_COMMAND], {
+    encoding: "utf8",
+    env: { PATH: `${fakeBin}:/usr/bin:/bin` },
+  });
+  const sections = splitSections(output);
+  assert.deepEqual(Object.keys(sections), ["meminfo", "loadavg", "stat"]);
 });

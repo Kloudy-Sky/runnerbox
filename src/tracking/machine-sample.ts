@@ -32,14 +32,17 @@ export function parseLoad1(loadavg: string) {
   return Number.isFinite(load) ? load : undefined;
 }
 
-// The first line of /proc/stat. Busy is everything except idle and iowait.
+// The first line of /proc/stat: user nice system idle iowait irq softirq steal, then guest and
+// guest_nice, which the kernel already counts inside user and nice, so only the first 8 are summed.
+// Busy leaves out idle, iowait and steal, the last being time the hypervisor gave to someone else.
 export function parseCpuCounters(statLine: string): CpuCounters | undefined {
   const fields = statLine.trim().split(/\s+/);
   if (fields[0] !== "cpu") return;
-  const values = fields.slice(1).map(Number);
+  const values = fields.slice(1, 9).map(Number);
   if (values.length < 5 || values.some((value) => !Number.isFinite(value))) return;
   const total = values.reduce((sum, value) => sum + value, 0);
-  return { busy: total - (values[3] ?? 0) - (values[4] ?? 0), total };
+  const [idle = 0, iowait = 0, , , steal = 0] = values.slice(3);
+  return { busy: total - idle - iowait - steal, total };
 }
 
 export function busyPercent(previous: CpuCounters | undefined, current: CpuCounters) {

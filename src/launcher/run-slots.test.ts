@@ -17,7 +17,6 @@ function fakes({ mintFails = false, waitsBeforeStop = 1, exitCode = 0, jobMs = 0
   return {
     events,
     recorded,
-    advance: (ms: number) => (time += ms),
     actions: {
       roomForJob: async () => rooms.shift() ?? null,
       release: async (runnerId: number) => {
