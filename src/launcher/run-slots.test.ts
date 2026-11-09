@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
 import { runSlots } from "./run-slots.ts";
 
-// runSlots never returns on its own, so a wait after the given count ends the test.
+// runSlots only returns when draining, so a wait after the given count ends the other tests.
 class Stop extends Error {}
 
 // `rooms` answers roomForJob in turn, then there's room. A memory check registered with `every`
@@ -185,4 +185,19 @@ test("a draining slot finishes its runner, registers no other, and returns", asy
   await runSlots("box", 2, actions);
   assert.equal(events.filter((event) => event.startsWith("mint")).length, 2);
   assert.ok(!events.some((event) => event.startsWith("wait")));
+});
+
+test("a runner minted after a drain began is removed, never started", async () => {
+  const { actions, events } = fakes({ waitsBeforeStop: 99 });
+  let draining = false;
+  const mint = actions.mint;
+  actions.mint = async (name) => {
+    const registration = await mint(name);
+    draining = true;
+    return registration;
+  };
+  actions.stopping = () => draining;
+  await runSlots("box", 1, actions);
+  assert.ok(events.includes("release 7"));
+  assert.ok(!events.some((event) => event.startsWith("run ")));
 });

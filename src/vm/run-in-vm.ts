@@ -29,7 +29,9 @@ export function sshArgs(vm: Vm, command: string) {
 // start or was killed. Output goes to this process's own stdout and stderr.
 export function runInVm({ vm, command, secret, sshBinary = "ssh" }: VmCommand) {
   return new Promise<number | null>((resolve) => {
-    const ssh = spawn(sshBinary, sshArgs(vm, command), { stdio: ["pipe", "inherit", "inherit"] });
+    // Its own process group, so a terminal's Ctrl-C reaches only `up`, which drains, and doesn't cut
+    // the session a busy job's container is attached to.
+    const ssh = spawn(sshBinary, sshArgs(vm, command), { stdio: ["pipe", "inherit", "inherit"], detached: true });
     ssh.on("error", () => resolve(null));
     ssh.on("close", (code) => resolve(code));
     // If SSH dies before reading this, the close event above still reports it.

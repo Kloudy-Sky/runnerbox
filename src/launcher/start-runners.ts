@@ -71,7 +71,9 @@ export async function startRunners(configPath: string) {
   await Promise.all(
     config.runners.map(async (runner, index) => {
       const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
-      const image = await keepImage(config, runner, roomForJob, recordForType);
+      const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping);
+      // Draining before this kind's image was ever ready, so it has no slots to wait for.
+      if (!image) return;
       await runSlots(
         `${config.name}-${runner.name}`,
         runner.slots,
@@ -111,7 +113,13 @@ export async function startRunners(configPath: string) {
 // Returns the image a runner type's new containers should use, and a prune that removes old tags
 // nothing uses. A build context is built before that type's slots start, then checked for changes
 // every few minutes.
-async function keepImage(config: LauncherConfig, runner: RunnerType, roomForJob: () => Promise<string | null>, record: RecordEvent) {
+async function keepImage(
+  config: LauncherConfig,
+  runner: RunnerType,
+  roomForJob: () => Promise<string | null>,
+  record: RecordEvent,
+  stopping: () => boolean,
+) {
   const { vm } = config;
   const { image } = runner;
   if (typeof image === "string") return { current: () => image, prune: async () => {} };
@@ -130,7 +138,7 @@ async function keepImage(config: LauncherConfig, runner: RunnerType, roomForJob:
   const report = (error: unknown) => console.log(`${runner.name} image: ${message(error)}`);
   const refresh = () => keeper.refresh().catch(report);
 
-  for (;;) {
+  while (!stopping()) {
     await refresh();
     const tag = keeper.current();
     if (tag) {
@@ -139,6 +147,7 @@ async function keepImage(config: LauncherConfig, runner: RunnerType, roomForJob:
     }
     await wait(IMAGE_RETRY_MS);
   }
+  return null;
 }
 
 // One sample a minute of the host, the VM and every container in it, whether or not jobs are running.

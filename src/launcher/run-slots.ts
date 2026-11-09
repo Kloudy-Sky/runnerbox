@@ -72,6 +72,11 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
       await wait(MINT_RETRY_MS);
       continue;
     }
+    // A drain that began while this mint was in flight couldn't see this runner to remove it.
+    if (stopping()) {
+      await release(registration.runnerId);
+      return;
+    }
 
     registered.set(slot, registration.runnerId);
     const startedAt = now();
