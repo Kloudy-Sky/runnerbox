@@ -1,6 +1,7 @@
 import { formatDuration, stripControlCharacters } from "./format-report.ts";
 import type { LauncherRow } from "./launcher-summary.ts";
 import type { MachineRow } from "./machine-summary.ts";
+import type { NameField } from "./redactor.ts";
 import type { JobSummary } from "./report.ts";
 
 export type WeeklySummary = {
@@ -16,18 +17,22 @@ const JOB_ROWS = 25;
 
 // Replaces every name that can identify a project: repos, workflows, jobs, runners, installs and
 // runner kinds. Numbers and durations stay as they are.
-export function redactSummary(summary: WeeklySummary, redact: (name: string) => string): WeeklySummary {
+export function redactSummary(summary: WeeklySummary, redact: (field: NameField, name: string) => string): WeeklySummary {
   return {
     ...summary,
-    repo: redact(summary.repo),
+    repo: redact("repo", summary.repo),
     jobs: summary.jobs.map((row) => ({
       ...row,
-      workflow: row.workflow === null ? null : redact(row.workflow),
-      job: redact(row.job),
-      runnerType: redact(row.runnerType),
+      workflow: row.workflow === null ? null : redact("workflow", row.workflow),
+      job: redact("job", row.job),
+      runnerType: redact("runner", row.runnerType),
     })),
-    launcher: summary.launcher.map((row) => ({ ...row, install: redact(row.install), runnerType: redact(row.runnerType) })),
-    machines: summary.machines.map((row) => ({ ...row, install: redact(row.install) })),
+    launcher: summary.launcher.map((row) => ({
+      ...row,
+      install: redact("install", row.install),
+      runnerType: redact("kind", row.runnerType),
+    })),
+    machines: summary.machines.map((row) => ({ ...row, install: redact("install", row.install) })),
   };
 }
 

@@ -63,9 +63,9 @@ test("a redacted summary names no repo, job, runner, install or kind, and hashes
   const markdown = formatWeeklySummary(redactSummary(summary, redact));
 
   for (const name of ["acme", "private-app", "secret-job", "rb-linux", "| rb |", "linux"]) assert.ok(!markdown.includes(name), name);
-  assert.ok(markdown.includes(redact("secret-job | x")));
-  assert.equal(redact("ci"), createRedactor(key)("ci"));
-  assert.notEqual(redact("ci"), createRedactor("another key")("ci"));
+  assert.ok(markdown.includes(redact("job", "secret-job | x")));
+  assert.equal(redact("job", "ci"), createRedactor(key)("job", "ci"));
+  assert.notEqual(redact("job", "ci"), createRedactor("another key")("job", "ci"));
   assert.match(markdown, /## Machines\n\nNone recorded\./);
 });
 
@@ -82,4 +82,10 @@ test("a key file that isn't a key stops redaction instead of hashing with it", a
   await mkdir(broken);
   await writeFile(join(broken, "summary.key"), "");
   await assert.rejects(loadRedactionKey(broken), /isn't a redaction key/);
+});
+
+test("the same name in two columns gets two hashes, so the rows can't be linked", () => {
+  const redact = createRedactor("key");
+  assert.notEqual(redact("install", "ci"), redact("runner", "ci"));
+  assert.equal(redact("install", "ci"), redact("install", "ci"));
 });
