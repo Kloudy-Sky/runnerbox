@@ -1,13 +1,12 @@
 import {
   busyPercent,
-  type Container,
   type CpuCounters,
-  type Machine,
   parseContainer,
   parseCpuCounters,
   parseLoad1,
   parseMeminfo,
 } from "./machine-sample.ts";
+import type { Machine, Sample } from "./sample-record.ts";
 
 // One SSH call reads everything from the VM. `docker stats` covers every container in the VM, so
 // another launcher's jobs show up too and the two can be compared. It has its own timeout, well
@@ -20,8 +19,6 @@ export const VM_SAMPLE_COMMAND =
 export type MachineText = { meminfo: string; loadavg: string; stat: string };
 
 // A machine that couldn't be read is left out, never written as zeros.
-// `containers` is absent when Docker didn't answer, and empty when it answered with none.
-export type Sample = { time: string; host?: Machine; vm?: Machine; containers?: Container[] };
 
 type SamplerActions = {
   readHost: () => Promise<MachineText>;

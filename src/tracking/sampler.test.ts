@@ -6,7 +6,8 @@ import { after, test } from "node:test";
 import { execFileSync } from "node:child_process";
 import { parseContainer, parseCpuCounters, parseMeminfo } from "./machine-sample.ts";
 import { createRotatingLog } from "./rotating-log.ts";
-import { createSampler, type Sample, splitSections, VM_SAMPLE_COMMAND } from "./sampler.ts";
+import type { Sample } from "./sample-record.ts";
+import { createSampler, splitSections, VM_SAMPLE_COMMAND } from "./sampler.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-sampler-"));
 after(() => rm(dir, { recursive: true }));

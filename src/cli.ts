@@ -3,7 +3,10 @@ import { parseArgs } from "node:util";
 import { createGitHubClient, REPO_NAME, resolveToken } from "./github/github-client.ts";
 import { startRunners } from "./launcher/start-runners.ts";
 import { formatStepComparison, formatSummary } from "./tracking/format-report.ts";
+import { machineDuringJobs } from "./tracking/job-machine.ts";
 import { createJobLog, defaultLogPath } from "./tracking/job-log.ts";
+import { readSamples } from "./tracking/sample-log.ts";
+import { stateDir } from "./tracking/state-dir.ts";
 import { compareSteps, summarizeJobs } from "./tracking/report.ts";
 import { DAY_MS, syncJobs } from "./tracking/sync-jobs.ts";
 import { renderVm } from "./vm/render-vm.ts";
@@ -23,6 +26,8 @@ Report options:
   --since <days>d      How far back to report (default: 7d)
   --workflow <name>    Only include this workflow
   --job <name>         Compare one job's steps across runner types
+  --by labels|runner   Group by the labels jobs asked for (default), or by runner name
+                       without its trailing numbers, which tells launchers apart
   --offline            Report from the local log without calling GitHub
   --help               Show this message`;
 
@@ -37,6 +42,7 @@ async function main() {
       workflow: { type: "string" },
       job: { type: "string" },
       offline: { type: "boolean", default: false },
+      by: { type: "string", default: "labels" },
       help: { type: "boolean", default: false },
     },
   });
@@ -52,14 +58,15 @@ async function main() {
     return console.log(`Wrote ${written.join(", ")} to ${values.out}. Review create.sh, then run it on the host.`);
   }
 
-  const { repo, since: sinceArg, workflow, job, offline } = values;
+  const { repo, since: sinceArg, workflow, job, offline, by } = values;
   const days = /^(\d+)d$/.exec(sinceArg)?.[1];
   if (
     positionals[0] !== "report" ||
     positionals.length !== 1 ||
     !repo ||
     !REPO_NAME.test(repo) ||
-    !days
+    !days ||
+    (by !== "labels" && by !== "runner")
   ) {
     console.error(USAGE);
     process.exitCode = 2;
@@ -86,7 +93,11 @@ async function main() {
       Date.parse(record.createdAt) >= since.getTime() && (workflow === undefined || record.workflow === workflow),
   );
 
-  if (!job) return console.log(formatSummary(summarizeJobs(records)));
+  if (!job) {
+    // Samples exist only where `up` runs, so elsewhere the report has no machine columns.
+    const machine = machineDuringJobs(await readSamples(stateDir()));
+    return console.log(formatSummary(summarizeJobs(records, { by, machine })));
+  }
 
   const workflows = new Set(records.filter((record) => record.job === job).map((record) => record.workflow));
   if (workflows.size > 1) {

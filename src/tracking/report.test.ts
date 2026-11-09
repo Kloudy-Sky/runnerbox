@@ -120,3 +120,23 @@ test("compareSteps shows each step's median per runner type from passing runs on
   assert.deepEqual(runnerTypes, ["box", "hosted"]);
   assert.deepEqual([...steps[0]!.p50MsByRunnerType], [["box", 400_000], ["hosted", 50_000]]);
 });
+
+test("grouping by runner tells two launchers on one label apart", () => {
+  const summaries = summarizeJobs(
+    [
+      record({ runner: "old-box-1" }),
+      record({ runner: "old-box-3" }),
+      record({ runner: "rb-linux-2-1794160988" }),
+    ],
+    { by: "runner" },
+  );
+  assert.deepEqual(summaries.map((row) => [row.runnerType, row.ran]).sort(), [["old-box", 2], ["rb-linux", 1]]);
+});
+
+test("machine columns come from the samples joined to each job", () => {
+  const machine = (job: JobRecord) => (job.runner === "box-1" ? { samples: 2, vmLowMiB: 800, vmSwapPeakMiB: 300 } : undefined);
+  const [summary] = summarizeJobs([record(), record({ runner: "box-2" })], { machine });
+  assert.equal(summary?.vmLowP50MiB, 800);
+  assert.equal(summary?.vmSwapP90MiB, 300);
+  assert.equal(summary?.hostLowP50MiB, null);
+});
