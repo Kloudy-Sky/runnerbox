@@ -32,6 +32,9 @@ const RunnerType = type({
     shmSize: MemorySize,
   },
   env: { "+": "reject", "[/^[A-Za-z_][A-Za-z0-9_]*$/]": "/^[^\\0]*$/" },
+  // Jobs get their own Docker daemon: the container runs under sysbox, and its image starts the
+  // daemon, as runnerbox-base-docker does. The VM needs sysbox installed.
+  "docker?": "boolean",
 });
 
 export type RunnerType = typeof RunnerType.infer;

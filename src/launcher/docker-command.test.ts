@@ -40,3 +40,11 @@ test("an image built from a context is never pulled", async () => {
   assert.match(dockerRunCommand(config.name, built, 1, "app:abc"), / --pull never 'app:abc'$/);
   assert.doesNotMatch(dockerRunCommand(config.name, runner(config), 1, "runnerbox-base"), /--pull/);
 });
+
+test("a docker kind runs under sysbox, never privileged, and other kinds are unchanged", async () => {
+  const config = await loadLauncherConfig("runnerbox.example.json");
+  const command = dockerRunCommand(config.name, { ...runner(config), docker: true }, 1, "runnerbox-base-docker");
+  assert.match(command, / --runtime=sysbox-runc /);
+  assert.doesNotMatch(command, /privileged|docker\.sock/);
+  assert.doesNotMatch(dockerRunCommand(config.name, runner(config), 1, "runnerbox-base"), /sysbox/);
+});

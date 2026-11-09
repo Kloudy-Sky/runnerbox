@@ -36,6 +36,10 @@ test("the docker group is added after install, and swap only when asked for", ()
   assert.doesNotMatch(userData({ ...config, swapGiB: 0 }, "ssh-ed25519 AAAA key"), /swap:/);
 });
 
+test("cloud-init installs sysbox only after checking its pinned checksum", () => {
+  assert.match(userData(config, "ssh-ed25519 AAAA key"), /sha256sum -c - && apt-get install -y \/tmp\/sysbox\.deb/);
+});
+
 test("the MAC is stable per VM name and in QEMU's range", () => {
   assert.equal(macAddress("runnerbox"), macAddress("runnerbox"));
   assert.notEqual(macAddress("runnerbox"), macAddress("other"));
