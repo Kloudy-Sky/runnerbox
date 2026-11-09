@@ -96,6 +96,7 @@ jobs:
             printf "services:\n  hi:\n    image: busybox\n    command: echo compose-ok\n" > /tmp/compose.yml
             docker compose -f /tmp/compose.yml up --abort-on-container-exit > /tmp/compose.txt 2>&1
             grep -q compose-ok /tmp/compose.txt && echo "ok: docker compose inside the job"
+            docker run --rm curlimages/curl -fsS --max-time 15 -o /dev/null https://api.github.com && echo "ok: containers inside the job reach the internet"
             if docker run --rm busybox wget -T 5 -q -O /dev/null http://192.168.122.1:8080; then
               echo "FAILED: a container inside the job reached the gateway"; exit 1
             fi
@@ -130,3 +131,7 @@ jobs:
             echo "ok: IPv6 gets replies without the filter"
           else echo "note: IPv6 gets no replies here even without the filter"; fi
           EOF
+          # And from a container the job starts, so the gateway check inside the job can fail too.
+          sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$dir/out/known_hosts" ci@192.168.122.10 \
+            "docker run --rm --runtime=sysbox-runc --entrypoint bash runnerbox-base-docker -c 'sudo /usr/local/bin/start-docker.sh && docker run --rm busybox wget -T 5 -q -O /dev/null http://192.168.122.1:8080' && echo 'ok: the gateway answers a container inside the job without the filter'"
