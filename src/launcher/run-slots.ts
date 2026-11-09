@@ -1,3 +1,5 @@
+import type { LauncherEvent } from "../tracking/launcher-event.ts";
+
 const MINT_RETRY_MS = 60_000;
 const NEXT_RUNNER_MS = 5_000;
 // A real job takes longer than this. A faster failure means the VM, SSH or image is broken, and
@@ -17,6 +19,7 @@ type SlotActions = {
   wait: (ms: number) => Promise<void>;
   now: () => number;
   log: (message: string) => void;
+  record: (event: LauncherEvent) => void;
 };
 
 // Keeps `slots` runners waiting for jobs, each with a single-use registration minted here on the
@@ -36,16 +39,21 @@ export async function runSlots(
 }
 
 async function runSlot(installName: string, slot: number, actions: SlotActions, registered: Map<number, number>) {
-  const { mint, runContainer, roomForJob, release, every, wait, now, log } = actions;
+  const { mint, runContainer, roomForJob, release, every, wait, now, log, record } = actions;
+  const iso = (ms: number) => new Date(ms).toISOString();
 
   for (;;) {
     // A runner takes any job it's offered, so the only time to hold a job back is before registering.
     let waitedFor = await roomForJob();
-    if (waitedFor) log(`slot ${slot}: waiting for memory: ${waitedFor}`);
-    while (waitedFor) {
-      await wait(MEMORY_CHECK_MS);
-      waitedFor = await roomForJob();
-      if (!waitedFor) log(`slot ${slot}: memory is back above the floor`);
+    if (waitedFor) {
+      const waitStarted = now();
+      log(`slot ${slot}: waiting for memory: ${waitedFor}`);
+      while (waitedFor) {
+        await wait(MEMORY_CHECK_MS);
+        waitedFor = await roomForJob();
+      }
+      log(`slot ${slot}: memory is back above the floor`);
+      record({ event: "memory_wait", slot, startedAt: iso(waitStarted), durationMs: now() - waitStarted });
     }
 
     const runnerName = `${installName}-${slot}-${Math.floor(now() / 1000)}`;
@@ -62,13 +70,18 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
     registered.set(slot, registration.runnerId);
     const startedAt = now();
     // Memory can drop while a runner waits, so an idle one is removed and the slot waits again.
+    let released = false;
     const stopWatching = every(MEMORY_CHECK_MS, async () => {
       const reason = await roomForJob();
-      if (reason && (await release(registration.runnerId))) log(`slot ${slot}: removed idle ${runnerName}: ${reason}`);
+      if (reason && (await release(registration.runnerId))) {
+        released = true;
+        log(`slot ${slot}: removed idle ${runnerName}: ${reason}`);
+      }
     });
     const exitCode = await runContainer(slot, registration.jitConfig);
     stopWatching();
     registered.delete(slot);
+    record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released });
     log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
     await wait(exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS ? MINT_RETRY_MS : NEXT_RUNNER_MS);
   }
