@@ -97,6 +97,13 @@ jobs:
             docker compose -f /tmp/compose.yml up --abort-on-container-exit > /tmp/compose.txt 2>&1
             grep -q compose-ok /tmp/compose.txt && echo "ok: docker compose inside the job"
             docker run --rm curlimages/curl -fsS --max-time 15 -o /dev/null https://api.github.com && echo "ok: containers inside the job reach the internet"
+            # Compose services publish ports on the job container and call each other back through
+            # host-gateway, the inner bridge's address. That traffic stays inside the job.
+            docker run -d --name svc -p 8099:80 busybox sh -c "mkdir -p /www && echo up > /www/up.txt && httpd -f -p 80 -h /www" >/dev/null
+            sleep 2
+            docker run --rm --add-host host.docker.internal:host-gateway curlimages/curl -fsS --max-time 10 http://host.docker.internal:8099/up.txt > /tmp/got.txt
+            grep -q up /tmp/got.txt && echo "ok: a container inside the job reaches a port the job publishes, through host-gateway"
+            docker rm -f svc >/dev/null
             if docker run --rm busybox wget -T 5 -q -O /dev/null http://192.168.122.1:8080; then
               echo "FAILED: a container inside the job reached the gateway"; exit 1
             fi
