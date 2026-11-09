@@ -6,7 +6,8 @@ import { formatStepComparison, formatSummary } from "./tracking/format-report.ts
 import { readInstallLogs } from "./tracking/install-logs.ts";
 import { machineDuringJobs } from "./tracking/job-machine.ts";
 import { LauncherEventRecord } from "./tracking/launcher-event.ts";
-import { summarizeLauncher, summarizeMachines } from "./tracking/launcher-summary.ts";
+import { summarizeLauncher } from "./tracking/launcher-summary.ts";
+import { summarizeMachines } from "./tracking/machine-summary.ts";
 import { createRedactor, loadRedactionKey } from "./tracking/redactor.ts";
 import { formatWeeklySummary, redactSummary } from "./tracking/weekly-summary.ts";
 import { createJobLog, defaultLogPath } from "./tracking/job-log.ts";

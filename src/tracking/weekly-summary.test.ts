@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import type { LauncherEvent } from "./launcher-event.ts";
-import { summarizeLauncher, summarizeMachines } from "./launcher-summary.ts";
+import { summarizeLauncher } from "./launcher-summary.ts";
+import { summarizeMachines } from "./machine-summary.ts";
 import { createRedactor, loadRedactionKey } from "./redactor.ts";
 import type { JobSummary } from "./report.ts";
 import { formatWeeklySummary, redactSummary } from "./weekly-summary.ts";
@@ -74,4 +75,11 @@ test("a pipe in a name can't break the table", () => {
     launcher: summarizeLauncher([{ install: "a|b", record: runner(0, false) }]),
   });
   assert.ok(markdown.includes("| a\\|b |"));
+});
+
+test("a key file that isn't a key stops redaction instead of hashing with it", async () => {
+  const broken = join(dir, "broken");
+  await mkdir(broken);
+  await writeFile(join(broken, "summary.key"), "");
+  await assert.rejects(loadRedactionKey(broken), /isn't a redaction key/);
 });

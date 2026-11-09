@@ -1,5 +1,6 @@
 import { formatDuration, stripControlCharacters } from "./format-report.ts";
-import type { LauncherRow, MachineRow } from "./launcher-summary.ts";
+import type { LauncherRow } from "./launcher-summary.ts";
+import type { MachineRow } from "./machine-summary.ts";
 import type { JobSummary } from "./report.ts";
 
 export type WeeklySummary = {
