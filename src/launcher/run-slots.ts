@@ -22,10 +22,13 @@ type SlotActions = {
   now: () => number;
   log: (message: string) => void;
   record: (event: LauncherEvent) => void;
+  // True once `up` is draining: each slot finishes its current runner, then registers no more.
+  stopping: () => boolean;
 };
 
 // Keeps `slots` runners waiting for jobs, each with a single-use registration minted here on the
-// host. The VM never holds a credential that outlives one job. Runs until the process is killed.
+// host. The VM never holds a credential that outlives one job. Runs until `stopping`, then resolves
+// once every slot's last runner has ended.
 // `registered` maps each slot to the runner it registered and hasn't seen finish, so shutdown can
 // remove them.
 export async function runSlots(
@@ -41,21 +44,22 @@ export async function runSlots(
 }
 
 async function runSlot(installName: string, slot: number, actions: SlotActions, registered: Map<number, number>) {
-  const { mint, runContainer, image, roomForJob, release, every, wait, now, log, record } = actions;
+  const { mint, runContainer, image, roomForJob, release, every, wait, now, log, record, stopping } = actions;
   const iso = (ms: number) => new Date(ms).toISOString();
 
-  for (;;) {
+  while (!stopping()) {
     // A runner takes any job it's offered, so the only time to hold a job back is before registering.
     let waitedFor = await roomForJob();
     if (waitedFor) {
       const waitStarted = now();
       log(`slot ${slot}: waiting for memory: ${waitedFor}`);
-      while (waitedFor) {
+      while (waitedFor && !stopping()) {
         await wait(CHECK_MS);
         waitedFor = await roomForJob();
       }
-      log(`slot ${slot}: memory is back above the floor`);
       record({ event: "memory_wait", slot, startedAt: iso(waitStarted), durationMs: now() - waitStarted });
+      if (stopping()) return;
+      log(`slot ${slot}: memory is back above the floor`);
     }
 
     const runnerName = `${installName}-${slot}-${Math.floor(now() / 1000)}`;
@@ -67,6 +71,11 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
     if (!registration) {
       await wait(MINT_RETRY_MS);
       continue;
+    }
+    // A drain that began while this mint was in flight couldn't see this runner to remove it.
+    if (stopping()) {
+      await release(registration.runnerId);
+      return;
     }
 
     registered.set(slot, registration.runnerId);
@@ -93,6 +102,7 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
     registered.delete(slot);
     record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released });
     log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
+    if (stopping()) return;
     // A released runner exits fast on purpose, so that isn't a broken VM.
     const brokenFast = !released && exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS;
     await wait(brokenFast ? MINT_RETRY_MS : NEXT_RUNNER_MS);

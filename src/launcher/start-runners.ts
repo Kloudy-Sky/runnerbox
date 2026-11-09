@@ -56,14 +56,24 @@ export async function startRunners(configPath: string) {
       }),
     );
   }
+  // The first signal drains: no new runners, waiting ones removed, and `up` exits once every busy
+  // job has finished. A second signal exits at once, leaving busy containers to finish in the VM.
+  let stopping = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => void removeWaitingRunners().finally(() => process.exit(0)));
+    process.on(signal, () => {
+      if (stopping) process.exit(1);
+      stopping = true;
+      console.log(`${signal}: draining. Busy jobs finish first; send it again to exit now.`);
+      void removeWaitingRunners();
+    });
   }
 
   await Promise.all(
     config.runners.map(async (runner, index) => {
       const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
-      const image = await keepImage(config, runner, roomForJob, recordForType);
+      const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping);
+      // Draining before this kind's image was ever ready, so it has no slots to wait for.
+      if (!image) return;
       await runSlots(
         `${config.name}-${runner.name}`,
         runner.slots,
@@ -89,17 +99,27 @@ export async function startRunners(configPath: string) {
           now: Date.now,
           log: (line) => console.log(`${runner.name} ${line}`),
           record: recordForType,
+          stopping: () => stopping,
         },
         registered[index],
       );
     }),
   );
+  // Timers for samples and images would keep the process alive after the last slot returns.
+  console.log("drained");
+  process.exit(0);
 }
 
 // Returns the image a runner type's new containers should use, and a prune that removes old tags
 // nothing uses. A build context is built before that type's slots start, then checked for changes
 // every few minutes.
-async function keepImage(config: LauncherConfig, runner: RunnerType, roomForJob: () => Promise<string | null>, record: RecordEvent) {
+async function keepImage(
+  config: LauncherConfig,
+  runner: RunnerType,
+  roomForJob: () => Promise<string | null>,
+  record: RecordEvent,
+  stopping: () => boolean,
+) {
   const { vm } = config;
   const { image } = runner;
   if (typeof image === "string") return { current: () => image, prune: async () => {} };
@@ -118,7 +138,7 @@ async function keepImage(config: LauncherConfig, runner: RunnerType, roomForJob:
   const report = (error: unknown) => console.log(`${runner.name} image: ${message(error)}`);
   const refresh = () => keeper.refresh().catch(report);
 
-  for (;;) {
+  while (!stopping()) {
     await refresh();
     const tag = keeper.current();
     if (tag) {
@@ -127,6 +147,7 @@ async function keepImage(config: LauncherConfig, runner: RunnerType, roomForJob:
     }
     await wait(IMAGE_RETRY_MS);
   }
+  return null;
 }
 
 // One sample a minute of the host, the VM and every container in it, whether or not jobs are running.

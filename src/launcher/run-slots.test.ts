@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
 import { runSlots } from "./run-slots.ts";
 
-// runSlots never returns on its own, so a wait after the given count ends the test.
+// runSlots only returns when draining, so a wait after the given count ends the other tests.
 class Stop extends Error {}
 
 // `rooms` answers roomForJob in turn, then there's room. A memory check registered with `every`
@@ -17,6 +17,7 @@ function fakes({
   images = [] as string[],
   releasable = true,
   checksPerRun = 1,
+  stopAfterFirst = false,
 } = {}) {
   // `images` answers image() in turn, then stays on its last answer.
   let image = images.shift() ?? "app:1";
@@ -58,6 +59,7 @@ function fakes({
       now: () => time,
       log: (message: string) => void events.push(`log ${message}`),
       record: (event: LauncherEvent) => void recorded.push(event),
+      stopping: () => stopAfterFirst && events.some((event) => event.startsWith("run ")),
     },
   };
 }
@@ -176,4 +178,26 @@ test("a released runner's quick exit doesn't back off like a broken VM", async (
   const { actions, events } = fakes({ images: ["app:1", "app:1", "app:2"], exitCode: 1, jobMs: 40_000 });
   await assert.rejects(runSlots("box", 1, actions), Stop);
   assert.equal(events.at(-1), "wait 5000");
+});
+
+test("a draining slot finishes its runner, registers no other, and returns", async () => {
+  const { actions, events } = fakes({ stopAfterFirst: true, waitsBeforeStop: 99 });
+  await runSlots("box", 2, actions);
+  assert.equal(events.filter((event) => event.startsWith("mint")).length, 2);
+  assert.ok(!events.some((event) => event.startsWith("wait")));
+});
+
+test("a runner minted after a drain began is removed, never started", async () => {
+  const { actions, events } = fakes({ waitsBeforeStop: 99 });
+  let draining = false;
+  const mint = actions.mint;
+  actions.mint = async (name) => {
+    const registration = await mint(name);
+    draining = true;
+    return registration;
+  };
+  actions.stopping = () => draining;
+  await runSlots("box", 1, actions);
+  assert.ok(events.includes("release 7"));
+  assert.ok(!events.some((event) => event.startsWith("run ")));
 });
