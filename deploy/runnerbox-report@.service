@@ -14,5 +14,7 @@ Type=oneshot
 WorkingDirectory=%h/runnerbox
 EnvironmentFile=-%E/runnerbox/report.env
 # `%%` is a literal `%` to systemd. The table goes nowhere; the job log and summary are what's kept.
-ExecStart=/bin/sh -c 'repo=$(printf %%s "%i" | sed "s|__|/|"); exec node runnerbox.js report --repo "$repo" --since 2d >/dev/null'
-ExecStart=/bin/sh -c 'repo=$(printf %%s "%i" | sed "s|__|/|"); node runnerbox.js summary --repo "$repo" --by runner --redact > "%S/runnerbox/%i.summary.md.tmp" && mv "%S/runnerbox/%i.summary.md.tmp" "%S/runnerbox/%i.summary.md"'
+# A failed sync (`-`) doesn't stop the summary, which then covers what was already synced. The sync's
+# error is still in the journal: journalctl --user -u runnerbox-report@%i.
+ExecStart=-/bin/bash -c 'set -euo pipefail; repo=$(printf %%s "%i" | sed "s|__|/|"); exec node runnerbox.js report --repo "$repo" --since 2d >/dev/null'
+ExecStart=/bin/bash -c 'set -euo pipefail; repo=$(printf %%s "%i" | sed "s|__|/|"); out="%S/runnerbox/%i.summary.md"; mkdir -p "%S/runnerbox"; node runnerbox.js summary --repo "$repo" --by runner --redact > "$out.tmp"; mv "$out.tmp" "$out"'
