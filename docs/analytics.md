@@ -25,7 +25,7 @@ A field that couldn't be read is absent, never `0`. A missing `host` means `/pro
 ## Events
 
 Every event has `time`, when it was written, and `startedAt` and `durationMs`.
-- `runner`: one runner, from registration until its container ended. `exitCode` is the container's, or `null` if SSH failed. `released: true` means the slot removed it unused because memory dropped, so its time was waiting, not work. A runner's time includes waiting for a job, so match it to GitHub's job record for run time.
+- `runner`: one runner, from registration until its container ended. `exitCode` is the container's, or `null` if SSH failed. `released` is `"memory"` or `"image"` when the slot removed it unused, because memory dropped or a new image was ready, so its time was waiting, not work. Otherwise it's `false`. A runner's time includes waiting for a job, so match it to GitHub's job record for run time.
 - `memory_wait`: a slot waiting for `memoryFloor` before registering.
 - `image_build`: a build of a project image, with `tag` and `ok`.
 

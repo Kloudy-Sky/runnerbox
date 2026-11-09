@@ -42,8 +42,14 @@ export function createImageKeeper(name: string, actions: ImageActions) {
       current = tag;
       log(`image: new containers use ${tag}`);
     }
+    await prune();
+  }
+
+  // Removes old tags no container uses any more. Also called when a container ends, so a freed
+  // tag doesn't wait for the next refresh.
+  async function prune() {
     for (const old of stale) if (await remove(old)) stale.delete(old);
   }
 
-  return { current: () => current, refresh };
+  return { current: () => current, refresh, prune };
 }

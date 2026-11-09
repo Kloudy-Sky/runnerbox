@@ -5,11 +5,13 @@ const NEXT_RUNNER_MS = 5_000;
 // A real job takes longer than this. A faster failure means the VM, SSH or image is broken, and
 // retrying right away would mint a registration every few seconds.
 const FAST_FAILURE_MS = 60_000;
-const MEMORY_CHECK_MS = 15_000;
+const CHECK_MS = 15_000;
 
 type SlotActions = {
   mint: (runnerName: string) => Promise<{ runnerId: number; jitConfig: string }>;
-  runContainer: (slot: number, registration: string) => Promise<number | null>;
+  runContainer: (slot: number, registration: string, image: string) => Promise<number | null>;
+  // The image new containers should use.
+  image: () => string;
   // Why there's no room for another job right now, or null when there is.
   roomForJob: () => Promise<string | null>;
   // Removes a runner that hasn't taken a job. False when GitHub refuses, as it does mid-job.
@@ -39,7 +41,7 @@ export async function runSlots(
 }
 
 async function runSlot(installName: string, slot: number, actions: SlotActions, registered: Map<number, number>) {
-  const { mint, runContainer, roomForJob, release, every, wait, now, log, record } = actions;
+  const { mint, runContainer, image, roomForJob, release, every, wait, now, log, record } = actions;
   const iso = (ms: number) => new Date(ms).toISOString();
 
   for (;;) {
@@ -49,7 +51,7 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
       const waitStarted = now();
       log(`slot ${slot}: waiting for memory: ${waitedFor}`);
       while (waitedFor) {
-        await wait(MEMORY_CHECK_MS);
+        await wait(CHECK_MS);
         waitedFor = await roomForJob();
       }
       log(`slot ${slot}: memory is back above the floor`);
@@ -69,20 +71,30 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
 
     registered.set(slot, registration.runnerId);
     const startedAt = now();
-    // Memory can drop while a runner waits, so an idle one is removed and the slot waits again.
-    let released = false;
-    const stopWatching = every(MEMORY_CHECK_MS, async () => {
-      const reason = await roomForJob();
-      if (reason && (await release(registration.runnerId))) {
-        released = true;
-        log(`slot ${slot}: removed idle ${runnerName}: ${reason}`);
+    // An idle runner is removed when memory drops, so the slot waits again, or when the image changes,
+    // so the next job gets it. A refusal means it took a job, which a JIT runner never gives back.
+    const startedImage = image();
+    let released: false | "memory" | "image" = false;
+    let busy = false;
+    const stopWatching = every(CHECK_MS, async () => {
+      if (busy || released) return;
+      const newImage = image() === startedImage ? null : image();
+      const short = newImage ? null : await roomForJob();
+      if (!newImage && !short) return;
+      if (!(await release(registration.runnerId))) {
+        busy = true;
+        return;
       }
+      released = newImage ? "image" : "memory";
+      log(`slot ${slot}: removed idle ${runnerName}: ${newImage ? `new containers use ${newImage}` : short}`);
     });
-    const exitCode = await runContainer(slot, registration.jitConfig);
+    const exitCode = await runContainer(slot, registration.jitConfig, startedImage);
     stopWatching();
     registered.delete(slot);
     record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released });
     log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
-    await wait(exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS ? MINT_RETRY_MS : NEXT_RUNNER_MS);
+    // A released runner exits fast on purpose, so that isn't a broken VM.
+    const brokenFast = !released && exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS;
+    await wait(brokenFast ? MINT_RETRY_MS : NEXT_RUNNER_MS);
   }
 }
