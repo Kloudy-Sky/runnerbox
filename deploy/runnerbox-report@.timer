@@ -1,0 +1,11 @@
+# Runs runnerbox-report@<owner>__<repo>.service hourly. Each sync resumes where the last stopped.
+[Unit]
+Description=Hourly runnerbox job history and summary (%i)
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

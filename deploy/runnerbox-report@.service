@@ -1,0 +1,18 @@
+# Syncs one repository's job history and writes its redacted weekly summary. Run by the timer of the
+# same name: systemctl --user enable --now runnerbox-report@<owner>__<repo>.timer
+# The instance is the repository with `/` written as `__`, since systemd instance names can't hold `/`.
+# Expects runnerbox.js at ~/runnerbox/runnerbox.js, like runnerbox@.service. The summary lands in
+# ~/.local/state/runnerbox/<owner>__<repo>.summary.md.
+# GITHUB_TOKEN comes from ~/.config/runnerbox/report.env, owner-only, holding one line
+# `GITHUB_TOKEN=...` with a fine-grained token that can read the repository's Actions. Without it,
+# `report` falls back to the `gh` login, which a locked keyring can block.
+[Unit]
+Description=runnerbox job history and summary (%i)
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/runnerbox
+EnvironmentFile=-%E/runnerbox/report.env
+# `%%` is a literal `%` to systemd. The table goes nowhere; the job log and summary are what's kept.
+ExecStart=/bin/sh -c 'repo=$(printf %%s "%i" | sed "s|__|/|"); exec node runnerbox.js report --repo "$repo" --since 2d >/dev/null'
+ExecStart=/bin/sh -c 'repo=$(printf %%s "%i" | sed "s|__|/|"); node runnerbox.js summary --repo "$repo" --by runner --redact > "%S/runnerbox/%i.summary.md.tmp" && mv "%S/runnerbox/%i.summary.md.tmp" "%S/runnerbox/%i.summary.md"'
