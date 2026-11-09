@@ -11,7 +11,7 @@ type VmCommand = {
   sshBinary?: string;
 };
 
-function sshArgs(vm: Vm, command: string) {
+export function sshArgs(vm: Vm, command: string) {
   return [
     "-i", vm.keyFile,
     "-o", "IdentitiesOnly=yes",

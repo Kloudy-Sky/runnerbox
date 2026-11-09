@@ -11,7 +11,9 @@ export const containerName = (installName: string, slot: number) => `${installNa
 // The command the VM runs for one slot. It clears whatever the slot left behind, which also kills
 // a job still running there, then becomes the container's client. Ending SSH doesn't stop a running
 // container, so this removal is what ends it.
-export function dockerRunCommand({ name, image, limits, env }: LauncherConfig, slot: number) {
+// `image` is the tag to run. One built from a context is only ever local, so it's never pulled: a
+// missing tag fails at once instead of fetching whatever a registry has under that name.
+export function dockerRunCommand({ name, image: source, limits, env }: LauncherConfig, slot: number, image: string) {
   const container = shellQuote(containerName(name, slot));
   return [
     `docker rm -f ${container} >/dev/null 2>&1; exec docker run --rm -i --name ${container}`,
@@ -22,6 +24,7 @@ export function dockerRunCommand({ name, image, limits, env }: LauncherConfig, s
     `--pids-limit ${limits.pids}`,
     `--shm-size ${shellQuote(limits.shmSize)}`,
     ...Object.entries(env).map(([key, value]) => `-e ${shellQuote(`${key}=${value}`)}`),
+    ...(typeof source === "string" ? [] : ["--pull never"]),
     shellQuote(image),
   ].join(" ");
 }

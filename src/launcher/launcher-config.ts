@@ -15,7 +15,13 @@ export const LauncherConfig = type({
   scope: type({ "+": "reject", org: "/^[A-Za-z0-9-]+$/" }).or({ "+": "reject", repo: type(REPO_NAME) }),
   label: "/^[\\w.-]+$/",
   slots: "1 <= number.integer <= 64",
-  image: "/^[a-z0-9][a-z0-9._\\/:@-]*$/",
+  // A prebuilt image's reference, or a build context on the host that `up` builds in the VM and
+  // rebuilds when its files change.
+  image: type("/^[a-z0-9][a-z0-9._\\/:@-]*$/").or({
+    "+": "reject",
+    name: "/^[a-z0-9][a-z0-9._\\/-]*$/",
+    context: AbsolutePath,
+  }),
   // Must be readable only by its owner. It's read again for each job, so it can be rotated in place.
   tokenFile: AbsolutePath,
   vm: {
