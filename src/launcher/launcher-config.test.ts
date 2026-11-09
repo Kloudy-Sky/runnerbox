@@ -27,7 +27,16 @@ test("values that could smuggle in SSH options or shell are rejected", async () 
     { tokenFile: "/has space/token" },
     { env: { VALUE: "a\0b" } },
     { scope: { repo: "../.." } },
+    { image: { name: "app", context: "relative/dir" } },
+    { image: { name: "app; evil", context: "/ci-image" } },
+    { image: { name: "app", context: "/ci-image", extra: true } },
   ]) {
     assert.ok(LauncherConfig({ ...config, ...bad }) instanceof type.errors, JSON.stringify(bad));
   }
+});
+
+test("the image can be a build context on the host", async () => {
+  const config = await example();
+  const result = LauncherConfig({ ...config, image: { name: "app-ci", context: "/home/you/ci-image" } });
+  assert.ok(!(result instanceof type.errors));
 });

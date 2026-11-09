@@ -11,7 +11,7 @@ export const containerName = (installName: string, slot: number) => `${installNa
 // The command the VM runs for one slot. It clears whatever the slot left behind, which also kills
 // a job still running there, then becomes the container's client. Ending SSH doesn't stop a running
 // container, so this removal is what ends it.
-export function dockerRunCommand({ name, image, limits, env }: LauncherConfig, slot: number) {
+export function dockerRunCommand({ name, limits, env }: LauncherConfig, slot: number, image: string) {
   const container = shellQuote(containerName(name, slot));
   return [
     `docker rm -f ${container} >/dev/null 2>&1; exec docker run --rm -i --name ${container}`,
