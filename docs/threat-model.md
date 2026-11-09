@@ -19,6 +19,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | The VM's Docker daemon | A job takes it over | Containers get no Docker socket, so jobs that need Docker or Docker actions can't run here. | Tested |
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |
 | The host and VM's memory | Overcommitted jobs push both into swap | `up` registers a runner only while the host's and VM's `MemAvailable` are above `memoryFloor`, and removes idle runners when memory drops. It can't take back a job a runner already has. | Coded |
+| Project names in a shared summary | Whoever reads a summary learns repo, job, runner and host names | `summary --redact` replaces every name with an HMAC-SHA256 keyed by a random owner-only `summary.key` on the host, so hashes can't be checked against guessed names without it. A malformed key stops redaction. Numbers, durations and dates stay readable. | Coded |
 
 ## What isn't protected
 

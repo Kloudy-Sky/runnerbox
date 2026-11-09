@@ -33,6 +33,12 @@ Every event has `time`, when it was written, and `startedAt` and `durationMs`. E
 
 On a host with sample files, `report` joins each job to the samples taken between its start and end, with 30 seconds of slack either side. For each group it shows the median of each job's lowest `availableMiB` on the VM and host, and the P90 of each job's highest VM `swapUsedMiB`. A job is joined only to samples from its own install, recognised by its runner name starting `<install>-`. Hosted runners and another launcher's runners get no machine figures, even one sharing the same VM. A job with no samples counts in `RAN` but not in these columns, so a group's machine figures can cover fewer jobs than it ran.
 
+## In `summary`
+
+`summary` reads the job log, the samples and the events, all from local files. Under **Launcher**, `Failed` counts runners whose container ended non-zero or lost SSH, not ones the slot removed on purpose, which are counted under the two `Released` columns. Under **Machines**, `VM available P10` is the level available memory was below in one sample in ten.
+
+With `--redact`, names are replaced by the first 8 hex digits of an HMAC-SHA256 keyed by `summary.key` (32 random bytes, owner-only), which `summary` creates on first use. Numbers, durations and dates aren't changed.
+
 ## Measurement traps
 
 - `MemAvailable` is the kernel's estimate of what a new process could use without swapping. It isn't free memory, and it can drop while swap use stays flat.
