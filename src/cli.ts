@@ -3,7 +3,12 @@ import { parseArgs } from "node:util";
 import { createGitHubClient, REPO_NAME, resolveToken } from "./github/github-client.ts";
 import { startRunners } from "./launcher/start-runners.ts";
 import { formatStepComparison, formatSummary } from "./tracking/format-report.ts";
+import { readInstallLogs } from "./tracking/install-logs.ts";
 import { machineDuringJobs } from "./tracking/job-machine.ts";
+import { LauncherEventRecord } from "./tracking/launcher-event.ts";
+import { summarizeLauncher, summarizeMachines } from "./tracking/launcher-summary.ts";
+import { createRedactor, loadRedactionKey } from "./tracking/redactor.ts";
+import { formatWeeklySummary, redactSummary } from "./tracking/weekly-summary.ts";
 import { createJobLog, defaultLogPath } from "./tracking/job-log.ts";
 import { readSamples } from "./tracking/sample-log.ts";
 import { stateDir } from "./tracking/state-dir.ts";
@@ -16,9 +21,12 @@ const USAGE = `Usage:
   runnerbox up --config <file>
   runnerbox vm render --config <file> --out <dir>
   runnerbox report --repo <owner/name> [options]
+  runnerbox summary --repo <owner/name> [--since <days>d] [--by labels|runner] [--redact]
 
 up: keeps runners waiting for jobs in the VM until stopped.
 vm render: writes the VM's cloud-init seed, firewall and a create.sh to run on the host.
+summary: markdown from the local logs alone: the slowest jobs, what \`up\` did, and how close
+  the machines came to running out. --redact hashes every name with a key kept on this host.
 report: copies job history from GitHub to a local log, then summarizes it.
 
 Report options:
@@ -43,6 +51,7 @@ async function main() {
       job: { type: "string" },
       offline: { type: "boolean", default: false },
       by: { type: "string", default: "labels" },
+      redact: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
   });
@@ -59,9 +68,10 @@ async function main() {
   }
 
   const { repo, since: sinceArg, workflow, job, offline, by } = values;
+  const command = positionals[0];
   const days = /^(\d+)d$/.exec(sinceArg)?.[1];
   if (
-    positionals[0] !== "report" ||
+    (command !== "report" && command !== "summary") ||
     positionals.length !== 1 ||
     !repo ||
     !REPO_NAME.test(repo) ||
@@ -77,7 +87,8 @@ async function main() {
   const since = new Date(until.getTime() - Number(days) * DAY_MS);
   const store = createJobLog(defaultLogPath(repo));
 
-  if (!offline) {
+  // A summary reads only what's already recorded, so it can run from a timer without a token.
+  if (!offline && command === "report") {
     console.error(`Syncing ${repo} since ${since.toISOString().slice(0, 10)}...`);
     const source = createGitHubClient(resolveToken());
     const onRunSynced = (added: number) => {
@@ -92,6 +103,25 @@ async function main() {
     (record) =>
       Date.parse(record.createdAt) >= since.getTime() && (workflow === undefined || record.workflow === workflow),
   );
+
+  if (command === "summary") {
+    const dir = stateDir();
+    const inWindow = (time: string) => Date.parse(time) >= since.getTime();
+    const samples = (await readSamples(dir)).filter(({ sample }) => inWindow(sample.time));
+    const events = (await readInstallLogs(dir, "events.ndjson", LauncherEventRecord)).filter(({ record }) =>
+      inWindow(record.startedAt),
+    );
+    const summary = {
+      repo,
+      since,
+      until,
+      jobs: summarizeJobs(records, { by, machine: machineDuringJobs(samples) }),
+      launcher: summarizeLauncher(events),
+      machines: summarizeMachines(samples),
+    };
+    const redact = values.redact ? createRedactor(await loadRedactionKey(dir)) : undefined;
+    return console.log(formatWeeklySummary(redact ? redactSummary(summary, redact) : summary));
+  }
 
   if (!job) {
     // Samples exist only where `up` runs, so elsewhere the report has no machine columns.
