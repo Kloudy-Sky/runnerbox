@@ -42,3 +42,5 @@ jobs:
       # Proves the runner and Node it installed start on this image, as the image's own user.
       - run: docker run --rm --entrypoint ./bin/Runner.Listener runnerbox-base --version
       - run: docker run --rm --entrypoint bash runnerbox-base -c '/opt/hostedtoolcache/node/*/x64/bin/node --version'
+      - run: docker build -t runnerbox-base-docker image/docker
+      - run: docker run --rm --entrypoint bash runnerbox-base-docker -c 'docker --version && docker compose version'

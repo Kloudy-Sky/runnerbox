@@ -59,6 +59,7 @@ Copy [`runnerbox.vm.example.json`](runnerbox.vm.example.json) to start. `render`
 
 ```bash
 docker build -t runnerbox-base image   # in the VM
+docker build -t runnerbox-base-docker image/docker   # in the VM, for kinds with "docker": true
 node runnerbox.js up --config /path/to/config.json   # on the host, never inside the VM
 ```
 
@@ -76,6 +77,7 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
   - `image`, either a prebuilt image's reference, or `{ "name": "app-ci", "context": "/path/on/host" }`. A context is a directory holding your Dockerfile, which starts `FROM runnerbox-base`. `up` builds it in the VM, tagged by a hash of its files, before that kind's slots start. It checks every 5 minutes, and when a file has changed, it builds again, provided memory is above its floor. A runner waiting for a job is restarted on the new tag within about a minute, so the next job gets it, though a job queued in that minute still runs on the old one. A job already running finishes on the image it started with. Old tags are removed as soon as no container uses them. A failed build leaves new containers on the last good image.
   - `limits`, the container's memory, CPU and process limits.
   - `env`, environment variables set in every job's container. Test runners size their worker counts from the VM's CPUs, not the container's share, so cap them here.
+  - `docker`, optional. `true` gives each job its own Docker daemon: the container runs under sysbox, and its image must start the daemon, as `runnerbox-base-docker` does. It needs sysbox in the VM. VM setup installs it on first boot, so a VM made before that needs it installed by hand: stop every container first, because installing it restarts Docker, then install the `.deb` named in `src/vm/cloud-init.ts` after checking its sha256. Without sysbox, every slot of that kind fails with `unknown or invalid runtime name: sysbox-runc`.
 
 `up` records a sample of the host, the VM and its containers every minute, plus one line for each runner, memory wait and image build, in local files described in [docs/analytics.md](docs/analytics.md).
 
@@ -89,7 +91,7 @@ A workflow only names a label:
 runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}
 ```
 
-Your project never imports runnerbox code, so changing that variable moves your CI on or off it. Containers get no Docker socket, so jobs that use `services:`, `container:`, Docker actions or `docker build` must stay on another runner. The base image is minimal, so anything else a job expects from `ubuntu-24.04` goes in your image layer.
+Your project never imports runnerbox code, so changing that variable moves your CI on or off it. Containers never get the VM's Docker socket. Jobs that use `services:`, `container:`, Docker actions or `docker build` need a runner kind with `"docker": true` and an image built `FROM runnerbox-base-docker`, which gives each job its own Docker daemon under the sysbox runtime that VM setup installs. The base image is minimal, so anything else a job expects from `ubuntu-24.04` goes in your image layer.
 
 | runnerbox owns | Your project owns |
 | --- | --- |

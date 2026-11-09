@@ -4,11 +4,11 @@ name: vm
 on:
   pull_request:
     paths:
-      ["src/vm/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+      ["src/vm/**", "image/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   push:
     branches: [main]
     paths:
-      ["src/vm/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+      ["src/vm/**", "image/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   workflow_dispatch:
 
 permissions:
@@ -43,7 +43,7 @@ jobs:
           dir="$RUNNER_TEMP/vm" && mkdir -p "$dir"
           ssh-keygen -q -t ed25519 -N '' -f "$dir/key"
           # A smaller VM than the example, to fit the runner.
-          jq --arg key "$dir/key.pub" '.sshPublicKeyFile = $key | .cpus = 2 | .memoryMiB = 2048 | .diskGiB = 12 | .swapGiB = 1' \
+          jq --arg key "$dir/key.pub" '.sshPublicKeyFile = $key | .cpus = 2 | .memoryMiB = 3072 | .diskGiB = 24 | .swapGiB = 1' \
             runnerbox.vm.example.json > "$dir/vm.json"
           node --no-experimental-strip-types dist/runnerbox.js vm render --config "$dir/vm.json" --out "$dir/out"
           sudo "$dir/out/create.sh"
@@ -78,6 +78,31 @@ jobs:
           exit $failed
           EOF
 
+      # A docker kind's job runs under sysbox with its own daemon. Its containers still sit behind
+      # the VM's filter, so the gateway stays out of reach from them too.
+      - name: Docker inside a job, under sysbox
+        run: |
+          dir="$RUNNER_TEMP/vm"
+          SSH=(sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$dir/out/known_hosts" ci@192.168.122.10)
+          tar -C image -c . | "${SSH[@]}" 'set -e; mkdir -p /tmp/img && tar -x -C /tmp/img
+            docker build -q -t runnerbox-base /tmp/img >/dev/null && docker build -q -t runnerbox-base-docker /tmp/img/docker >/dev/null'
+          "${SSH[@]}" bash -s <<'EOF'
+          set -euo pipefail
+          docker run --rm --runtime=sysbox-runc --entrypoint bash runnerbox-base-docker -c '
+            set -euo pipefail
+            sudo /usr/local/bin/start-docker.sh
+            docker run --rm hello-world > /tmp/hello.txt && grep -q "Hello from Docker" /tmp/hello.txt && echo "ok: docker run inside the job"
+            printf "services:\n  hi:\n    image: busybox\n    command: echo compose-ok\n" > /tmp/compose.yml
+            docker compose -f /tmp/compose.yml up --abort-on-container-exit > /tmp/compose.txt 2>&1
+            grep -q compose-ok /tmp/compose.txt && echo "ok: docker compose inside the job"
+            docker run --rm curlimages/curl -fsS --max-time 15 -o /dev/null https://api.github.com && echo "ok: containers inside the job reach the internet"
+            if docker run --rm busybox wget -T 5 -q -O /dev/null http://192.168.122.1:8080; then
+              echo "FAILED: a container inside the job reached the gateway"; exit 1
+            fi
+            echo "ok: the gateway is blocked from inside the job'"'"'s containers"'
+          EOF
+
       # Proves the checks above can fail: with a filter that accepts everything, the same targets answer.
       - name: Control, with the filter opened up
         run: |
@@ -106,3 +131,7 @@ jobs:
             echo "ok: IPv6 gets replies without the filter"
           else echo "note: IPv6 gets no replies here even without the filter"; fi
           EOF
+          # And from a container the job starts, so the gateway check inside the job can fail too.
+          sudo ssh -i "$dir/key" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$dir/out/known_hosts" ci@192.168.122.10 \
+            "docker run --rm --runtime=sysbox-runc --entrypoint bash runnerbox-base-docker -c 'sudo /usr/local/bin/start-docker.sh && docker run --rm busybox wget -T 5 -q -O /dev/null http://192.168.122.1:8080' && echo 'ok: the gateway answers a container inside the job without the filter'"
