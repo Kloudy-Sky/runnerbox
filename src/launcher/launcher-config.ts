@@ -34,6 +34,8 @@ export const LauncherConfig = type({
     shmSize: MemorySize,
   },
   env: { "+": "reject", "[/^[A-Za-z_][A-Za-z0-9_]*$/]": "/^[^\\0]*$/" },
+  // MemAvailable each machine must have before a slot registers a runner. 0 turns a check off.
+  memoryFloor: { "+": "reject", hostMiB: "number.integer >= 0", vmMiB: "number.integer >= 0" },
 });
 
 export type LauncherConfig = typeof LauncherConfig.infer;

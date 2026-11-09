@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { runInVm } from "./run-in-vm.ts";
+import { readFromVm, runInVm } from "./run-in-vm.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-test-"));
 after(() => rm(dir, { recursive: true }));
@@ -36,4 +36,13 @@ test("the secret goes over stdin and never into arguments, and host keys are enf
 test("the exit code comes back, and a missing ssh is null, not a crash", async () => {
   assert.equal(await runInVm({ vm, command: "x", secret: "s", sshBinary: await fakeSsh(3) }), 3);
   assert.equal(await runInVm({ vm, command: "x", secret: "s", sshBinary: join(dir, "missing") }), null);
+});
+
+test("readFromVm returns stdout, and a failing command rejects", async () => {
+  const printer = join(dir, "ssh-print");
+  await writeFile(printer, `#!/bin/bash\necho "MemAvailable: 1 kB"\n`);
+  await chmod(printer, 0o755);
+
+  assert.equal(await readFromVm({ vm, command: "cat /proc/meminfo", sshBinary: printer }), "MemAvailable: 1 kB\n");
+  await assert.rejects(readFromVm({ vm, command: "x", sshBinary: await fakeSsh(255) }), /ssh x failed/);
 });

@@ -64,9 +64,10 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 - `scope` is `{ "org": "name" }` or `{ "repo": "owner/name" }`. Prefer the narrowest one that works.
 - `tokenFile` must have `600` permissions. Use a fine-grained token that can only do this: "Self-hosted runners: Read and write" on the organization, or "Administration: Read and write" on one repository. The repository permission can do far more than mint runners, so an org token is safer when you have an org. There's no fallback to your `gh` login.
 - `vm.knownHostsFile` must already hold the VM's host key. SSH refuses to connect otherwise.
+- `memoryFloor` is the memory, in MiB, that the host and the VM must each have available before a slot registers a runner. While either is below its floor, slots wait, and a runner still waiting for a job is removed. A runner that's already running a job keeps it. Runners that registered while memory was fine can still take jobs that arrive at the same moment, so set the VM's floor to at least one job's `memoryReservation`. `0` turns a check off.
 - `env` sets environment variables in every job's container. Test runners size their worker counts from the VM's CPUs, not the container's share, so cap them here.
 
-Restarting `up` removes each slot's container, which kills any job running there. Stopping it, or lowering `slots`, can leave containers running in the VM until their job times out, so remove those with `docker rm -f`. Stopping `up` removes runners still waiting for a job, but not ones running a job. If the VM, SSH or image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
+Restarting `up` removes each slot's container, which kills any job running there. Stopping it, or lowering `slots`, can leave containers running in the VM until their job times out, so remove those with `docker rm -f`. Stopping `up` removes runners still waiting for a job, but not ones running a job. If the VM or SSH is down, slots log that they're waiting for memory and register nothing, unless `memoryFloor.vmMiB` is `0`. If the image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
 
 ## How a project uses it
 
