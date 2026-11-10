@@ -2,7 +2,7 @@
 
 Throwaway GitHub Actions runners on your own hardware, with job tracking that shows what's slow, flaky or broken.
 
-**Status: early.** `runnerbox report` works today. `runnerbox up` has passed one real test, three jobs on a test repository, but VM setup isn't scripted. Don't point real CI at this yet.
+**Status: early.** `runnerbox report` works today. Jobs on a Mac's own OS have passed a first real test on one Mac. `runnerbox up` has passed one real test, three jobs on a test repository, but VM setup isn't scripted. Don't point real CI at this yet.
 
 ## What it will do
 
@@ -96,6 +96,8 @@ node runnerbox.js up --config mac.json
 
 Copy [`runnerbox.host.example.json`](runnerbox.host.example.json) to start. It needs a Mac with Apple silicon. `render` only writes files. Read `setup.sh` and `run-job` before you run setup, because both run as root. Setup creates the job user, removes other accounts' access to your home folder, installs `run-job` and the files it reads under `/usr/local/libexec/runnerbox/<name>`, downloads the runner and checks its sha256, and adds one sudoers rule that lets you run `run-job` as root without a password. Run `render` and setup again after you change the config or update runnerbox.
 
+To run it as a service, use [`deploy/io.runnerbox.plist`](deploy/io.runnerbox.plist). It runs while you're logged in, and stopping it drains like any other `up`.
+
 A host config has `host` in place of `vm`, and its one runner has no `image`, `limits` or `docker`:
 
 - `host.user` is an account that exists only to run jobs. It's a standard user, hidden from the login window, with a password nobody knows.
@@ -105,7 +107,7 @@ A host config has `host` in place of `vm`, and its one runner has no `image`, `l
 
 For each job, `run-job` loads a packet filter that binds only the job user, kills that user's processes, deletes its files, unpacks a fresh runner into an empty home, and runs the job with a clean environment. It cleans up the same way when the job ends. The filter drops the job's TCP and UDP to private, CGNAT and link-local addresses, and all its IPv6 outside loopback. On loopback it drops the job's traffic to every port another account is listening on, and looks for new ones every 5 seconds, so a job can reach its own local services but not yours.
 
-Jobs use the tools already on the Mac, read-only: Xcode's command line tools and whatever is in `/opt/homebrew/bin` and `/usr/local/bin`. They can't install with Homebrew or use `sudo`. Each job starts with an empty home, so it downloads its dependencies again. There are no samples for a host install, so reports show its jobs without machine columns.
+Jobs use the tools already on the Mac, read-only: Xcode's command line tools and whatever is in `/opt/homebrew/bin` and `/usr/local/bin`. They can't install with Homebrew or use `sudo`. Each job starts with an empty home, so it downloads its dependencies again, and the first run of a tool there can take several seconds longer. There are no samples for a host install, so reports show its jobs without machine columns.
 
 ## How a project uses it
 

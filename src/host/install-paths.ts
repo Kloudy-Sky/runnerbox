@@ -8,7 +8,8 @@ export function installPaths({ name }: Pick<HostInstall, "name">) {
     dir,
     // The one command `up` may run as root: it runs a job as the job user, then cleans up.
     runJob: `${dir}/run-job`,
-    jobStarted: `${dir}/job-started`,
+    // The runner only runs a hook whose name ends in .sh.
+    jobStarted: `${dir}/job-started.sh`,
     pfRules: `${dir}/pf.rules`,
     runnerArchive: `${dir}/actions-runner.tar.gz`,
     sudoers: `/etc/sudoers.d/runnerbox-${name}`,

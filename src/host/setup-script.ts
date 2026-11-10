@@ -51,10 +51,10 @@ chmod go-rwx "$OWNER_HOME"
 install -d -o root -g wheel -m 755 "$INSTALL_DIR"
 install -o root -g wheel -m 755 run-job "$RUN_JOB"
 install -o root -g wheel -m 644 pf.rules "$INSTALL_DIR/pf.rules"
-if [ -f job-started ]; then
-  install -o root -g wheel -m 755 job-started "$INSTALL_DIR/job-started"
+if [ -f job-started.sh ]; then
+  install -o root -g wheel -m 755 job-started.sh "$INSTALL_DIR/job-started.sh"
 else
-  rm -f "$INSTALL_DIR/job-started"
+  rm -f "$INSTALL_DIR/job-started.sh"
 fi
 
 if ! echo "$RUNNER_SHA256  $RUNNER_ARCHIVE" | shasum -a 256 -c --status 2>/dev/null; then

@@ -13,7 +13,7 @@ export async function renderHost(config: HostInstall, outDir: string) {
     "setup.sh": setupScript(config),
     "run-job": jobScript(config),
     "pf.rules": pfRules(config),
-    ...(allowedWorkflows ? { "job-started": jobStartedHook(allowedWorkflows) } : {}),
+    ...(allowedWorkflows ? { "job-started.sh": jobStartedHook(allowedWorkflows) } : {}),
   };
   await mkdir(outDir, { recursive: true });
   for (const [path, contents] of Object.entries(files)) await writeFile(join(outDir, path), contents);

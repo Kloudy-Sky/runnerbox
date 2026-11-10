@@ -25,18 +25,18 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 ## Jobs on the host's own OS
 
-A host install runs jobs on a Mac itself, as a separate standard user. It has no VM and no container, so these controls replace the ones above for that install, and they are weaker. Each was checked by hand on one Mac, as the job user, but none has run a real job yet.
+A host install runs jobs on a Mac itself, as a separate standard user. It has no VM and no container, so these controls replace the ones above for that install, and they are weaker. Each held on one Mac running real jobs from a test repository.
 
 | Asset | Threat | Control | Status |
 | --- | --- | --- | --- |
-| The GitHub token that mints runners | A job steals it | It stays in the owner's `600` file. Setup removes other accounts' access to the owner's home folder, and the job runs as another user with a clean environment. | Coded |
-| The owner's files | A job reads them | The same: a separate standard user, and an owner's home no other account can enter. Files the owner keeps world-readable elsewhere on the disk stay readable. | Coded |
-| Later jobs, and their secrets | A job leaves a process, a scheduled task or a file to read them | Before and after every job, `run-job` removes the job user's launchd services and crontab, kills its processes, deletes its files in the shared temp folders, and deletes and recreates its home, which holds its keychains. It refuses to start a job while a process survives. | Coded |
-| The machine | A job installs software or changes settings | The job user isn't an administrator and can't use `sudo`. `run-job` refuses a job user that is an administrator. | Coded |
-| The owner's root access | The sudoers rule is used for something else | It names one root-owned script that takes no arguments and reads only root-owned files, plus the registration on stdin. | Coded |
-| The LAN and a tailnet | A job connects to them | A pf anchor that matches only the job user's sockets drops its TCP and UDP to private, CGNAT, link-local, multicast and broadcast addresses, and all its IPv6 outside loopback. `run-job` loads it before every job and won't run one without it. | Coded |
-| Services listening on the machine | A job connects to the owner's dev server, debugger or database on loopback | pf can't tell whose listener a loopback packet is going to, so `run-job` lists the ports other accounts are listening on and blocks the job user from them, again every 5 seconds. | Coded |
-| Which jobs reach the machine | A pull request, or another workflow, names the label | With `allowedWorkflows`, a root-owned hook fails any job whose workflow ref isn't listed, before its first step. | Coded |
+| The GitHub token that mints runners | A job steals it | It stays in the owner's `600` file. Setup removes other accounts' access to the owner's home folder, and the job runs as another user with a clean environment. | Tested |
+| The owner's files | A job reads them | The same: a separate standard user, and an owner's home no other account can enter. Files the owner keeps world-readable elsewhere on the disk stay readable. | Tested |
+| Later jobs, and their secrets | A job leaves a process, a scheduled task or a file to read them | Before and after every job, `run-job` removes the job user's launchd services and crontab, kills its processes, deletes its files in the shared temp folders, and deletes and recreates its home, which holds its keychains. It refuses to start a job while a process survives. | Tested |
+| The machine | A job installs software or changes settings | The job user isn't an administrator and can't use `sudo`. `run-job` refuses a job user that is an administrator. | Tested |
+| The owner's root access | The sudoers rule is used for something else | It names one root-owned script that takes no arguments and reads only root-owned files, plus the registration on stdin. | Tested |
+| The LAN and a tailnet | A job connects to them | A pf anchor that matches only the job user's sockets drops its TCP and UDP to private, CGNAT, link-local, multicast and broadcast addresses, and all its IPv6 outside loopback. `run-job` loads it before every job and won't run one without it. | Tested |
+| Services listening on the machine | A job connects to the owner's dev server, debugger or database on loopback | pf can't tell whose listener a loopback packet is going to, so `run-job` lists the ports other accounts are listening on and blocks the job user from them, again every 5 seconds. | Tested |
+| Which jobs reach the machine | A pull request, or another workflow, names the label | With `allowedWorkflows`, a root-owned hook fails any job whose workflow ref isn't listed, before its first step. | Tested |
 
 What a host install doesn't protect, on top of the list below:
 
