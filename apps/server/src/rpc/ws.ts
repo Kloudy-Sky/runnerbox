@@ -13,14 +13,14 @@ import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 // The RPC socket. Each connection redeems a ticket, then gets its own server whose middleware
 // checks every call against that session's scopes.
-export const layer = HttpRouter.add(
+export const layer = (entry: AuthStore.Entry) => HttpRouter.add(
   "GET",
   "/ws",
   Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     const store = yield* AuthStore.AuthStore;
     const ticket = Option.getOrUndefined(HttpServerRequest.toURL(request))?.searchParams.get("ticket") ?? "";
-    const session = yield* store.redeemTicket(ticket);
+    const session = yield* store.redeemTicket(ticket, entry);
     if (!session) return HttpServerResponse.jsonUnsafe({ error: "invalid_ticket" }, { status: 401 });
     const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
     yield* RpcServer.make(RunnerboxRpcGroup, { disableFatalDefects: true }).pipe(

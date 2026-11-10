@@ -50,6 +50,9 @@ export const LinkState = Schema.Struct({
   cloudUserId: Schema.String,
   httpBaseUrl: Schema.String,
   connectorToken: Schema.String,
+  // The loopback port `cloudflared` sends tunnel traffic to: a listener of its own that serves
+  // only Connect, separate from the one apps and agents use on this machine.
+  tunnelPort: Schema.Int,
   linkedAt: Schema.String,
 });
 export type LinkState = typeof LinkState.Type;
@@ -67,7 +70,7 @@ export class CloudLink extends Context.Service<
   CloudLink,
   {
     readonly state: Effect.Effect<LinkState | null, CloudLinkError>;
-    readonly link: (input: { readonly relayUrl: string; readonly accessToken: string; readonly port: number }) => Effect.Effect<LinkState, CloudLinkError>;
+    readonly link: (input: { readonly relayUrl: string; readonly accessToken: string; readonly tunnelPort: number }) => Effect.Effect<LinkState, CloudLinkError>;
     readonly unlink: Effect.Effect<void, CloudLinkError | NotLinked>;
     readonly mint: (proof: string) => Effect.Effect<{ credential: string; expiresAt: string; proof: string }, CloudLinkError | NotLinked | ConnectProofRejected | ConnectProofReplayed>;
     readonly health: (proof: string) => Effect.Effect<{ checkedAt: string; descriptor: EnvironmentIdentity.EnvironmentIdentity["Service"]["descriptor"]; proof: string }, CloudLinkError | NotLinked | ConnectProofRejected | ConnectProofReplayed>;
@@ -107,13 +110,13 @@ const make = Effect.gen(function* () {
 
   const linked = state.pipe(Effect.flatMap((current) => (current === null ? Effect.fail(new NotLinked()) : Effect.succeed(current))));
 
-  const link = Effect.fn("CloudLink.link")(function* (input: { readonly relayUrl: string; readonly accessToken: string; readonly port: number }) {
+  const link = Effect.fn("CloudLink.link")(function* (input: { readonly relayUrl: string; readonly accessToken: string; readonly tunnelPort: number }) {
     const relay = relayClient(input.relayUrl);
     const { publicKey, privateKey } = yield* key;
     const { relayIssuer } = yield* promise("relay", () => relay.config());
     const { challenge } = yield* promise("relay", () => relay.linkChallenge(input.accessToken));
     const now = yield* seconds;
-    // The tunnel always points at this machine's loopback port, whatever address `serve` binds.
+    // The tunnel points only at the loopback listener that serves Connect alone.
     const proof = yield* promise("key", () =>
       signJwt({
         privateKey,
@@ -129,7 +132,7 @@ const make = Effect.gen(function* () {
           environmentId: descriptor.environmentId,
           environmentPublicKey: publicKey,
           descriptor,
-          origin: { localHttpHost: "127.0.0.1", localHttpPort: input.port },
+          origin: { localHttpHost: "127.0.0.1", localHttpPort: input.tunnelPort },
         },
       }),
     );
@@ -137,7 +140,7 @@ const make = Effect.gen(function* () {
     if (response.environmentId !== descriptor.environmentId || response.relayIssuer !== relayIssuer) {
       return yield* new CloudLinkError({ operation: "relay", cause: new Error("The relay answered for another environment.") });
     }
-    const next = { ...response, relayUrl: input.relayUrl, linkedAt: new Date(now * 1000).toISOString() };
+    const next = { ...response, relayUrl: input.relayUrl, tunnelPort: input.tunnelPort, linkedAt: new Date(now * 1000).toISOString() };
     const { environmentId: _id, ...stored } = next;
     yield* fs.makeDirectory(serverDir, { recursive: true, mode: 0o700 }).pipe(
       Effect.andThen(writeFileAtomic(fs, statePath, JSON.stringify(stored, null, 2))),

@@ -20,7 +20,7 @@ const USAGE = `Usage:
   runnerbox-server serve [--host <address>] [--port <n>] [--label <name>]
   runnerbox-server pair [--scopes <list>] [--json]
   runnerbox-server mcp-token [--label <name>]
-  runnerbox-server link --relay <url> [--device] [--port <n>]
+  runnerbox-server link --relay <url> [--device] [--tunnel-port <n>]
   runnerbox-server unlink
   runnerbox-server link-status
 
@@ -30,7 +30,8 @@ pair: prints a one-time code, valid for 15 minutes, that pairs one client. --sco
   comma-separated subset of ${ALL_SCOPES.join(",")} (default: all).
 link: signs in to a Runnerbox Connect relay and links this environment, so your apps can reach
   it through a managed tunnel. Opens a browser, or with --device shows a code to approve from
-  any browser, for a machine you reach over SSH. --port is the port serve listens on.
+  any browser, for a machine you reach over SSH. --tunnel-port is the loopback port serve opens
+  for the tunnel alone (default: --port plus one); it serves Connect and nothing else.
 unlink: removes the link and its tunnel. link-status: shows the link.
 mcp-token: prints a token for an MCP client to send as a Bearer token to /mcp. It reads history
   and runner state, and works nowhere else. Revoke it from the app's access list.
@@ -51,6 +52,7 @@ function main() {
       json: { type: "boolean", default: false },
       relay: { type: "string" },
       device: { type: "boolean", default: false },
+      "tunnel-port": { type: "string" },
       help: { type: "boolean", default: false },
     },
   });
@@ -81,9 +83,10 @@ function main() {
       }
       const relayUrl = values.relay;
       if (!relayUrl || !/^https:\/\//.test(relayUrl)) return yield* Effect.fail(new Error("link needs --relay https://..."));
-      const port = Number(values.port);
+      const tunnelPort = Number(values["tunnel-port"] ?? Number(values.port) + 1);
+      if (!Number.isInteger(tunnelPort) || tunnelPort < 1 || tunnelPort > 65535) return yield* Effect.fail(new Error("--tunnel-port must be a port number"));
       const accessToken = yield* Effect.tryPromise(() => signIn(relayUrl, values.device));
-      const state = yield* link.link({ relayUrl, accessToken, port });
+      const state = yield* link.link({ relayUrl, accessToken, tunnelPort });
       console.log(`Linked. Apps signed in to the same account can reach this environment at ${state.httpBaseUrl}.`);
       console.log("Restart serve to start the tunnel connector.");
     });

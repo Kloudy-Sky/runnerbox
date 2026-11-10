@@ -81,7 +81,7 @@ On each machine running `runnerbox-server`:
 
 1. Install `cloudflared` 2026.10.4 (the tested release; 2025.6.1 is the oldest accepted) from Cloudflare's releases, on `PATH` or at `RUNNERBOX_CLOUDFLARED_PATH`. runnerbox doesn't download it for you.
 2. `runnerbox-server link --relay https://relay.example.com` opens a browser to sign in. Over SSH, add `--device` and approve the code from any browser.
-3. Restart `serve`. It starts `cloudflared` and keeps it running.
+3. Restart `serve`. It opens a second loopback listener for the tunnel alone (by default on its own port plus one; `link --tunnel-port` chooses another), and starts `cloudflared`, pointed only at that listener. Through the tunnel, only Connect works: CLI pairing codes, app sessions and MCP tokens are refused there, and keep working on loopback and over SSH.
 
 `runnerbox-server link-status` shows the link, and `runnerbox-server unlink` removes it and its tunnel. Unlinking needs no sign-in.
 

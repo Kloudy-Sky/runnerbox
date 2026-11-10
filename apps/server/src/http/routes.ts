@@ -22,8 +22,9 @@ const descriptor = HttpRouter.add(
   }),
 );
 
-// Trades a one-time pairing code for a client session token.
-const pair = HttpRouter.add(
+// Trades a one-time pairing code for a client session token. Through the tunnel, only a code
+// bound to the requester's key is accepted.
+const pair = (entry: AuthStore.Entry) => HttpRouter.add(
   "POST",
   "/api/auth/pair",
   Effect.gen(function* () {
@@ -33,7 +34,7 @@ const pair = HttpRouter.add(
     // A Connect credential is bound to the client's key; the proof shows the client holds it.
     const proofKeyThumbprint = yield* dpopThumbprint(yield* HttpServerRequest.HttpServerRequest);
     if (proofKeyThumbprint === "invalid") return fail(401, "invalid_proof");
-    const { token, session } = yield* store.pair({ ...input, proofKeyThumbprint });
+    const { token, session } = yield* store.pair({ ...input, proofKeyThumbprint, keyBoundOnly: entry === "tunnel" });
     return HttpServerResponse.jsonUnsafe(
       { environmentId: descriptor.environmentId, token, scopes: session.scopes },
       { headers: noStore },
@@ -49,7 +50,7 @@ const pair = HttpRouter.add(
 
 // A browser can't set headers on a WebSocket, so the client trades its token for a ticket that
 // goes in the socket URL. It lasts seconds and opens one socket, so the token stays out of URLs.
-const wsTicket = HttpRouter.add(
+const wsTicket = (entry: AuthStore.Entry) => HttpRouter.add(
   "POST",
   "/api/auth/ws-ticket",
   Effect.gen(function* () {
@@ -59,8 +60,9 @@ const wsTicket = HttpRouter.add(
     const proofKeyThumbprint = yield* dpopThumbprint(request);
     if (proofKeyThumbprint === "invalid") return fail(401, "invalid_proof");
     const session = token === undefined ? undefined : yield* store.authenticate(token, "client", proofKeyThumbprint);
-    if (!session) return fail(401, "invalid_credential");
-    return HttpServerResponse.jsonUnsafe(yield* store.issueTicket(session), { headers: noStore });
+    // Through the tunnel, only sessions bought with a Connect credential work.
+    if (!session || (entry === "tunnel" && session.proofKeyThumbprint === undefined)) return fail(401, "invalid_credential");
+    return HttpServerResponse.jsonUnsafe(yield* store.issueTicket(session, entry), { headers: noStore });
   }),
 );
 
@@ -68,4 +70,4 @@ const wsTicket = HttpRouter.add(
 // user's browser has nothing it could ride on.
 const cors = HttpRouter.cors({ allowedHeaders: ["authorization", "content-type", "dpop"], maxAge: 600 });
 
-export const layer = Layer.mergeAll(descriptor, pair, wsTicket, cors);
+export const layer = (entry: AuthStore.Entry) => Layer.mergeAll(descriptor, pair(entry), wsTicket(entry), cors);

@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/http/HttpRouter";
 import * as AuthStore from "./auth/AuthStore.ts";
@@ -30,18 +31,36 @@ export const layerServices = (stateDir: string, label?: string) =>
     Layer.provideMerge(NodeServices.layer),
   );
 
-export const layerRoutes = Layer.mergeAll(Routes.layer, ConnectRoutes.layer, Ws.layer, Mcp.layer);
+// What each listener serves. The loopback one serves everything. The tunnel one, which only
+// `cloudflared` points at, serves the relay's Connect requests and what a Connect session needs,
+// and nothing that takes a CLI pairing code, an app session or an MCP token.
+const layerLocalRoutes = Layer.mergeAll(Routes.layer("local"), Ws.layer("local"), Mcp.layer);
+const layerTunnelRoutes = Layer.mergeAll(Routes.layer("tunnel"), ConnectRoutes.layer, Ws.layer("tunnel"));
+const serveOptions = { disableLogger: true, disableListenLog: true } as const;
 
-const served = () => HttpRouter.serve(layerRoutes, { disableLogger: true, disableListenLog: true });
+const listener = (host: string, port: number) =>
+  // Open sockets would hold a graceful shutdown open, and nothing here has work to finish.
+  NodeHttpServer.layer(createServer, { host, port, gracefulShutdownTimeout: "1 second" });
 
-// The served routes over the shared services, exposing both so tests can mint codes on the same
-// instance. Needs an `HttpServer`.
-export const layerApp = (stateDir: string, label?: string) => served().pipe(Layer.provideMerge(layerServices(stateDir, label)));
-
-// The served app plus, for a linked environment, its tunnel connector, over one set of services.
-export const layerServer = ({ host, port, stateDir, label }: ServeOptions) =>
-  Layer.merge(served(), Connector.layer).pipe(
-    Layer.provide(layerServices(stateDir, label)),
-    // Open sockets would hold a graceful shutdown open, and nothing here has work to finish.
-    Layer.provide(NodeHttpServer.layer(createServer, { host, port, gracefulShutdownTimeout: "1 second" })),
+// Both listeners. The tunnel listener always binds loopback, and only exists when linked.
+const layerListeners = (input: { host: string; port: number; tunnelPort: number | null }) =>
+  Layer.mergeAll(
+    HttpRouter.serve(layerLocalRoutes, serveOptions).pipe(Layer.provide(listener(input.host, input.port))),
+    input.tunnelPort === null ? Layer.empty : HttpRouter.serve(layerTunnelRoutes, serveOptions).pipe(Layer.provide(listener("127.0.0.1", input.tunnelPort))),
   );
+
+// The listeners over the shared services, exposing the services so tests can mint codes on the
+// same instance.
+export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string }) =>
+  layerListeners(input).pipe(Layer.provideMerge(layerServices(input.stateDir, input.label)));
+
+// `serve`: the listeners, with the tunnel one on the port the link chose, and for a linked
+// environment its connector, all over one set of services.
+export const layerServer = ({ host, port, stateDir, label }: ServeOptions) =>
+  Layer.unwrap(
+    Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      const state = yield* link.state.pipe(Effect.orElseSucceed(() => null));
+      return Layer.merge(layerListeners({ host, port, tunnelPort: state?.tunnelPort ?? null }), Connector.layer);
+    }),
+  ).pipe(Layer.provide(layerServices(stateDir, label)));

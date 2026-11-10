@@ -31,7 +31,8 @@ before(async () => {
   server = await startTestServer();
   const keys = await generateSigningKeyPair();
   store = createStore(sqliteD1(), Date.now);
-  tunnels = fakeTunnels(() => server.baseUrl);
+  // The fake tunnel delivers to the server's tunnel-facing listener, as cloudflared will.
+  tunnels = fakeTunnels(() => server.tunnelBaseUrl);
   relay = createRelay({
     config: {
       issuer: "https://relay.example.com",
@@ -54,7 +55,7 @@ before(async () => {
   });
   relayHttp = await serveFetch((request) => relay.fetch(request));
   // `link` checks the relay URL is HTTPS in the CLI; the service itself takes any.
-  await Effect.runPromise(server.cloudLink.link({ relayUrl: relayHttp.url, accessToken: "token-alice", port: server.port }));
+  await Effect.runPromise(server.cloudLink.link({ relayUrl: relayHttp.url, accessToken: "token-alice", tunnelPort: server.tunnelPort }));
 });
 
 after(async () => {
@@ -71,9 +72,9 @@ const refusal = (promise: Promise<unknown>) => promise.then(() => null, (error: 
 test("a linked environment is listed, online, and a client reads it with a read-only session", async () => {
   const id = await environmentId();
   const listed = (await client().environments("token-alice")).find((environment) => environment.environmentId === id);
-  assert.equal(listed?.httpBaseUrl, server.baseUrl);
+  assert.equal(listed?.httpBaseUrl, server.tunnelBaseUrl);
   assert.equal((await client().status("token-alice", listed!.environmentId)).status, "online");
-  assert.ok(tunnels.calls.some((call) => call.endsWith(`-> 127.0.0.1:${server.port}`)), "the tunnel points at the server's loopback port");
+  assert.ok(tunnels.calls.some((call) => call.endsWith(`-> 127.0.0.1:${server.tunnelPort}`)), "the tunnel points at the server's tunnel-facing loopback listener");
 
   const key = await createProofKey();
   const granted = await client().connect("token-alice", listed!.environmentId, key.thumbprint);
@@ -129,7 +130,7 @@ test("a user who didn't link the environment gets nothing from the relay", async
 test("the environment refuses relay requests it didn't get from its relay, or got before", async () => {
   const id = await environmentId();
   const key = await createProofKey();
-  const mint = (proof: string) => fetch(`${server.baseUrl}/api/connect/mint`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ proof }) }).then((response) => response.status);
+  const mint = (proof: string) => fetch(`${server.tunnelBaseUrl}/api/connect/mint`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ proof }) }).then((response) => response.status);
   const forger = await generateSigningKeyPair();
   const now = Math.floor(Date.now() / 1000);
   const payload = (overrides: Record<string, unknown> = {}) => ({

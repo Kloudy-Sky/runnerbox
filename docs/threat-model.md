@@ -110,6 +110,7 @@ Connect gives an environment a public hostname through a Cloudflare tunnel, on a
 | Relay egress | A health or mint request is bounced to another host | The relay calls only the address of its own allocation and refuses any redirect. | Tested locally |
 | A captured Connect credential | Someone else redeems it | It's bound to the client's key: redeeming needs a DPoP proof from that key. It works once, within 2 minutes, and a wrong key leaves it unspent. | Tested locally |
 | A captured Connect session token | Someone else uses it | The session stays bound to the same key, and every WebSocket ticket needs a fresh DPoP proof whose ID is used once. Proofs are checked by method and path, not host, because behind the tunnel the server can't see the host the client used. | Tested locally |
+| What reaches the server through the tunnel | Someone on the internet redeems a CLI pairing code, uses an app session or an MCP token, or opens a socket with a loopback ticket | `cloudflared` points only at a second loopback listener, whose port the relay pins at link time. It serves the descriptor, the relay's mint and health requests, pairing that redeems only key-bound codes (a CLI code stays unspent), tickets only for key-bound sessions, and sockets only with tickets it issued itself. It doesn't serve MCP. Nothing depends on a header, so a local process reaching that port gets less, not more. The relay's endpoints aren't served on the loopback listener. | Tested locally |
 | What a Connect session can do | It changes something, or hands out more access | A key-bound credential only ever buys `history:read` and `runners:read`, whatever was asked, so it can't reach access management or mint pairing codes. | Tested locally |
 | The connector token | It shows up where other users can read it | It's stored owner-only in `.server/connect.json` and passed to `cloudflared` in its environment, never on its command line. | Tested locally, with a stand-in `cloudflared` |
 | Tunnel teardown | A delayed cleanup deletes a tunnel a newer link just set up | Teardown first claims the allocation at the generation it read, and every change bumps it. Unlink revokes the link before tearing down, so a failed teardown leaves nothing usable. | Tested locally |
@@ -118,7 +119,7 @@ Connect gives an environment a public hostname through a Cloudflare tunnel, on a
 
 ### What Connect doesn't protect
 
-**A public hostname.** Anyone can reach the server through its tunnel: its descriptor, pairing, the MCP endpoint and the socket. All need a credential, and pairing codes are 100 bits, but a bug in the server is now reachable from the internet, not just from this machine. There is no rate limit at the relay or the server.
+**A public hostname.** Anyone can reach the tunnel listener: its descriptor, Connect pairing, the relay's endpoints and the socket. All need a key-bound credential or a relay signature, but a bug in that code is now reachable from the internet, not just from this machine. There is no rate limit at the relay or the server.
 
 **The relay's signing key.** Whoever holds it can have any linked environment mint read-only sessions, for the user it's linked to. Treat it like the runner token.
 

@@ -62,6 +62,10 @@ const AuthFile = Schema.Struct({
 type AuthFile = typeof AuthFile.Type;
 const decodeAuthFile = Schema.decodeUnknownEffect(Schema.fromJsonString(AuthFile));
 
+// Which listener a request came in on. `tunnel` is the one only `cloudflared` points at, which
+// accepts key-bound Connect credentials and sessions and nothing else.
+export type Entry = "local" | "tunnel";
+
 export type Session = Pick<typeof StoredSession.Type, "id" | "label" | "audience" | "scopes" | "proofKeyThumbprint">;
 
 // A credential bound to a proof key never buys more than reading, whoever asked for it.
@@ -91,6 +95,8 @@ export class AuthStore extends Context.Service<
       readonly code: string;
       readonly label: string;
       readonly proofKeyThumbprint?: string | undefined;
+      // Refuses a code that isn't bound to a key, leaving it unspent for its owner.
+      readonly keyBoundOnly?: boolean;
     }) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError | PairingRejected>;
     readonly mintMcpToken: (label: string) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError>;
     readonly authenticate: (
@@ -100,8 +106,9 @@ export class AuthStore extends Context.Service<
     ) => Effect.Effect<Session | undefined, AuthStoreError>;
     // True the first time `key` is seen before `expiresAt`, false on a replay.
     readonly consumeOnce: (key: string, expiresAt: number) => Effect.Effect<boolean, AuthStoreError>;
-    readonly issueTicket: (session: Session) => Effect.Effect<{ readonly ticket: string; readonly expiresAt: string }>;
-    readonly redeemTicket: (ticket: string) => Effect.Effect<Session | undefined, AuthStoreError>;
+    // A ticket opens a socket only on the listener it was issued on.
+    readonly issueTicket: (session: Session, entry: Entry) => Effect.Effect<{ readonly ticket: string; readonly expiresAt: string }>;
+    readonly redeemTicket: (ticket: string, entry: Entry) => Effect.Effect<Session | undefined, AuthStoreError>;
     readonly list: (currentId: string) => Effect.Effect<ReadonlyArray<SessionSummary>, AuthStoreError>;
     readonly revoke: (id: string) => Effect.Effect<void, AuthStoreError | AccessError>;
   }
@@ -121,7 +128,7 @@ const make = Effect.gen(function* () {
   const path = join(serverDir, "auth.json");
   const lock = yield* Semaphore.make(1);
   // Tickets are short and single-use, and die with the process, so they never touch disk.
-  const tickets = new Map<string, { sessionId: string; expiresAt: number }>();
+  const tickets = new Map<string, { sessionId: string; expiresAt: number; entry: Entry }>();
 
   const read = fs.readFileString(path).pipe(
     Effect.catchTag("PlatformError", (error) =>
@@ -192,11 +199,12 @@ const make = Effect.gen(function* () {
     readonly code: string;
     readonly label: string;
     readonly proofKeyThumbprint?: string | undefined;
+    readonly keyBoundOnly?: boolean;
   }) {
     const codeHash = sha256(normalizeCode(input.code));
     return yield* update((file, now) => {
       const grant = file.codes.find((code) => code.codeHash === codeHash);
-      if (!grant) return Effect.fail(new PairingRejected());
+      if (!grant || (input.keyBoundOnly && grant.proofKeyThumbprint === undefined)) return Effect.fail(new PairingRejected());
       // A bound code is useless without its key: a wrong key leaves it unspent for its owner.
       if (grant.proofKeyThumbprint !== undefined && grant.proofKeyThumbprint !== input.proofKeyThumbprint) return Effect.fail(new PairingRejected());
       const spent = { ...file, codes: file.codes.filter((code) => code !== grant) };
@@ -245,22 +253,22 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const issueTicket = Effect.fn("AuthStore.issueTicket")(function* (session: Session) {
+  const issueTicket = Effect.fn("AuthStore.issueTicket")(function* (session: Session, entry: Entry) {
     const now = yield* Clock.currentTimeMillis;
-    for (const [ticket, entry] of tickets) if (entry.expiresAt <= now) tickets.delete(ticket);
+    for (const [ticket, issued] of tickets) if (issued.expiresAt <= now) tickets.delete(ticket);
     const ticket = newToken();
-    tickets.set(sha256(ticket), { sessionId: session.id, expiresAt: now + TICKET_TTL_MS });
+    tickets.set(sha256(ticket), { sessionId: session.id, expiresAt: now + TICKET_TTL_MS, entry });
     return { ticket, expiresAt: new Date(now + TICKET_TTL_MS).toISOString() };
   });
 
   // Looks the session up again, so a ticket issued just before a revoke opens nothing.
-  const redeemTicket = Effect.fn("AuthStore.redeemTicket")(function* (ticket: string) {
+  const redeemTicket = Effect.fn("AuthStore.redeemTicket")(function* (ticket: string, entry: Entry) {
     const key = sha256(ticket);
-    const entry = tickets.get(key);
+    const issued = tickets.get(key);
     tickets.delete(key);
     const now = yield* Clock.currentTimeMillis;
-    if (!entry || entry.expiresAt <= now) return undefined;
-    const found = (yield* read).sessions.find((session) => session.id === entry.sessionId);
+    if (!issued || issued.expiresAt <= now || issued.entry !== entry) return undefined;
+    const found = (yield* read).sessions.find((session) => session.id === issued.sessionId);
     return found ? toSession(found) : undefined;
   });
 
