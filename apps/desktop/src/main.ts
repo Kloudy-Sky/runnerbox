@@ -1,10 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { SavedEnvironment } from "@runnerbox/client-runtime";
+import { SavedEnvironment, SshRoute } from "@runnerbox/client-runtime";
 import { app, BrowserWindow, type IpcMainInvokeEvent, ipcMain, protocol, safeStorage, session } from "electron";
 import * as Schema from "effect/Schema";
 import { createCatalog } from "./catalog.ts";
 import { CHANNELS } from "./ipc/channels.ts";
+import { createTunnels } from "./ssh/tunnels.ts";
 
 // The desktop app is only a client: it serves the bundled web UI from disk and keeps saved
 // environments. Every server it shows is reached over that server's own HTTP and WebSocket.
@@ -29,6 +30,8 @@ const catalog = createCatalog(app.getPath("userData"), {
 
 const decodeEnvironment = Schema.decodeUnknownSync(SavedEnvironment);
 const decodeId = Schema.decodeUnknownSync(Schema.String);
+const decodeRoute = Schema.decodeUnknownSync(SshRoute);
+const tunnels = createTunnels();
 
 // Only the app's own page may call main; anything else that loads in a window gets nothing.
 const fromApp = (event: IpcMainInvokeEvent) => {
@@ -48,6 +51,18 @@ function registerIpc() {
   ipcMain.handle(CHANNELS.catalogRemove, (event, environmentId: unknown) => {
     fromApp(event);
     return catalog.remove(decodeId(environmentId));
+  });
+  ipcMain.handle(CHANNELS.sshOpenTunnel, (event, route: unknown) => {
+    fromApp(event);
+    return tunnels.open(decodeRoute(route));
+  });
+  ipcMain.handle(CHANNELS.sshCloseTunnel, (event, route: unknown) => {
+    fromApp(event);
+    tunnels.close(decodeRoute(route));
+  });
+  ipcMain.handle(CHANNELS.sshFetchPairingCode, (event, route: unknown) => {
+    fromApp(event);
+    return tunnels.fetchPairingCode(decodeRoute(route));
   });
 }
 
@@ -92,6 +107,9 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// Forwards die with the app; the servers they reach keep running.
+app.on("will-quit", () => tunnels.closeAll());
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

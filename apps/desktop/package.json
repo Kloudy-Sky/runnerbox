@@ -8,7 +8,8 @@
     "ensure:electron": "node node_modules/electron/install.js",
     "build": "node scripts/build.ts",
     "start": "electron .",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@runnerbox/client-runtime": "workspace:*",
