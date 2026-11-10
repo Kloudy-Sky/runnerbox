@@ -35,8 +35,13 @@ OWNER_HOME="$(dscl . -read "/Users/$OWNER" NFSHomeDirectory | awk '{print $2}')"
 for file in run-job pf.rules; do [ -f "$file" ] || fail "$file is missing next to setup.sh."; done
 
 # The account jobs run as: standard, hidden from the login window, with a password nobody knows.
+# An account that already exists is only reused if an earlier run of this script made it, because
+# every job wipes it.
+[ "$JOB_USER" != "$OWNER" ] || fail "The job user can't be your own account."
 if id "$JOB_USER" >/dev/null 2>&1; then
-  dseditgroup -o checkmember -m "$JOB_USER" admin >/dev/null && fail "$JOB_USER exists and is an administrator. Pick another name."
+  dscl . -read "/Users/$JOB_USER" RealName 2>/dev/null | grep -q 'runnerbox jobs' \\
+    || fail "$JOB_USER already exists and wasn't created by this script. Pick another name."
+  dseditgroup -o checkmember -m "$JOB_USER" admin >/dev/null && fail "$JOB_USER is an administrator. Pick another name."
 else
   sysadminctl -addUser "$JOB_USER" -fullName "runnerbox jobs" -password "$(openssl rand -base64 30)" -home "/Users/$JOB_USER"
   dscl . -create "/Users/$JOB_USER" IsHidden 1

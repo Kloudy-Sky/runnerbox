@@ -31,8 +31,10 @@ fail() { echo "run-job: $*" >&2; exit 1; }
 # The caller's folder is usually inside the owner's home, which the job user can't enter.
 cd /
 JOB_UID="$(id -u "$JOB_USER")" || fail "user $JOB_USER doesn't exist. Run setup.sh."
-# Never an account that owns anything else: cleanup kills its processes and deletes its files.
-[ "$JOB_UID" -gt 500 ] || fail "$JOB_USER is a system or first account."
+# Only the account setup.sh made: cleanup kills its processes and deletes its files, so pointing
+# this at anyone's real account would wipe it.
+dscl . -read "/Users/$JOB_USER" RealName 2>/dev/null | grep -q 'runnerbox jobs' || fail "$JOB_USER wasn't created by setup.sh."
+[ "$JOB_USER" != "\${SUDO_USER:-}" ] || fail "$JOB_USER is the account that runs up."
 dseditgroup -o checkmember -m "$JOB_USER" admin >/dev/null && fail "$JOB_USER is an administrator."
 [ -f "$RUNNER_ARCHIVE" ] || fail "$RUNNER_ARCHIVE is missing. Run setup.sh."
 
