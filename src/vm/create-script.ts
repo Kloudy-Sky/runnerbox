@@ -60,7 +60,7 @@ virsh net-dumpxml "$NETWORK" | grep -Eq "mac='$MAC'|ip='$ADDRESS'" && leftovers+
 # The cache is named by checksum, so changing the configured image downloads the new one.
 IMAGE="base-$IMAGE_SHA256.img"
 if [ ! -f "$IMAGE" ]; then
-  curl -fsSL "$IMAGE_URL" -o "$IMAGE.part"
+  curl -fsSL --retry 5 --retry-all-errors "$IMAGE_URL" -o "$IMAGE.part"
   mv "$IMAGE.part" "$IMAGE"
 fi
 echo "$IMAGE_SHA256  $IMAGE" | sha256sum -c --quiet - || fail "$IMAGE doesn't match its checksum. Delete it and run again."
