@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { freemem } from "node:os";
 import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
 import { refusePublicScope } from "../github/public-scope.ts";
 import { mintRegistration, removeRunner } from "../github/runner-registration.ts";
 import { installPaths } from "../host/install-paths.ts";
+import { runOnWindowsHost } from "../host/run-on-windows.ts";
 import { buildInVm } from "../image/build-in-vm.ts";
 import { hashContext } from "../image/context-hash.ts";
 import { createImageKeeper } from "../image/image-keeper.ts";
@@ -34,11 +36,13 @@ const HEARTBEAT_MS = 15_000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-// A Mac reports its memory through vm_stat, and Linux through /proc.
-const hostAvailableMiB = async () =>
-  process.platform === "darwin"
-    ? vmStatAvailableMiB((await promisify(execFile)("vm_stat")).stdout)
-    : memAvailableMiB(await readFile("/proc/meminfo", "utf8"));
+// A Mac reports its memory through vm_stat, Linux through /proc, and on Windows Node's own figure
+// is the available one.
+async function hostAvailableMiB() {
+  if (process.platform === "win32") return Math.floor(freemem() / 1024 ** 2);
+  if (process.platform === "darwin") return vmStatAvailableMiB((await promisify(execFile)("vm_stat")).stdout);
+  return memAvailableMiB(await readFile("/proc/meminfo", "utf8"));
+}
 
 // How one install runs a job: what its slots call the thing a job runs in, and the command that
 // runs one job and returns its exit code.
@@ -156,11 +160,14 @@ export async function startRunners(configPath: string) {
       }),
     );
   } else {
-    // sudo -n fails instead of asking for a password, which setup.sh's rule makes unnecessary.
+    // On a Mac, sudo -n fails instead of asking for a password, which setup.sh's rule makes
+    // unnecessary. On Windows the job is a scheduled task.
     const { runJob } = installPaths(config);
+    const run = (registration: string) =>
+      process.platform === "win32" ? runOnWindowsHost(config, registration) : runWithSecret("sudo", ["-n", runJob], registration);
     await Promise.all(
       config.runners.map((runner, index) =>
-        startSlots(runner, index, { image: () => "host", run: (_slot, secret) => runWithSecret("sudo", ["-n", runJob], secret) }),
+        startSlots(runner, index, { image: () => "host", run: (_slot, registration) => run(registration) }),
       ),
     );
   }

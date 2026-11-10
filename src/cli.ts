@@ -31,7 +31,7 @@ const USAGE = `Usage:
 
 up: keeps runners waiting for jobs in the VM until stopped.
 vm render: writes the VM's cloud-init seed, firewall and a create.sh to run on the host.
-host render: for an install whose jobs run on this Mac's own OS, writes a setup.sh to run with sudo.
+host render: for an install whose jobs run on this Mac's or PC's own OS, writes its setup script.
 summary: markdown from the local logs alone: the slowest jobs, what \`up\` did, and how close
   the machines came to running out. --redact hashes every name with a key kept on this host.
 report: copies job history from GitHub to a local log, then summarizes it.
@@ -85,7 +85,7 @@ async function main() {
     const config = await loadLauncherConfig(values.config);
     if (!("host" in config)) throw new Error(`${values.config} has no "host", so its jobs run in a VM. Use vm render.`);
     const written = await renderHost(config, values.out);
-    return console.log(`Wrote ${written.join(", ")} to ${values.out}. Review setup.sh and run-job, then run: sudo ${values.out}/setup.sh`);
+    return console.log(`Wrote ${written.join(", ")} to ${values.out}. Review them, then run the setup script as an administrator.`);
   }
 
   const { repo, since: sinceArg, workflow, job, offline, by } = values;
