@@ -6,7 +6,7 @@ Throwaway GitHub Actions runners on your own hardware, with job tracking that sh
 
 ## What it will do
 
-- Run each job in a fresh container, inside a firewalled VM on a machine you own.
+- Run each job in a fresh container, inside a firewalled VM on a machine you own. Or give each job a VM of its own.
 - Run macOS jobs on a Mac's own OS, as a separate user that's wiped after every job, for work a Linux VM can't do.
 - Mint a single-use registration for each job on the host, so the VM holds no credential that outlives a job.
 - Record every job as one line of NDJSON in a local file. No server needed. OTLP export is optional.
@@ -68,7 +68,7 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 
 - `name` prefixes this install's containers and runners, so give each install on a VM its own.
 - `scope` is `{ "org": "name" }` or `{ "repo": "owner/name" }`. Prefer the narrowest one that works.
-- `allowPublicRepos` is `false` unless you set it. While it's off, `up` checks GitHub before every registration and starts no runner for a public repository, or for an org whose default runner group allows public repositories. If GitHub doesn't answer, no runner starts either. The check uses the same token: repository metadata for a repo scope, and the runner group's settings for an org.
+- `allowPublicRepos` is `false` unless you set it, and setting it needs [`jobVms`](#a-vm-for-each-job), so a stranger's job never shares a VM with yours. While it's off, `up` checks GitHub before every registration and starts no runner for a public repository, or for an org whose default runner group allows public repositories. If GitHub doesn't answer, no runner starts either. The check uses the same token: repository metadata for a repo scope, and the runner group's settings for an org.
 - `tokenFile` must have `600` permissions. Use a fine-grained token that can only do this: "Self-hosted runners: Read and write" on the organization, or "Administration: Read and write" on one repository. The repository permission can do far more than mint runners, so an org token is safer when you have an org. There's no fallback to your `gh` login.
 - `vm.knownHostsFile` must already hold the VM's host key. SSH refuses to connect otherwise.
 - `memoryFloor` is the memory, in MiB, that the host and the VM must each have available before a slot registers a runner. While either is below its floor, slots wait, and a runner still waiting for a job is removed. A runner that's already running a job keeps it. Runners that registered while memory was fine can still take jobs that arrive at the same moment, so set the VM's floor to at least one job's `memoryReservation`. `0` turns a check off.
@@ -84,6 +84,23 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 `up` records a sample of the host, the VM and its containers every minute, plus one line for each runner, memory wait and image build, in local files described in [docs/analytics.md](docs/analytics.md). It also keeps `state.json` beside them, with what each slot is doing now, for the desktop app's Runners tab.
 
 Stopping `up` (SIGTERM or Ctrl-C) drains it: no slot registers again, runners still waiting for a job are removed, and `up` exits once every busy job has finished. A second signal exits at once, and busy containers then finish in the VM on their own. Don't start `up` again while one is still running, because each slot starts by removing its container, which kills the job in it. The service unit gives a drain 30 minutes. Lowering `slots` can leave containers running in the VM until their job finishes, so remove those with `docker rm -f`. If the VM or SSH is down, slots log that they're waiting for memory and register nothing, unless `memoryFloor.vmMiB` is `0`. If the image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
+
+## A VM for each job
+
+By default every job shares one VM, so a job that escapes its container can read its neighbours and wait for later jobs. Add `jobVms` and that VM stops running jobs. It becomes the builder, which only builds images, and each job runs in its own copy of it, destroyed with its disk when the job ends. Start from [`runnerbox.jobvms.example.json`](runnerbox.jobvms.example.json).
+
+- `jobVms.builder` is the VM's libvirt name, `name` in the config `vm render` read. `pool`, `network` and `gateway` are that config's too.
+- `jobVms.addresses` lists one free address in that network for each slot, counted across all kinds. `up` reserves them and defines one more network filter, `<install>-job`, with the same rules as the VM's. It only adds what's missing, and stops if another machine has an address.
+- Every kind needs `vm`, the CPUs and memory each of its jobs' VMs gets. One install can't mix the two ways, because copying the builder shuts it down. The kind's `limits`, `image`, `env` and `docker` work as before, inside the job's VM.
+- `memoryFloor.vmMiB` must be `0`, since no job runs in the builder. Set `hostMiB` to at least one job VM's `memoryMiB`.
+- The user running `up` must be able to manage `qemu:///system`, which on most systems means the `libvirt` group. That group can do anything root can on the host.
+- The pool needs room for two copies of the builder's disk, plus up to the builder's `diskGiB` for each slot, because a job can fill its own disk.
+
+`up` copies the builder's disk the first time a slot needs it, and again when a slot needs an image the copy doesn't have. A copy shuts the builder down for about as long as the disk takes to copy, then starts it again. Jobs already running aren't touched, and copies no job uses are deleted. An image you built in the builder by hand is only picked up when `up` restarts.
+
+A job VM has to boot before its runner starts listening, and a job that arrives in that time spends it queued. Exiting `up` with a second signal leaves busy job VMs running, and the next `up` destroys each slot's when that slot starts. Samples cover the host and the builder, not job VMs, so `report` shows no machine data for these jobs yet.
+
+A builder made by an earlier release needs one change first, because its copies would otherwise share one identity on the network. In the builder, add `dhcp-identifier: mac` under the interface in `/etc/netplan/50-cloud-init.yaml`, next to `dhcp4: true`, and run `sudo netplan apply`.
 
 ## Jobs on a Mac's own OS
 
@@ -161,7 +178,7 @@ Use tagged releases only.
 
 ## Security
 
-Read the [threat model](docs/threat-model.md) before you run this. Never use these runners with a public repository. `up` refuses one unless you set `allowPublicRepos`.
+Read the [threat model](docs/threat-model.md) before you run this. `up` refuses a public repository unless you set `allowPublicRepos`, which only an install that gives [each job its own VM](#a-vm-for-each-job) can. Read the threat model's conditions for public repositories before you do.
 
 ## License
 

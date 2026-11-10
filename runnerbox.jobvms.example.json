@@ -1,0 +1,36 @@
+{
+  "name": "example",
+  "scope": { "repo": "owner/name" },
+  "tokenFile": "/home/you/.config/runnerbox/example.token",
+  "vm": {
+    "host": "ci@192.168.122.10",
+    "keyFile": "/home/you/.config/runnerbox/vm_key",
+    "knownHostsFile": "/home/you/.config/runnerbox/known_hosts"
+  },
+  "memoryFloor": { "hostMiB": 6000, "vmMiB": 0 },
+  "jobVms": {
+    "builder": "runnerbox",
+    "pool": "default",
+    "network": "default",
+    "gateway": "192.168.122.1",
+    "addresses": ["192.168.122.20", "192.168.122.21"]
+  },
+  "runners": [
+    {
+      "name": "linux",
+      "label": "example-runner",
+      "slots": 2,
+      "image": "runnerbox-base",
+      "limits": {
+        "memory": "3600m",
+        "memoryReservation": "1500m",
+        "memorySwap": "5g",
+        "cpus": 4,
+        "pids": 4096,
+        "shmSize": "1g"
+      },
+      "env": {},
+      "vm": { "cpus": 4, "memoryMiB": 4608 }
+    }
+  ]
+}

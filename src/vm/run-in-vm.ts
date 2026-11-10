@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
-import type { VmInstall } from "../launcher/launcher-config.ts";
 import { runWithSecret } from "../launcher/run-with-secret.ts";
 
-type Vm = VmInstall["vm"];
+// The VM from the config, or a job VM at another address with the same login.
+export type Vm = { host: string; keyFile: string; knownHostsFile: string };
 
 type VmCommand = {
   vm: Vm;

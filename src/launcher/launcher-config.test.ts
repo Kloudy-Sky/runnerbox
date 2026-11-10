@@ -105,3 +105,35 @@ test("a host install serves one job at a time, and only safe workflow patterns",
   assert.ok(LauncherConfig({ ...config, runners: [runner, { ...runner, name: "other", label: "other" }] }) instanceof type.errors);
   assert.ok(LauncherConfig({ ...config, host: { user: "root; evil" } }) instanceof type.errors);
 });
+
+const jobVmsExample = async () => JSON.parse(await readFile("runnerbox.jobvms.example.json", "utf8"));
+
+// The job VM example changed by `patch`, written to a file and loaded.
+async function loadWithJobVms(patch: object) {
+  const path = join(dir, "job-vms.json");
+  await writeFile(path, JSON.stringify({ ...(await jobVmsExample()), ...patch }));
+  return loadLauncherConfig(path);
+}
+
+test("job VMs need a size on every runner and an address for every slot", async () => {
+  const config = await jobVmsExample();
+  const [runner] = config.runners;
+  await loadWithJobVms({});
+
+  await assert.rejects(loadWithJobVms({ runners: [{ ...runner, vm: undefined }] }), /every runner needs `vm`/);
+  await assert.rejects(loadWithJobVms({ runners: [{ ...runner, slots: 3 }] }), /3 slots need 3 jobVms.addresses/);
+  await assert.rejects(loadWithJobVms({ jobVms: undefined }), /needs `jobVms`/);
+  // The builder runs no jobs, so a floor on it would only hold slots back while its disk is copied.
+  await assert.rejects(loadWithJobVms({ memoryFloor: { hostMiB: 500, vmMiB: 1500 } }), /vmMiB to 0/);
+  await assert.rejects(
+    loadWithJobVms({ jobVms: { ...config.jobVms, addresses: ["192.168.122.1", "192.168.122.20"] } }),
+    /differ from each other and from the gateway/,
+  );
+});
+
+test("only an install that gives each job a VM can allow public repositories", async () => {
+  const path = join(dir, "public.json");
+  await writeFile(path, JSON.stringify({ ...(await example()), allowPublicRepos: true }));
+  await assert.rejects(loadLauncherConfig(path), /allowPublicRepos needs `jobVms`/);
+  assert.equal((await loadWithJobVms({ allowPublicRepos: true })).allowPublicRepos, true);
+});

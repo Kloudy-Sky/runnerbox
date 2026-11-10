@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { type } from "arktype";
 
-const Ipv4 = type("/^((25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1?\\d?\\d)$/");
+export const Ipv4 = type("/^((25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(25[0-5]|2[0-4]\\d|1?\\d?\\d)$/");
 
 // How to build the VM that runs jobs. Unknown keys are errors, like the launcher's config.
 export const VmConfig = type({

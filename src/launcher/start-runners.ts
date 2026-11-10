@@ -9,6 +9,8 @@ import { installPaths } from "../host/install-paths.ts";
 import { buildInVm } from "../image/build-in-vm.ts";
 import { hashContext } from "../image/context-hash.ts";
 import { createImageKeeper } from "../image/image-keeper.ts";
+import type { InTurn } from "../jobvm/in-turn.ts";
+import { startJobVms } from "../jobvm/start-job-vms.ts";
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
 import { createRotatingLog } from "../tracking/rotating-log.ts";
 import { createSampler, VM_SAMPLE_COMMAND } from "../tracking/sampler.ts";
@@ -130,17 +132,23 @@ export async function startRunners(configPath: string) {
     );
 
   if ("vm" in config) {
+    // With job VMs, the VM in the config only builds images, and it does one thing at a time.
+    const jobVms = config.jobVms ? await startJobVms(config, config.jobVms) : null;
+    const inBuilder: InTurn = jobVms?.inBuilder ?? ((task) => task());
     await Promise.all(
       config.runners.map(async (runner, index) => {
         const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
         const onImage = (current: string | null, building: string | null) => slotState.image(runner.name, current, building);
-        const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping, onImage);
+        const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping, onImage, inBuilder);
         // Draining before this kind's image was ever ready, so it has no slots to wait for.
         if (!image) return;
         await startSlots(runner, index, {
           image: image.current,
           run: async (slot, secret, tag) => {
-            const exitCode = await runInVm({ vm: config.vm, command: dockerRunCommand(config.name, runner, slot, tag), secret });
+            const command = dockerRunCommand(config.name, runner, slot, tag);
+            const exitCode = jobVms
+              ? await jobVms.run(runner, slot, tag, (vm) => runInVm({ vm, command, secret }))
+              : await runInVm({ vm: config.vm, command, secret });
             await image.prune();
             return exitCode;
           },
@@ -173,6 +181,8 @@ async function keepImage(
   stopping: () => boolean,
   // Tells the live state file which tag new containers use, and which one is building.
   onImage: (current: string | null, building: string | null) => void,
+  // Gives a task the VM to itself. With job VMs, a disk copy shuts it down between tasks.
+  inBuilder: InTurn,
 ) {
   const { vm } = config;
   const { image } = runner;
@@ -181,14 +191,14 @@ async function keepImage(
     return { current: () => image, prune: async () => {} };
   }
 
-  const inVm = (command: string) => readFromVm({ vm, command }).then((output) => output.trim() === "yes");
+  const inVm = (command: string) => inBuilder(() => readFromVm({ vm, command })).then((output) => output.trim() === "yes");
   const keeper = createImageKeeper(image.name, {
     contextHash: () => hashContext(image.context),
     existsInVm: (tag) => inVm(`docker image inspect ${shellQuote(tag)} >/dev/null 2>&1 && echo yes || echo no`),
     build: async (tag) => {
       onImage(keeper.current(), tag);
       try {
-        return await buildInVm({ vm, context: image.context, tag });
+        return await inBuilder(() => buildInVm({ vm, context: image.context, tag }));
       } finally {
         onImage(keeper.current(), null);
       }

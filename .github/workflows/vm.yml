@@ -1,14 +1,15 @@
 name: vm
 
-# Builds the VM from `runnerbox vm render` on a clean machine, then checks its firewall from inside.
+# Builds the VM from `runnerbox vm render` on a clean machine, then checks its firewall from inside,
+# and the same for job VMs copied from it.
 on:
   pull_request:
     paths:
-      ["src/vm/**", "image/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+      ["src/vm/**", "src/jobvm/**", "scripts/job-vm-check.ts", "image/**", "src/launcher/docker-command.ts", "src/launcher/launcher-config.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   push:
     branches: [main]
     paths:
-      ["src/vm/**", "image/**", "src/launcher/docker-command.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+      ["src/vm/**", "src/jobvm/**", "scripts/job-vm-check.ts", "image/**", "src/launcher/docker-command.ts", "src/launcher/launcher-config.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   workflow_dispatch:
 
 permissions:
@@ -17,7 +18,7 @@ permissions:
 jobs:
   vm:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -110,6 +111,16 @@ jobs:
             fi
             echo "ok: the gateway is blocked from inside the job'"'"'s containers"'
           EOF
+
+      # Job VMs are copies of the VM above. This stops it, copies its disk, and boots three of them.
+      - name: A VM per job
+        run: |
+          dir="$RUNNER_TEMP/vm"
+          sudo env "PATH=$PATH" node scripts/job-vm-check.ts "$dir/key" "$dir/out/known_hosts"
+          # Every job VM and its disk is gone, and the builder is back up.
+          if sudo virsh list --all --name | grep -q '^check-'; then echo "FAILED: a job VM is still defined"; exit 1; fi
+          if sudo virsh vol-list --pool default | grep -q 'check-vm-slot'; then echo "FAILED: a job VM's disk is left"; exit 1; fi
+          sudo virsh domstate runnerbox | grep -q '^running' && echo "ok: job VMs and their disks are gone, and the builder is running"
 
       # Proves the checks above can fail: with a filter that accepts everything, the same targets answer.
       - name: Control, with the filter opened up

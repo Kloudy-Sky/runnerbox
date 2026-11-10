@@ -15,14 +15,14 @@ export const BLOCKED_RANGES = [
 
 export const filterName = (vmName: string) => `${vmName}-isolated`;
 
-// The libvirt nwfilter on the VM's interface. Lower priorities match first. The explicit DHCP rules
+// The libvirt nwfilter on a VM's interface. Lower priorities match first. The explicit DHCP rules
 // are needed even with allow-dhcp, or the VM gets no address in this chain order. The VM's address
-// is fixed by its DHCP reservation, so the anti-spoofing filters can be given it directly.
-export function networkFilterXml({ name, network }: VmConfig) {
-  const { gateway, address } = network;
-  const ownAddress = `<parameter name='IP' value='${address}'/>`;
+// is fixed by its DHCP reservation, so the anti-spoofing filters can be given it: here when the
+// filter serves one VM, or as the interface's own IP parameter when it serves many.
+function filterXml(name: string, gateway: string, address?: string) {
+  const ownAddress = address ? `<parameter name='IP' value='${address}'/>` : "";
   return [
-    `<filter name='${filterName(name)}' chain='root'>`,
+    `<filter name='${name}' chain='root'>`,
     `  <filterref filter='no-mac-spoofing'/>`,
     `  <filterref filter='no-ip-spoofing'>${ownAddress}</filterref>`,
     `  <filterref filter='no-arp-spoofing'>${ownAddress}</filterref>`,
@@ -44,3 +44,9 @@ export function networkFilterXml({ name, network }: VmConfig) {
     "",
   ].join("\n");
 }
+
+export const networkFilterXml = ({ name, network }: VmConfig) => filterXml(filterName(name), network.gateway, network.address);
+
+// One filter for every job VM of an install. Each VM's interface passes its own reserved address.
+export const jobFilterName = (installName: string) => `${installName}-job`;
+export const jobFilterXml = (installName: string, gateway: string) => filterXml(jobFilterName(installName), gateway);
