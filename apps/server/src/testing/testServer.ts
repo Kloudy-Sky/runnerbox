@@ -31,6 +31,7 @@ export async function startTestServer({ fixtures = true } = {}) {
     stateDir,
     now,
     createPairingCode: (scopes: ReadonlyArray<AuthScope>) => Effect.runPromise(auth.createPairingCode(scopes)),
+    mintMcpToken: () => Effect.runPromise(auth.mintMcpToken("agent")).then(({ token }) => token),
     close: async () => {
       await Effect.runPromise(Scope.close(scope, Exit.void));
       await rm(stateDir, { recursive: true, force: true });

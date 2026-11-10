@@ -9,6 +9,7 @@ import * as EnvironmentIdentity from "./environment/EnvironmentIdentity.ts";
 import * as JobHistory from "./history/JobHistory.ts";
 import * as StateLogs from "./history/StateLogs.ts";
 import * as Routes from "./http/routes.ts";
+import * as Mcp from "./mcp/route.ts";
 import * as Inbox from "./inbox/Inbox.ts";
 import * as Ws from "./rpc/ws.ts";
 import * as LauncherLogs from "./runners/LauncherLogs.ts";
@@ -26,7 +27,7 @@ export const layerServices = (stateDir: string, label?: string) =>
     Layer.provideMerge(NodeServices.layer),
   );
 
-export const layerRoutes = Layer.mergeAll(Routes.layer, Ws.layer);
+export const layerRoutes = Layer.mergeAll(Routes.layer, Ws.layer, Mcp.layer);
 
 // The served routes over the shared services, exposing both so tests can mint codes on the same
 // instance. Needs an `HttpServer`.

@@ -15,11 +15,14 @@ import { layerServer } from "./server.ts";
 const USAGE = `Usage:
   runnerbox-server serve [--host <address>] [--port <n>] [--label <name>]
   runnerbox-server pair [--scopes <list>] [--json]
+  runnerbox-server mcp-token [--label <name>]
 
 serve: answers the desktop app over HTTP and WebSocket. Binds 127.0.0.1:4517 by default; reach
   it from another machine over SSH rather than binding a public address.
 pair: prints a one-time code, valid for 15 minutes, that pairs one client. --scopes is a
   comma-separated subset of ${ALL_SCOPES.join(",")} (default: all).
+mcp-token: prints a token for an MCP client to send as a Bearer token to /mcp. It reads history
+  and runner state, and works nowhere else. Revoke it from the app's access list.
 
 Reads what \`report\` and \`up\` recorded under XDG_STATE_HOME/runnerbox, as they do.`;
 
@@ -39,13 +42,25 @@ function main() {
     },
   });
   const [command, ...rest] = positionals;
-  if (values.help || rest.length > 0 || (command !== "serve" && command !== "pair")) {
+  if (values.help || rest.length > 0 || (command !== "serve" && command !== "pair" && command !== "mcp-token")) {
     console.log(USAGE);
     process.exitCode = values.help ? 0 : 2;
     return;
   }
   const dir = stateDir();
   const paths = ServerPaths.layer(dir);
+
+  if (command === "mcp-token") {
+    const label = values.label ?? "agent";
+    const program = Effect.gen(function* () {
+      const store = yield* AuthStore.AuthStore;
+      const { token } = yield* store.mintMcpToken(label);
+      console.log(`MCP token for "${label}", shown once:\n${token}\n`);
+      console.log(`For Claude Code, with the server on its default address:`);
+      console.log(`  claude mcp add --transport http runnerbox http://127.0.0.1:4517/mcp --header "Authorization: Bearer ${token}"`);
+    });
+    return NodeRuntime.runMain(program.pipe(Effect.provide(AuthStore.layer.pipe(Layer.provideMerge(paths), Layer.provideMerge(NodeServices.layer)))));
+  }
 
   if (command === "pair") {
     const scopes = values.scopes === undefined ? ALL_SCOPES : decodeScopes(values.scopes.split(","));
