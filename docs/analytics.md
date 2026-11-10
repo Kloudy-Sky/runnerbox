@@ -9,6 +9,7 @@ Everything runnerbox records stays on the host, in `~/.local/state/runnerbox/` (
 | `<owner>__<repo>.ndjson` | `report` | One job, from GitHub's API |
 | `<install>/samples.ndjson` | `up`, every minute | The host, the VM and every container in the VM |
 | `<install>/events.ndjson` | `up` | One finished thing `up` did |
+| `.server/` | `runnerbox-server` | Not analytics: the server's environment ID, and `auth.json` with pairing codes and sessions, stored as hashes |
 
 ## Samples
 

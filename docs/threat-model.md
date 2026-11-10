@@ -21,6 +21,11 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |
 | The host and VM's memory | Overcommitted jobs push both into swap | `up` registers a runner only while the host's and VM's `MemAvailable` are above `memoryFloor`, and removes idle runners when memory drops. It can't take back a job a runner already has. | Coded |
 | The token `report` syncs with | A job or VM reads it and uses it on the repository | It lives only on the host, in an owner-only `~/.config/runnerbox/report.env` read by the report timer, and never reaches the VM. It needs only read access to Actions, so it can't mint runners or change code. | Coded |
+| The token that mints runners, from the server | A client or agent reads it through `runnerbox-server` | The server reads only the state directory, never a launcher config or token file, and no RPC method or MCP tool returns a credential. | Coded |
+| The server's data | Someone on the network reads job history or runner state | `serve` binds 127.0.0.1 unless told otherwise, and warns when it isn't loopback. Another machine reaches it by forwarding that port over SSH. | Coded |
+| Pairing | A code is guessed, replayed or read from disk | Codes are 100 random bits, work once, expire after 15 minutes, and are stored only as SHA-256 hashes. Making one takes a shell as the server's user (`pair`) or a session with `access:write`. | Coded |
+| Client sessions | A token leaks from disk, a URL or the access list | Tokens are stored only as SHA-256 hashes, in an owner-only file. Only the pairing response returns one. Sockets open with a ticket that lasts 30 seconds and opens one socket, so tokens stay out of URLs. A session can be revoked. | Coded |
+| What a session may read | A paired client calls more than it was granted | Every RPC method declares the scopes it needs (`history:read`, `runners:read`, `access:write`), and middleware checks them before the handler runs. A session can only delegate scopes it holds. | Coded |
 | Project names in a shared summary | Whoever reads a summary learns repo, job, runner and host names | `summary --redact` replaces every name with an HMAC-SHA256 keyed by a random owner-only `summary.key` on the host, so hashes can't be checked against guessed names without it. A malformed key stops redaction. Numbers, durations and dates stay readable. | Coded |
 
 ## Jobs on the host's own OS
@@ -71,6 +76,10 @@ What a host install doesn't protect, on top of the list below:
 **The image.** Parts of the base image come from package registries at build time. A compromised package gets into every job until you rebuild.
 
 **Tracking data.** A job can write whatever it likes to its own output, so reports can't trust anything a job says about itself unless GitHub's data confirms it. The local job log holds job and branch names and is readable by anyone with access to your account on that machine.
+
+**The server's descriptor.** Any program that can reach the server, including a web page open on the same machine, can read its environment ID and label, and try pairing codes. The API accepts any origin because it takes bearer tokens, never cookies, so a page has no credential to borrow.
+
+**A shell on the server's machine.** Anyone who can run commands as the server's user can mint a pairing code and read every log directly, so the server adds no boundary against them.
 
 **Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed. `memoryFloor` keeps new runners from registering while the host or VM is short, but it can't take a job back once a runner has it.
 

@@ -1,5 +1,14 @@
+# The root package is the core and the CLI. Apps and packages around it build on that core.
+packages:
+  - apps/*
+  - packages/*
 # Wait three days before installing a new release, so a hijacked package has time to be caught.
 minimumReleaseAge: 4320
-# esbuild's install script only checks its binary, which works without it.
+# esbuild's install script only checks its binary, which works without it. Electron's downloads
+# its binary, which only the desktop app needs, so `pnpm --filter @runnerbox/desktop ensure:electron` does that.
 ignoredBuiltDependencies:
+  - electron
   - esbuild
+# @effect/platform-node 4.0.5 accepts any 4.x of this, and newer ones need a newer effect.
+overrides:
+  "@effect/platform-node-shared": 4.0.5

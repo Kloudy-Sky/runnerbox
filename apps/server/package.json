@@ -1,0 +1,24 @@
+{
+  "name": "@runnerbox/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "runnerbox-server": "./dist/runnerbox-server.js"
+  },
+  "scripts": {
+    "serve": "node src/bin.ts serve",
+    "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/runnerbox-server.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "typecheck": "tsc -p .",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.5",
+    "@runnerbox/contracts": "workspace:*",
+    "effect": "4.0.5",
+    "runnerbox": "workspace:*"
+  },
+  "devDependencies": {
+    "@runnerbox/client-runtime": "workspace:*"
+  }
+}

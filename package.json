@@ -10,9 +10,10 @@
   "scripts": {
     "runnerbox": "node src/cli.ts",
     "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/runnerbox.js",
-    "test": "node --test \"src/**/*.test.ts\"",
-    "typecheck": "tsc",
-    "leak-check": "node scripts/leak-check.ts"
+    "test": "node --test \"src/**/*.test.ts\" && pnpm -r test",
+    "typecheck": "tsc && pnpm -r typecheck",
+    "leak-check": "node scripts/leak-check.ts",
+    "server": "node apps/server/src/bin.ts"
   },
   "dependencies": {
     "arktype": "2.2.9"
