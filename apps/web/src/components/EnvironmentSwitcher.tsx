@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useStore } from "zustand";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
-import { routeKind } from "../lib/routes.ts";
+import { activeRoute, routeKind } from "../lib/routes.ts";
 import { runtime } from "../runtime.ts";
 import { usePreferences } from "../state/preferences.ts";
 import { ConnectionState } from "./ConnectionState.tsx";
@@ -20,7 +20,7 @@ export function EnvironmentSwitcher() {
         {environment ? (
           <>
             <span>{environment.label}</span>
-            <span className="text-dim">{routeKind(environment.route)}</span>
+            <span className="text-dim">{activeRoute(environment, connection) ? routeKind(activeRoute(environment, connection)!) : null}</span>
             <ConnectionState connection={connection} />
           </>
         ) : (
@@ -40,7 +40,7 @@ export function EnvironmentSwitcher() {
               className={`flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-surf ${saved.environmentId === environment?.environmentId ? "text-fg" : "text-dim"}`}
             >
               <span className="flex-1">{saved.label}</span>
-              <span className="text-dim">{routeKind(saved.route)}</span>
+              <span className="text-dim">{saved.routes.map(routeKind).join(", ")}</span>
               <ConnectionState connection={connections[saved.environmentId]} />
             </button>
           ))}

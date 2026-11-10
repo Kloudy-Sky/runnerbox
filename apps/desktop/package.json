@@ -14,7 +14,8 @@
   "dependencies": {
     "@runnerbox/client-runtime": "workspace:*",
     "@runnerbox/contracts": "workspace:*",
-    "effect": "4.0.5"
+    "effect": "4.0.5",
+    "@runnerbox/connect": "workspace:*"
   },
   "devDependencies": {
     "electron": "44.10.0",

@@ -22,7 +22,7 @@ test("an address that answers as another environment never receives the saved to
   const saved: SavedEnvironment = {
     environmentId: "paired-one",
     label: "example",
-    route: { kind: "direct", url: `http://127.0.0.1:${port}` },
+    routes: [{ kind: "direct", url: `http://127.0.0.1:${port}` }],
     token: "rbx_secret",
     scopes: ["history:read"],
     pairedAt: new Date(0).toISOString(),

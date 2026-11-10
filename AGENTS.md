@@ -6,7 +6,7 @@ Throwaway GitHub Actions runners on your own hardware, plus job history. [README
 
 - **Generic.** This repo is public and serves any project. Real names stay out: no org, repo, job, label, host name or IP of a real user. Examples use `owner/name`, `example` and libvirt's defaults. `pnpm leak-check` catches known names only.
 - **The host holds the credential.** The token that mints runners stays on the host in a `600` file. The VM and containers only ever get a single-use registration, sent on stdin. No RPC method or MCP tool returns it or any other credential.
-- **Threat model in sync.** A change that adds, removes or weakens a control updates its row in the threat model, with the status it really has: Design, Coded, Tested in CI or Tested.
+- **Threat model in sync.** A change that adds, removes or weakens a control updates its row in the threat model, with the status it really has: Design, Coded, Tested locally, Tested in CI or Tested.
 - **Labels are the interface.** Projects name a `runs-on:` label and never import runnerbox code. They install tagged releases, which ship `runnerbox.js` and its sha256.
 - **This repo's CI** runs on GitHub-hosted runners only, with actions pinned by SHA and the fewest `permissions` that work.
 
@@ -18,9 +18,11 @@ A pnpm workspace. The root package is the core and the CLI, and new code goes be
 - `packages/contracts`: what crosses the wire between server and clients, in Effect Schema: the RPC group, each method's scopes, and the data it carries.
 - `packages/client-runtime`: what every client shares: saved environments, pairing, and the RPC connection.
 - `apps/server`: `runnerbox-server`, which serves one machine's state directory over WebSocket RPC and MCP. Its services wrap the core's functions and never reimplement them.
-- `apps/web`: the React UI. `apps/desktop`: the Electron shell around it, which adds SSH routes.
+- `apps/web`: the React UI. `apps/desktop`: the Electron shell around it, which adds SSH and Connect routes.
+- `packages/connect`: what Runnerbox Connect's relay, server and clients share: signed proofs, DPoP, OAuth sign-in and the relay client.
+- `infra/relay`: the Connect relay, a Cloudflare Worker. Never deployed from this repo; [docs/connect-setup.md](docs/connect-setup.md) has the manual steps.
 
-An **environment** is one server and the machine it owns. Clients reach it over a route (loopback, SSH) and always speak the same RPC.
+An **environment** is one server and the machine it owns. Clients reach it over an ordered list of routes (loopback, SSH, Connect) and always speak the same RPC.
 
 ## Code
 

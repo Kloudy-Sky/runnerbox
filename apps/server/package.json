@@ -16,9 +16,8 @@
     "@effect/platform-node": "4.0.5",
     "@runnerbox/contracts": "workspace:*",
     "effect": "4.0.5",
-    "runnerbox": "workspace:*"
-  },
-  "devDependencies": {
+    "runnerbox": "workspace:*",
+    "@runnerbox/connect": "workspace:*",
     "@runnerbox/client-runtime": "workspace:*"
   }
 }

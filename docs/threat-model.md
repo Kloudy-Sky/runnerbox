@@ -1,6 +1,6 @@
 # Threat model
 
-This describes the intended design. **Tested** means the control is in this repo and held in a real test run. **Tested in CI** means CI builds it on a clean machine and checks it, but it hasn't run real jobs yet. **Coded** means it's in this repo and unit tested only. **Design** means it isn't in this repo yet.
+This describes the intended design. **Tested** means the control is in this repo and held in a real test run. **Tested in CI** means CI builds it on a clean machine and checks it, but it hasn't run real jobs yet. **Tested locally** means end-to-end tests run its real code against a real server, with outside services such as Clerk and Cloudflare faked, but it hasn't run deployed. **Coded** means it's in this repo and unit tested only. **Design** means it isn't in this repo yet.
 
 ## What we assume
 
@@ -94,6 +94,37 @@ What a host install doesn't protect, on top of the list below:
 - Give the host a token that can only manage runners, not an admin login. A repository-scoped token needs the Administration permission, which can do much more, so prefer an org-scoped one.
 - Give a host install `allowedWorkflows`, and keep it to workflows that only run from protected branches and tags. Signing keys a job is given sit on that machine for the length of the job.
 - Give each install on a VM its own `name`. Installs sharing a name remove each other's containers, and installs sharing a VM still share everything in the container escape risk above.
+
+## Runnerbox Connect
+
+Connect gives an environment a public hostname through a Cloudflare tunnel, on a machine that may also hold the token that mints runners. Everything served stays read-only, and the server never reads the launcher config or token file. **Tested locally** below means the control held in end-to-end tests against a real server and the relay's real code, with Clerk and Cloudflare faked; nothing here has run deployed.
+
+| Asset | Threat | Control | Status |
+| --- | --- | --- | --- |
+| Environment sessions | The relay, or anyone holding its database, uses them | The relay never receives a session. It asks the environment for a one-time credential, and the client redeems that directly with the environment. The relay proxies no app traffic. | Tested locally |
+| Which environments a user reaches | Someone signed in reaches an environment they didn't link | Every relay call needs a Clerk token, and connect and status need that user's own link. Links and tunnels belong to a user and environment pair, so claiming another machine's (public) environment ID only makes a separate, useless link. | Tested locally, with Clerk faked |
+| Linking | A link is forged, replayed, or points the tunnel elsewhere | The link proof is signed by the environment's own Ed25519 key, names a relay challenge issued to the signed-in user, lives at most 5 minutes, and both its ID and the challenge's are used once. The origin must be a loopback host and port. | Tested locally |
+| The environment's network | A tunnel exposes another service on it | The relay's ingress routes only the allocated hostname, only to the loopback origin from the link proof; anything else gets 404. | Coded; ingress shape unit tested, not against Cloudflare |
+| Mint requests to an environment | Someone other than the relay gets a credential minted, or replays a real request | The environment accepts only requests signed by the relay it linked to, for itself and its linked user, at most 5 minutes old, with the client key's thumbprint in `cnf.jkt`, and exactly the `environment:connect` scope. The request's ID and nonce are each used once. | Tested locally |
+| Mint answers to the relay | Another process behind the tunnel hands the client its own credential | The environment signs its answer with its key, bound to the relay's nonce, the client key and the credential. The relay checks all of them against the key pinned at link time. | Tested locally |
+| Relay egress | A health or mint request is bounced to another host | The relay calls only the address of its own allocation and refuses any redirect. | Tested locally |
+| A captured Connect credential | Someone else redeems it | It's bound to the client's key: redeeming needs a DPoP proof from that key. It works once, within 2 minutes, and a wrong key leaves it unspent. | Tested locally |
+| A captured Connect session token | Someone else uses it | The session stays bound to the same key, and every WebSocket ticket needs a fresh DPoP proof whose ID is used once. Proofs are checked by method and path, not host, because behind the tunnel the server can't see the host the client used. | Tested locally |
+| What a Connect session can do | It changes something, or hands out more access | A key-bound credential only ever buys `history:read` and `runners:read`, whatever was asked, so it can't reach access management or mint pairing codes. | Tested locally |
+| The connector token | It shows up where other users can read it | It's stored owner-only in `.server/connect.json` and passed to `cloudflared` in its environment, never on its command line. | Tested locally, with a stand-in `cloudflared` |
+| Tunnel teardown | A delayed cleanup deletes a tunnel a newer link just set up | Teardown first claims the allocation at the generation it read, and every change bumps it. Unlink revokes the link before tearing down, so a failed teardown leaves nothing usable. | Tested locally |
+| Leaving Connect | A machine can't leave without its owner signing in again | Unlink is signed by the environment's key, so it works from a headless machine. | Tested locally |
+| Clerk tokens on the desktop | Another program reads them | Main holds them, encrypted with the OS keychain, and makes every relay call; the renderer only ever gets a credential bound to its own key. | Coded |
+
+### What Connect doesn't protect
+
+**A public hostname.** Anyone can reach the server through its tunnel: its descriptor, pairing, the MCP endpoint and the socket. All need a credential, and pairing codes are 100 bits, but a bug in the server is now reachable from the internet, not just from this machine. There is no rate limit at the relay or the server.
+
+**The relay's signing key.** Whoever holds it can have any linked environment mint read-only sessions, for the user it's linked to. Treat it like the runner token.
+
+**Cloudflare and Clerk.** TLS ends at Cloudflare's edge, so Cloudflare can see job history in transit. Whoever takes over the Clerk account can read every environment it linked.
+
+**Idle tunnels.** The relay doesn't reclaim tunnels whose connector has stopped. See [connect-setup.md](connect-setup.md) for cost.
 
 ## This repository's own CI
 

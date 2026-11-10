@@ -11,6 +11,7 @@ import * as Scope from "effect/Scope";
 import * as HttpServer from "effect/http/HttpServer";
 import type { AuthScope } from "@runnerbox/contracts";
 import * as AuthStore from "../auth/AuthStore.ts";
+import * as CloudLink from "../cloud/CloudLink.ts";
 import { layerApp } from "../server.ts";
 import { writeFixtures } from "./fixtures.ts";
 
@@ -26,8 +27,11 @@ export async function startTestServer({ fixtures = true } = {}) {
   const address = Context.get(context, HttpServer.HttpServer).address;
   if (address._tag !== "InetAddressV4") throw new Error("expected a TCP address");
   const auth = Context.get(context, AuthStore.AuthStore);
+  const cloudLink = Context.get(context, CloudLink.CloudLink);
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
+    port: address.port,
+    cloudLink,
     stateDir,
     now,
     createPairingCode: (scopes: ReadonlyArray<AuthScope>) => Effect.runPromise(auth.createPairingCode(scopes)),

@@ -18,6 +18,13 @@ const bridge: ClientPlatform = {
     save: (environment) => invoke(CHANNELS.catalogSave, environment),
     remove: (environmentId) => invoke(CHANNELS.catalogRemove, environmentId),
   },
+  connect: {
+    status: () => invoke(CHANNELS.connectStatus),
+    signIn: (relayUrl) => invoke(CHANNELS.connectSignIn, relayUrl),
+    signOut: () => invoke(CHANNELS.connectSignOut),
+    environments: () => invoke(CHANNELS.connectEnvironments),
+    requestCredential: (environmentId, thumbprint) => invoke(CHANNELS.connectRequestCredential, environmentId, thumbprint),
+  },
   ssh: {
     openTunnel: (route) => invoke(CHANNELS.sshOpenTunnel, route),
     closeTunnel: (route) => invoke(CHANNELS.sshCloseTunnel, route),

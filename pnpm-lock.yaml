@@ -30,6 +30,9 @@ importers:
       '@runnerbox/client-runtime':
         specifier: workspace:*
         version: link:../../packages/client-runtime
+      '@runnerbox/connect':
+        specifier: workspace:*
+        version: link:../../packages/connect
       '@runnerbox/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -49,6 +52,12 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.5
         version: 4.0.5(effect@4.0.5)(redis@6.3.1)
+      '@runnerbox/client-runtime':
+        specifier: workspace:*
+        version: link:../../packages/client-runtime
+      '@runnerbox/connect':
+        specifier: workspace:*
+        version: link:../../packages/connect
       '@runnerbox/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -58,10 +67,6 @@ importers:
       runnerbox:
         specifier: workspace:*
         version: link:../..
-    devDependencies:
-      '@runnerbox/client-runtime':
-        specifier: workspace:*
-        version: link:../../packages/client-runtime
 
   apps/web:
     dependencies:
@@ -109,8 +114,33 @@ importers:
         specifier: 8.3.5
         version: 8.3.5(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)
 
+  infra/relay:
+    dependencies:
+      '@runnerbox/connect':
+        specifier: workspace:*
+        version: link:../../packages/connect
+      '@runnerbox/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+      jose:
+        specifier: 6.2.2
+        version: 6.2.2
+    devDependencies:
+      '@runnerbox/client-runtime':
+        specifier: workspace:*
+        version: link:../../packages/client-runtime
+      '@runnerbox/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+
   packages/client-runtime:
     dependencies:
+      '@runnerbox/connect':
+        specifier: workspace:*
+        version: link:../connect
       '@runnerbox/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -120,6 +150,18 @@ importers:
       zustand:
         specifier: 5.0.16
         version: 5.0.16(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
+
+  packages/connect:
+    dependencies:
+      '@runnerbox/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      effect:
+        specifier: 4.0.5
+        version: 4.0.5
+      jose:
+        specifier: 6.2.2
+        version: 6.2.2
 
   packages/contracts:
     dependencies:
@@ -819,6 +861,9 @@ packages:
   jiti@2.7.0:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
+
+  jose@6.2.2:
+    resolution: {integrity: sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ==}
 
   lightningcss-android-arm64@1.32.0:
     resolution: {integrity: sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg==}
@@ -1619,6 +1664,8 @@ snapshots:
   isbot@5.2.2: {}
 
   jiti@2.7.0: {}
+
+  jose@6.2.2: {}
 
   lightningcss-android-arm64@1.32.0:
     optional: true

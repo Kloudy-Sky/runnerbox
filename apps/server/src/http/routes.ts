@@ -7,6 +7,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as AuthStore from "../auth/AuthStore.ts";
 import * as EnvironmentIdentity from "../environment/EnvironmentIdentity.ts";
 import { bearerToken } from "./bearer.ts";
+import { dpopThumbprint } from "./dpop.ts";
 
 const noStore = { "cache-control": "no-store" };
 const fail = (status: number, error: string) => HttpServerResponse.jsonUnsafe({ error }, { status, headers: noStore });
@@ -29,7 +30,10 @@ const pair = HttpRouter.add(
     const store = yield* AuthStore.AuthStore;
     const { descriptor } = yield* EnvironmentIdentity.EnvironmentIdentity;
     const input = yield* HttpServerRequest.schemaBodyJson(PairRequest);
-    const { token, session } = yield* store.pair(input);
+    // A Connect credential is bound to the client's key; the proof shows the client holds it.
+    const proofKeyThumbprint = yield* dpopThumbprint(yield* HttpServerRequest.HttpServerRequest);
+    if (proofKeyThumbprint === "invalid") return fail(401, "invalid_proof");
+    const { token, session } = yield* store.pair({ ...input, proofKeyThumbprint });
     return HttpServerResponse.jsonUnsafe(
       { environmentId: descriptor.environmentId, token, scopes: session.scopes },
       { headers: noStore },
@@ -52,7 +56,9 @@ const wsTicket = HttpRouter.add(
     const store = yield* AuthStore.AuthStore;
     const request = yield* HttpServerRequest.HttpServerRequest;
     const token = bearerToken(request);
-    const session = token === undefined ? undefined : yield* store.authenticate(token, "client");
+    const proofKeyThumbprint = yield* dpopThumbprint(request);
+    if (proofKeyThumbprint === "invalid") return fail(401, "invalid_proof");
+    const session = token === undefined ? undefined : yield* store.authenticate(token, "client", proofKeyThumbprint);
     if (!session) return fail(401, "invalid_credential");
     return HttpServerResponse.jsonUnsafe(yield* store.issueTicket(session), { headers: noStore });
   }),
@@ -60,6 +66,6 @@ const wsTicket = HttpRouter.add(
 
 // Credentials are bearer tokens, never cookies, so any origin may call these: a page in the
 // user's browser has nothing it could ride on.
-const cors = HttpRouter.cors({ allowedHeaders: ["authorization", "content-type"], maxAge: 600 });
+const cors = HttpRouter.cors({ allowedHeaders: ["authorization", "content-type", "dpop"], maxAge: 600 });
 
 export const layer = Layer.mergeAll(descriptor, pair, wsTicket, cors);

@@ -6,12 +6,13 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { createStore } from "zustand/vanilla";
 import type { ClientPlatform, Route, SavedEnvironment, SshRoute } from "./environments.ts";
-import { ConnectionError, fetchDescriptor, pairWithCode } from "./http.ts";
+import { createProof, createProofKey } from "@runnerbox/connect/dpop";
+import { ConnectionError, fetchDescriptor, pairWithCode, type ProveRequest } from "./http.ts";
 import { openSession, type RunnerboxClient } from "./session.ts";
 
 export type ConnectionState =
   | { readonly status: "connecting"; readonly attempt: number }
-  | { readonly status: "connected"; readonly client: RunnerboxClient; readonly since: number }
+  | { readonly status: "connected"; readonly client: RunnerboxClient; readonly since: number; readonly route: Route }
   | { readonly status: "disconnected"; readonly reason: ConnectionError["reason"]; readonly message: string; readonly retryAt: number | null };
 
 export type ClientState = {
@@ -43,19 +44,54 @@ export function createClientRuntime(platform: ClientPlatform) {
       ? Effect.tryPromise({ try: () => platform.ssh!.openTunnel(route), catch: (cause) => new ConnectionError({ reason: "tunnel_failed", cause }) })
       : Effect.fail(new ConnectionError({ reason: "tunnel_failed", cause: new Error("SSH routes need the desktop app") }));
 
-  const baseUrlFor = (route: Route) => (route.kind === "direct" ? Effect.succeed(route.url) : tunnel(route).pipe(Effect.map(({ baseUrl }) => baseUrl)));
+  const baseUrlFor = (route: Exclude<Route, { kind: "connect" }>) =>
+    route.kind === "direct" ? Effect.succeed(route.url) : tunnel(route).pipe(Effect.map(({ baseUrl }) => baseUrl));
 
+  // The address to use and how to authenticate there. Over Connect that's a fresh session: a new
+  // proof key, a credential from the relay bound to it, and a pairing that proves the key.
+  const sessionFor = (environment: SavedEnvironment, route: Route) =>
+    Effect.gen(function* () {
+      if (route.kind !== "connect") {
+        if (environment.token === null) return yield* new ConnectionError({ reason: "unauthorized" });
+        return { baseUrl: yield* baseUrlFor(route), token: environment.token, prove: undefined };
+      }
+      const connect = platform.connect;
+      if (!connect) return yield* new ConnectionError({ reason: "relay_refused", cause: new Error("Connect routes need the desktop app") });
+      const key = yield* Effect.promise(createProofKey);
+      const prove: ProveRequest = (request) => createProof(key, request);
+      const granted = yield* Effect.tryPromise({
+        try: () => connect.requestCredential(environment.environmentId, key.thumbprint),
+        catch: (cause) => new ConnectionError({ reason: "relay_refused", cause }),
+      });
+      const paired = yield* pairWithCode(granted.httpBaseUrl, granted.credential, "connect", prove);
+      return { baseUrl: granted.httpBaseUrl, token: paired.token, prove };
+    });
+
+  // Walks the routes in order and keeps the first that connects. An incompatible server stops the
+  // walk, since it's the same server on every route.
   const connectOnce = (environment: SavedEnvironment) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const baseUrl = yield* baseUrlFor(environment.route);
-        const descriptor = yield* fetchDescriptor(baseUrl);
-        if (descriptor.environmentId !== environment.environmentId) return yield* new ConnectionError({ reason: "wrong_environment" });
-        const { client, closed } = yield* openSession(baseUrl, environment.token);
-        setConnection(environment.environmentId, { status: "connected", client, since: Date.now() });
-        yield* closed;
-      }),
-    );
+    Effect.gen(function* () {
+      let last = new ConnectionError({ reason: "unreachable" });
+      for (const route of environment.routes) {
+        const attempt = yield* Effect.exit(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const { baseUrl, token, prove } = yield* sessionFor(environment, route);
+              const descriptor = yield* fetchDescriptor(baseUrl);
+              if (descriptor.environmentId !== environment.environmentId) return yield* new ConnectionError({ reason: "wrong_environment" });
+              const { client, closed } = yield* openSession(baseUrl, token, prove);
+              setConnection(environment.environmentId, { status: "connected", client, since: Date.now(), route });
+              yield* closed;
+            }),
+          ),
+        );
+        // A session that ran and then closed ends the walk; the loop starts it again from the top.
+        if (Exit.isSuccess(attempt)) return yield* new ConnectionError({ reason: "unreachable" });
+        last = asConnectionError(Cause.squash(attempt.cause));
+        if (last.reason === "incompatible") break;
+      }
+      return yield* last;
+    });
 
   const loop = (environment: SavedEnvironment) =>
     Effect.gen(function* () {
@@ -100,7 +136,7 @@ export function createClientRuntime(platform: ClientPlatform) {
     return environment;
   };
 
-  const pair = (route: Route, code: string, label: string) =>
+  const pair = (route: Exclude<Route, { kind: "connect" }>, code: string, label: string) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const baseUrl = yield* baseUrlFor(route);
@@ -109,7 +145,7 @@ export function createClientRuntime(platform: ClientPlatform) {
         return {
           environmentId: paired.environmentId,
           label: descriptor.label,
-          route,
+          routes: [route],
           token: paired.token,
           scopes: paired.scopes,
           pairedAt: new Date().toISOString(),
@@ -120,6 +156,20 @@ export function createClientRuntime(platform: ClientPlatform) {
   return {
     store,
     canUseSsh: platform.ssh !== undefined,
+    connect: platform.connect,
+
+    // Adds a Connect route to an environment, after any routes it already has, or saves a new
+    // environment reachable only through Connect, which reads and nothing more.
+    addConnectRoute(linked: { environmentId: string; label: string }, relayUrl: string) {
+      const route: Route = { kind: "connect", relayUrl };
+      const existing = store.getState().environments.find((saved) => saved.environmentId === linked.environmentId);
+      if (existing?.routes.some((other) => other.kind === "connect")) return Promise.resolve(existing);
+      return save(
+        existing
+          ? { ...existing, routes: [...existing.routes, route] }
+          : { environmentId: linked.environmentId, label: linked.label, routes: [route], token: null, scopes: ["history:read", "runners:read"], pairedAt: new Date().toISOString() },
+      );
+    },
 
     async load() {
       const environments = await platform.catalog.list();
@@ -139,7 +189,7 @@ export function createClientRuntime(platform: ClientPlatform) {
       const environment = store.getState().environments.find((saved) => saved.environmentId === environmentId);
       stop(environmentId);
       await platform.catalog.remove(environmentId);
-      if (environment?.route.kind === "ssh") await platform.ssh?.closeTunnel(environment.route);
+      for (const route of environment?.routes ?? []) if (route.kind === "ssh") await platform.ssh?.closeTunnel(route);
       store.setState((current) => {
         const { [environmentId]: _removed, ...connections } = current.connections;
         return { environments: current.environments.filter((saved) => saved.environmentId !== environmentId), connections };

@@ -6,4 +6,9 @@ export const CHANNELS = {
   sshOpenTunnel: "runnerbox:ssh:open-tunnel",
   sshCloseTunnel: "runnerbox:ssh:close-tunnel",
   sshFetchPairingCode: "runnerbox:ssh:fetch-pairing-code",
+  connectStatus: "runnerbox:connect:status",
+  connectSignIn: "runnerbox:connect:sign-in",
+  connectSignOut: "runnerbox:connect:sign-out",
+  connectEnvironments: "runnerbox:connect:environments",
+  connectRequestCredential: "runnerbox:connect:request-credential",
 } as const;

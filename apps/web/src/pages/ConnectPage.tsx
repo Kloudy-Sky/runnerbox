@@ -3,6 +3,7 @@ import { useStore } from "zustand";
 import { ConnectionState } from "../components/ConnectionState.tsx";
 import { Heading } from "../components/Heading.tsx";
 import { AccessPanel } from "../components/AccessPanel.tsx";
+import { ConnectSection } from "../components/ConnectSection.tsx";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { routeAddress, routeKind } from "../lib/routes.ts";
 import { runtime } from "../runtime.ts";
@@ -25,8 +26,8 @@ export function ConnectPage() {
               {environments.map((saved) => (
                 <tr key={saved.environmentId} className={saved.environmentId === environment?.environmentId ? "bg-surf2" : ""}>
                   <td className="py-0.5 pr-3 pl-1">{saved.label}</td>
-                  <td className="py-0.5 pr-3 text-dim">{routeKind(saved.route)}</td>
-                  <td className="py-0.5 pr-3 text-dim">{routeAddress(saved.route)}</td>
+                  <td className="py-0.5 pr-3 text-dim">{saved.routes.map(routeKind).join(", ")}</td>
+                  <td className="py-0.5 pr-3 text-dim">{saved.routes.map(routeAddress).join(", ")}</td>
                   <td className="py-0.5 pr-3"><ConnectionState connection={connections[saved.environmentId]} /></td>
                   <td className="py-0.5 pr-3 text-dim">{saved.scopes.join(" ")}</td>
                   <td className="py-0.5 pr-1 text-right whitespace-nowrap">
@@ -42,6 +43,7 @@ export function ConnectPage() {
         <p className="pt-3">Pair with a runnerbox server. On the machine that runs it, start <code className="bg-surf px-1">runnerbox-server serve</code>, which prints a pairing code, or run <code className="bg-surf px-1">runnerbox-server pair</code> for a new one.</p>
       )}
       <PairForm onPaired={(id) => setActive(id)} />
+      <ConnectSection />
       {environment?.scopes.includes("access:write") ? <AccessPanel /> : null}
     </div>
   );

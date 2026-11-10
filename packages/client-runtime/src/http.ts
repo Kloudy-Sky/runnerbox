@@ -1,9 +1,9 @@
-import { DESCRIPTOR_PATH, EnvironmentDescriptor, PairResponse, PROTOCOL_VERSION, WsTicketResponse } from "@runnerbox/contracts";
+import { DESCRIPTOR_PATH, DPOP_HEADER, EnvironmentDescriptor, PairResponse, PROTOCOL_VERSION, WsTicketResponse } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 export class ConnectionError extends Schema.TaggedError<ConnectionError>()("ConnectionError", {
-  reason: Schema.Literals(["unreachable", "unauthorized", "wrong_environment", "incompatible", "pairing_rejected", "tunnel_failed"]),
+  reason: Schema.Literals(["unreachable", "unauthorized", "wrong_environment", "incompatible", "pairing_rejected", "tunnel_failed", "relay_refused"]),
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
@@ -20,13 +20,22 @@ export class ConnectionError extends Schema.TaggedError<ConnectionError>()("Conn
         return "That pairing code is wrong, used or expired.";
       case "tunnel_failed":
         return "The SSH forward couldn't be opened.";
+      case "relay_refused":
+        return "Runnerbox Connect couldn't reach this environment. Check you're signed in and it's online.";
     }
   }
 }
 
-const request = (url: string, init: RequestInit, failure: { status: number; reason: ConnectionError["reason"] } | null = null) =>
+// Signs a DPoP proof for one request, for sessions bound to a key (those bought through Connect).
+export type ProveRequest = (request: { method: string; url: string }) => Promise<string>;
+
+const request = (url: string, init: RequestInit, failure: { status: number; reason: ConnectionError["reason"] } | null = null, prove?: ProveRequest) =>
   Effect.tryPromise({
-    try: () => fetch(url, { ...init, cache: "no-store" }),
+    try: async () => {
+      const headers = new Headers(init.headers);
+      if (prove) headers.set(DPOP_HEADER, await prove({ method: init.method ?? "GET", url }));
+      return fetch(url, { ...init, headers, cache: "no-store" });
+    },
     catch: (cause) => new ConnectionError({ reason: "unreachable", cause }),
   }).pipe(
     Effect.flatMap((response) =>
@@ -52,16 +61,18 @@ export const fetchDescriptor = (baseUrl: string) =>
     ),
   );
 
-export const pairWithCode = (baseUrl: string, code: string, label: string) =>
+export const pairWithCode = (baseUrl: string, code: string, label: string, prove?: ProveRequest) =>
   request(
     new URL("/api/auth/pair", baseUrl).href,
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, label }) },
     { status: 401, reason: "pairing_rejected" },
+    prove,
   ).pipe(decode(PairResponse));
 
-export const issueTicket = (baseUrl: string, token: string) =>
+export const issueTicket = (baseUrl: string, token: string, prove?: ProveRequest) =>
   request(
     new URL("/api/auth/ws-ticket", baseUrl).href,
     { method: "POST", headers: { authorization: `Bearer ${token}` } },
     { status: 401, reason: "unauthorized" },
+    prove,
   ).pipe(decode(WsTicketResponse));

@@ -1,4 +1,4 @@
-import type { ClientPlatform, SavedEnvironment } from "@runnerbox/client-runtime";
+import { type ClientPlatform, readSavedEnvironments } from "@runnerbox/client-runtime";
 
 declare global {
   interface Window {
@@ -15,7 +15,7 @@ const browserPlatform: ClientPlatform = {
   catalog: {
     list: async () => {
       try {
-        return JSON.parse(localStorage.getItem(KEY) ?? "[]") as SavedEnvironment[];
+        return readSavedEnvironments(JSON.parse(localStorage.getItem(KEY) ?? "[]"));
       } catch {
         return [];
       }

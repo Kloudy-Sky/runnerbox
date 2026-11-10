@@ -1,6 +1,7 @@
 # The root package is the core and the CLI. Apps and packages around it build on that core.
 packages:
   - apps/*
+  - infra/*
   - packages/*
 # Wait three days before installing a new release, so a hijacked package has time to be caught.
 minimumReleaseAge: 4320

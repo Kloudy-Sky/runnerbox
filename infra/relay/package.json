@@ -1,0 +1,20 @@
+{
+  "name": "@runnerbox/relay",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@runnerbox/connect": "workspace:*",
+    "@runnerbox/contracts": "workspace:*",
+    "effect": "4.0.5",
+    "jose": "6.2.2"
+  },
+  "devDependencies": {
+    "@runnerbox/client-runtime": "workspace:*",
+    "@runnerbox/server": "workspace:*"
+  }
+}

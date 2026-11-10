@@ -1,5 +1,8 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { parseArgs } from "node:util";
+import { clerkEndpoints, deviceAuthorize, loopbackAuthorize } from "@runnerbox/connect/oauth";
+import { relayClient } from "@runnerbox/connect/relay";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ALL_SCOPES, AuthScope } from "@runnerbox/contracts";
@@ -8,6 +11,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { stateDir } from "runnerbox/src/tracking/state-dir.ts";
 import * as AuthStore from "./auth/AuthStore.ts";
+import * as CloudLink from "./cloud/CloudLink.ts";
 import * as ServerPaths from "./config/ServerPaths.ts";
 import * as EnvironmentIdentity from "./environment/EnvironmentIdentity.ts";
 import { layerServer } from "./server.ts";
@@ -16,11 +20,18 @@ const USAGE = `Usage:
   runnerbox-server serve [--host <address>] [--port <n>] [--label <name>]
   runnerbox-server pair [--scopes <list>] [--json]
   runnerbox-server mcp-token [--label <name>]
+  runnerbox-server link --relay <url> [--device] [--port <n>]
+  runnerbox-server unlink
+  runnerbox-server link-status
 
 serve: answers the desktop app over HTTP and WebSocket. Binds 127.0.0.1:4517 by default; reach
   it from another machine over SSH rather than binding a public address.
 pair: prints a one-time code, valid for 15 minutes, that pairs one client. --scopes is a
   comma-separated subset of ${ALL_SCOPES.join(",")} (default: all).
+link: signs in to a Runnerbox Connect relay and links this environment, so your apps can reach
+  it through a managed tunnel. Opens a browser, or with --device shows a code to approve from
+  any browser, for a machine you reach over SSH. --port is the port serve listens on.
+unlink: removes the link and its tunnel. link-status: shows the link.
 mcp-token: prints a token for an MCP client to send as a Bearer token to /mcp. It reads history
   and runner state, and works nowhere else. Revoke it from the app's access list.
 
@@ -38,17 +49,46 @@ function main() {
       label: { type: "string" },
       scopes: { type: "string" },
       json: { type: "boolean", default: false },
+      relay: { type: "string" },
+      device: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
   });
   const [command, ...rest] = positionals;
-  if (values.help || rest.length > 0 || (command !== "serve" && command !== "pair" && command !== "mcp-token")) {
+  if (values.help || rest.length > 0 || !["serve", "pair", "mcp-token", "link", "unlink", "link-status"].includes(command ?? "")) {
     console.log(USAGE);
     process.exitCode = values.help ? 0 : 2;
     return;
   }
   const dir = stateDir();
   const paths = ServerPaths.layer(dir);
+
+  if (command === "link" || command === "unlink" || command === "link-status") {
+    const layer = CloudLink.layer.pipe(
+      Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(values.label))),
+      Layer.provideMerge(paths),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    const program = Effect.gen(function* () {
+      const link = yield* CloudLink.CloudLink;
+      if (command === "link-status") {
+        const state = yield* link.state;
+        return console.log(state ? `Linked to ${state.relayUrl} as ${state.httpBaseUrl}, since ${state.linkedAt}.` : "Not linked.");
+      }
+      if (command === "unlink") {
+        yield* link.unlink;
+        return console.log("Unlinked. The relay removed this environment's tunnel.");
+      }
+      const relayUrl = values.relay;
+      if (!relayUrl || !/^https:\/\//.test(relayUrl)) return yield* Effect.fail(new Error("link needs --relay https://..."));
+      const port = Number(values.port);
+      const accessToken = yield* Effect.tryPromise(() => signIn(relayUrl, values.device));
+      const state = yield* link.link({ relayUrl, accessToken, port });
+      console.log(`Linked. Apps signed in to the same account can reach this environment at ${state.httpBaseUrl}.`);
+      console.log("Restart serve to start the tunnel connector.");
+    });
+    return NodeRuntime.runMain(program.pipe(Effect.provide(layer)));
+  }
 
   if (command === "mcp-token") {
     const label = values.label ?? "agent";
@@ -97,6 +137,28 @@ function main() {
     Layer.provide(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(values.label)).pipe(Layer.provideMerge(paths), Layer.provideMerge(NodeServices.layer))),
   );
   NodeRuntime.runMain(Layer.launch(Layer.merge(server, startup)));
+}
+
+// Signs in to the relay's Clerk app as the CLI's public OAuth client, and returns an access token.
+async function signIn(relayUrl: string, device: boolean) {
+  const config = await relayClient(relayUrl).config();
+  const endpoints = clerkEndpoints(config.clerkFrontendApi);
+  const tokens = device
+    ? await deviceAuthorize({
+        endpoints,
+        clientId: config.cliClientId,
+        onCode: ({ userCode, verificationUri }) => console.log(`Open ${verificationUri} in any browser and enter ${userCode}.`),
+      })
+    : await loopbackAuthorize({
+        endpoints,
+        clientId: config.cliClientId,
+        openBrowser: (url) => {
+          console.log(`Opening a browser to sign in. If it doesn't open, visit:\n${url}`);
+          const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open";
+          spawn(opener, [url], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+        },
+      });
+  return tokens.accessToken;
 }
 
 main();

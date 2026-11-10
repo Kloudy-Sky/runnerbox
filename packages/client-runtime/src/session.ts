@@ -6,7 +6,7 @@ import * as RpcClient from "effect/rpc/RpcClient";
 import type { RpcClientError } from "effect/rpc/RpcClientError";
 import * as RpcSerialization from "effect/rpc/RpcSerialization";
 import * as Socket from "effect/socket/Socket";
-import { ConnectionError, issueTicket } from "./http.ts";
+import { ConnectionError, issueTicket, type ProveRequest } from "./http.ts";
 
 export type RunnerboxClient = RpcClient.FromGroup<typeof RunnerboxRpcGroup, RpcClientError>;
 
@@ -19,8 +19,8 @@ const socketUrl = (baseUrl: string, ticket: string) => {
 
 // Opens one RPC socket. Tickets open one socket each, so this doesn't retry on its own: when
 // `closed` resolves, the caller opens a new session with a new ticket.
-export const openSession = Effect.fn("openSession")(function* (baseUrl: string, token: string) {
-  const { ticket } = yield* issueTicket(baseUrl, token);
+export const openSession = Effect.fn("openSession")(function* (baseUrl: string, token: string, prove?: ProveRequest) {
+  const { ticket } = yield* issueTicket(baseUrl, token, prove);
   const opened = yield* Deferred.make<void>();
   const closed = yield* Deferred.make<void>();
   const hooks = RpcClient.ConnectionHooks.of({

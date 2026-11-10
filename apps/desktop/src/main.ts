@@ -1,9 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { SavedEnvironment, SshRoute } from "@runnerbox/client-runtime";
-import { app, BrowserWindow, type IpcMainInvokeEvent, ipcMain, protocol, safeStorage, session } from "electron";
+import { app, BrowserWindow, type IpcMainInvokeEvent, ipcMain, protocol, safeStorage, session, shell } from "electron";
 import * as Schema from "effect/Schema";
-import { createCatalog } from "./catalog.ts";
+import { createCatalog, type TokenCipher } from "./catalog.ts";
+import { createConnect } from "./connect.ts";
 import { CHANNELS } from "./ipc/channels.ts";
 import { createTunnels } from "./ssh/tunnels.ts";
 
@@ -22,11 +23,21 @@ if (process.env.RUNNERBOX_DESKTOP_USER_DATA) app.setPath("userData", process.env
 
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, supportFetchAPI: true } }]);
 
-const catalog = createCatalog(app.getPath("userData"), {
+const cipher: TokenCipher = {
   available: () => safeStorage.isEncryptionAvailable(),
   encrypt: (text) => safeStorage.encryptString(text).toString("base64"),
   decrypt: (text) => safeStorage.decryptString(Buffer.from(text, "base64")),
+};
+const catalog = createCatalog(app.getPath("userData"), cipher);
+// Sign-in opens the system browser, which holds the user's Clerk session; only https URLs leave.
+const connect = createConnect(app.getPath("userData"), cipher, (url) => {
+  if (url.startsWith("https://")) void shell.openExternal(url);
 });
+const isRelayUrl = Schema.is(Schema.String.check(Schema.isPattern(/^https:\/\/[^\s/]+(\/.*)?$/)));
+const decodeRelayUrl = (value: unknown) => {
+  if (!isRelayUrl(value)) throw new Error("The relay address must start with https://.");
+  return value;
+};
 
 const decodeEnvironment = Schema.decodeUnknownSync(SavedEnvironment);
 const decodeId = Schema.decodeUnknownSync(Schema.String);
@@ -51,6 +62,26 @@ function registerIpc() {
   ipcMain.handle(CHANNELS.catalogRemove, (event, environmentId: unknown) => {
     fromApp(event);
     return catalog.remove(decodeId(environmentId));
+  });
+  ipcMain.handle(CHANNELS.connectStatus, (event) => {
+    fromApp(event);
+    return connect.status();
+  });
+  ipcMain.handle(CHANNELS.connectSignIn, (event, relayUrl: unknown) => {
+    fromApp(event);
+    return connect.signIn(decodeRelayUrl(relayUrl));
+  });
+  ipcMain.handle(CHANNELS.connectSignOut, (event) => {
+    fromApp(event);
+    return connect.signOut();
+  });
+  ipcMain.handle(CHANNELS.connectEnvironments, (event) => {
+    fromApp(event);
+    return connect.environments();
+  });
+  ipcMain.handle(CHANNELS.connectRequestCredential, (event, environmentId: unknown, thumbprint: unknown) => {
+    fromApp(event);
+    return connect.requestCredential(decodeId(environmentId), decodeId(thumbprint));
   });
   ipcMain.handle(CHANNELS.sshOpenTunnel, (event, route: unknown) => {
     fromApp(event);
