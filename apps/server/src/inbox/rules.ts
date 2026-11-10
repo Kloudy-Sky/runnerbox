@@ -112,7 +112,8 @@ function typicalSteps(jobs: readonly JobRecord[]) {
 }
 
 function evidenceFor(job: JobRecord, attempts: readonly JobRecord[], history: readonly JobRecord[], input: InboxInput): Evidence {
-  const typical = typicalSteps(history.filter((other) => jobKey(other) === jobKey(job) && other !== job));
+  // Compared with the same job on the same kind of runner, since another kind can be much slower.
+  const typical = typicalSteps(history.filter((other) => jobKey(other) === jobKey(job) && runnerType(other) === runnerType(job) && other !== job));
   const machine = input.machine(job);
   return {
     steps: job.steps.map((step) => ({ ...step, typicalMs: typical.get(step.name) ?? null })),

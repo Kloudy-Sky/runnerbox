@@ -35,4 +35,5 @@ export const layerApp = (stateDir: string, label?: string) =>
   );
 
 export const layerServer = ({ host, port, stateDir, label }: ServeOptions) =>
-  layerApp(stateDir, label).pipe(Layer.provide(NodeHttpServer.layer(createServer, { host, port })));
+  // Open sockets would hold a graceful shutdown open, and nothing here has work to finish.
+  layerApp(stateDir, label).pipe(Layer.provide(NodeHttpServer.layer(createServer, { host, port, gracefulShutdownTimeout: "1 second" })));

@@ -109,6 +109,19 @@ For each job, `run-job` loads a packet filter that binds only the job user, kill
 
 Jobs use the tools already on the Mac, read-only: Xcode's command line tools and whatever is in `/opt/homebrew/bin` and `/usr/local/bin`. They can't install with Homebrew or use `sudo`. Each job starts with an empty home, so it downloads its dependencies again, and the first run of a tool there can take several seconds longer. There are no samples for a host install, so reports show its jobs without machine columns.
 
+## Desktop app
+
+A desktop app shows the same history, plus what CI needs from you, for one or more machines. Each machine runs `runnerbox-server`, which reads the logs above and answers over HTTP and WebSocket. It changes nothing.
+
+```bash
+node runnerbox-server.js serve    # on the machine with the logs: prints a pairing code
+node runnerbox-server.js pair     # a fresh code, valid once for 15 minutes
+```
+
+`serve` listens on 127.0.0.1:4517. In the app, pair by address with that code. From a checkout, `pnpm server serve` runs it, and `pnpm --filter @runnerbox/web build && pnpm --filter @runnerbox/desktop build && pnpm --filter @runnerbox/desktop start` runs the app (after `pnpm --filter @runnerbox/desktop ensure:electron` once).
+
+The **Inbox** lists what needs you, by rules over the logs: failures the machine caused (low memory, a container that died, lost SSH), jobs that keep passing only on retry, jobs that never got a runner, slots that keep failing, and jobs slower than their own history. Failures in a job's own code go under "no action", since the check already told its author.
+
 ## How a project uses it
 
 A workflow only names a label:
