@@ -39,15 +39,19 @@ const RunnerType = type({
 
 export type RunnerType = typeof RunnerType.infer;
 
-// One install's settings, kept on its host because they name local paths and the VM's address.
-// Unknown keys are errors, so a typo in a limit can't silently run jobs without it.
-export const LauncherConfig = type({
-  "+": "reject",
+const Install = {
   // Prefixes this install's containers and runners, so two installs can share a VM.
   name: "/^[a-z0-9][a-z0-9-]{0,19}$/",
   scope: type({ "+": "reject", org: "/^[A-Za-z0-9-]+$/" }).or({ "+": "reject", repo: type(REPO_NAME) }),
   // Must be readable only by its owner. It's read again for each job, so it can be rotated in place.
   tokenFile: AbsolutePath,
+} as const;
+
+// An install whose jobs run in containers inside a VM. Unknown keys are errors, so a typo in a
+// limit can't silently run jobs without it.
+const VmInstall = type({
+  "+": "reject",
+  ...Install,
   vm: {
     "+": "reject",
     host: "/^[a-z_][a-z0-9_-]*@[A-Za-z0-9][A-Za-z0-9.:-]*$/",
@@ -59,6 +63,44 @@ export const LauncherConfig = type({
   memoryFloor: { "+": "reject", hostMiB: "number.integer >= 0", vmMiB: "number.integer >= 0" },
   runners: RunnerType.array().atLeastLength(1),
 });
+
+export type VmInstall = typeof VmInstall.infer;
+
+// One kind of runner whose jobs run on the host's own OS, as the install's job user.
+const HostRunnerType = type({
+  "+": "reject",
+  name: "/^[a-z0-9]{1,20}$/",
+  label: "/^[\\w.-]+$/",
+  // The job user's home is wiped after each job, so it can serve only one job at a time.
+  slots: "1",
+  env: { "+": "reject", "[/^[A-Za-z_][A-Za-z0-9_]*$/]": "/^[^\\0\\n]*$/" },
+  // The only workflows whose jobs may run here, matched against the job's workflow ref, such as
+  // `owner/name/.github/workflows/release.yml@refs/tags/v1.2.3`. `*` matches any run of characters.
+  // Any other job fails before its first step. Without this, every job that asks for the label runs.
+  "allowedWorkflows?": type("/^[\\w.\\/@*-]+$/").array().atLeastLength(1),
+});
+
+export type HostRunnerType = typeof HostRunnerType.infer;
+
+// An install whose jobs run on this machine's own OS, with no VM or container around them. See the
+// threat model for what that gives up.
+const HostInstall = type({
+  "+": "reject",
+  ...Install,
+  host: {
+    "+": "reject",
+    // A standard OS user that exists only to run jobs. `host render` writes the script that creates it.
+    user: "/^[a-z_][a-z0-9_]{0,19}$/",
+  },
+  memoryFloor: { "+": "reject", hostMiB: "number.integer >= 0" },
+  // One kind, because every job runs as the same user and cleanup removes all that user's work.
+  runners: HostRunnerType.array().exactlyLength(1),
+});
+
+export type HostInstall = typeof HostInstall.infer;
+
+// One install's settings, kept on its host because they name local paths and the VM's address.
+export const LauncherConfig = VmInstall.or(HostInstall);
 
 export type LauncherConfig = typeof LauncherConfig.infer;
 

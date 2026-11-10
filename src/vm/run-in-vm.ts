@@ -1,7 +1,8 @@
-import { execFile, spawn } from "node:child_process";
-import type { LauncherConfig } from "../launcher/launcher-config.ts";
+import { execFile } from "node:child_process";
+import type { VmInstall } from "../launcher/launcher-config.ts";
+import { runWithSecret } from "../launcher/run-with-secret.ts";
 
-type Vm = LauncherConfig["vm"];
+type Vm = VmInstall["vm"];
 
 type VmCommand = {
   vm: Vm;
@@ -26,19 +27,9 @@ export function sshArgs(vm: Vm, command: string) {
 }
 
 // Runs a command over SSH until it ends, and returns its exit code. Null means SSH itself couldn't
-// start or was killed. Output goes to this process's own stdout and stderr.
-export function runInVm({ vm, command, secret, sshBinary = "ssh" }: VmCommand) {
-  return new Promise<number | null>((resolve) => {
-    // Its own process group, so a terminal's Ctrl-C reaches only `up`, which drains, and doesn't cut
-    // the session a busy job's container is attached to.
-    const ssh = spawn(sshBinary, sshArgs(vm, command), { stdio: ["pipe", "inherit", "inherit"], detached: true });
-    ssh.on("error", () => resolve(null));
-    ssh.on("close", (code) => resolve(code));
-    // If SSH dies before reading this, the close event above still reports it.
-    ssh.stdin.on("error", () => {});
-    ssh.stdin.end(`${secret}\n`);
-  });
-}
+// start or was killed. Ending SSH doesn't stop a container the command started.
+export const runInVm = ({ vm, command, secret, sshBinary = "ssh" }: VmCommand) =>
+  runWithSecret(sshBinary, sshArgs(vm, command), secret);
 
 // Runs a short command over SSH and returns its stdout. Fails if it exits non-zero or takes over
 // 20 seconds, so a hung VM can't stall a slot.

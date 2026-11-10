@@ -1,9 +1,9 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import type { LauncherConfig } from "../launcher/launcher-config.ts";
+import type { VmInstall } from "../launcher/launcher-config.ts";
 import { shellQuote } from "../launcher/docker-command.ts";
 import { sshArgs } from "../vm/run-in-vm.ts";
 
-type Build = { vm: LauncherConfig["vm"]; context: string; tag: string; tarBinary?: string; sshBinary?: string };
+type Build = { vm: VmInstall["vm"]; context: string; tag: string; tarBinary?: string; sshBinary?: string };
 
 const succeeded = (child: ChildProcess) =>
   new Promise<boolean>((resolve) => {

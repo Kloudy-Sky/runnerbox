@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -9,7 +9,11 @@ import { LauncherConfig, loadLauncherConfig } from "./launcher-config.ts";
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-config-"));
 after(() => rm(dir, { recursive: true }));
 
-const example = () => loadLauncherConfig("runnerbox.example.json");
+async function example() {
+  const config = await loadLauncherConfig("runnerbox.example.json");
+  if (!("vm" in config)) throw new Error("the example isn't a VM install");
+  return config;
+}
 
 // The example with its one runner type changed by `patch`.
 async function withRunner(patch: object) {
@@ -71,4 +75,29 @@ test("two runner types can't share a name or a label", async () => {
     await writeFile(path, JSON.stringify({ ...config, runners: [runner, second] }));
     await assert.rejects(loadLauncherConfig(path), new RegExp(`two runners have the ${field}`));
   }
+});
+
+const hostExample = async () => JSON.parse(await readFile("runnerbox.host.example.json", "utf8"));
+
+test("the host example is valid, and a host install takes no VM settings", async () => {
+  const config = await loadLauncherConfig("runnerbox.host.example.json");
+  assert.ok("host" in config);
+  const { vm } = await example();
+  assert.ok(LauncherConfig({ ...(await hostExample()), vm }) instanceof type.errors);
+});
+
+test("a host install serves one job at a time, and only safe workflow patterns", async () => {
+  const config = await hostExample();
+  const [runner] = config.runners;
+  for (const bad of [
+    { slots: 2 },
+    { allowedWorkflows: [] },
+    { allowedWorkflows: ["owner/name/.github/workflows/release.yml@refs/tags/v*) exit 0;; x"] },
+    { image: "runnerbox-base" },
+    { env: { VALUE: "a\nb" } },
+  ]) {
+    assert.ok(LauncherConfig({ ...config, runners: [{ ...runner, ...bad }] }) instanceof type.errors, JSON.stringify(bad));
+  }
+  assert.ok(LauncherConfig({ ...config, runners: [runner, { ...runner, name: "other", label: "other" }] }) instanceof type.errors);
+  assert.ok(LauncherConfig({ ...config, host: { user: "root; evil" } }) instanceof type.errors);
 });

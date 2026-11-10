@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Runs one host install on a Mac while its owner is logged in. Copy it to
+  ~/Library/LaunchAgents/io.runnerbox.<name>.plist, replace NAME and /Users/you, check the path to
+  node, then: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.runnerbox.<name>.plist
+  Expects a release's runnerbox.js at ~/runnerbox/runnerbox.js and the config at
+  ~/.config/runnerbox/<name>.json. `launchctl bootout` drains: the idle runner is removed and a
+  busy job gets ExitTimeOut seconds to finish before launchd kills `up`.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.runnerbox.NAME</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/you/runnerbox/runnerbox.js</string>
+    <string>up</string>
+    <string>--config</string>
+    <string>/Users/you/.config/runnerbox/NAME.json</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ExitTimeOut</key>
+  <integer>1800</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/you/Library/Logs/runnerbox-NAME.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/you/Library/Logs/runnerbox-NAME.log</string>
+</dict>
+</plist>

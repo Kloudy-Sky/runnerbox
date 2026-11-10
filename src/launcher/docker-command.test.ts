@@ -2,16 +2,22 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { test } from "node:test";
 import { dockerRunCommand } from "./docker-command.ts";
-import { type LauncherConfig, loadLauncherConfig } from "./launcher-config.ts";
+import { loadLauncherConfig, type VmInstall } from "./launcher-config.ts";
 
-const runner = (config: LauncherConfig) => {
+async function example() {
+  const config = await loadLauncherConfig("runnerbox.example.json");
+  if (!("vm" in config)) throw new Error("the example isn't a VM install");
+  return config;
+}
+
+const runner = (config: VmInstall) => {
   const [first] = config.runners;
   if (!first) throw new Error("the example has no runners");
   return first;
 };
 
 test("the command applies every limit and env var, and only removes this install's container", async () => {
-  const config = await loadLauncherConfig("runnerbox.example.json");
+  const config = await example();
 
   assert.equal(
     dockerRunCommand(config.name, runner(config), 2, "runnerbox-base"),
@@ -22,7 +28,7 @@ test("the command applies every limit and env var, and only removes this install
 });
 
 test("env values reach docker literally, whatever they contain", async () => {
-  const config = await loadLauncherConfig("runnerbox.example.json");
+  const config = await example();
   const value = `it's $(touch /tmp/owned); "quoted"`;
   const command = dockerRunCommand(config.name, { ...runner(config), env: { VALUE: value } }, 1, "runnerbox-base");
 
@@ -35,14 +41,14 @@ test("env values reach docker literally, whatever they contain", async () => {
 });
 
 test("an image built from a context is never pulled", async () => {
-  const config = await loadLauncherConfig("runnerbox.example.json");
+  const config = await example();
   const built = { ...runner(config), image: { name: "app", context: "/ci-image" } } as const;
   assert.match(dockerRunCommand(config.name, built, 1, "app:abc"), / --pull never 'app:abc'$/);
   assert.doesNotMatch(dockerRunCommand(config.name, runner(config), 1, "runnerbox-base"), /--pull/);
 });
 
 test("a docker kind runs under sysbox, never privileged, and other kinds are unchanged", async () => {
-  const config = await loadLauncherConfig("runnerbox.example.json");
+  const config = await example();
   const command = dockerRunCommand(config.name, { ...runner(config), docker: true }, 1, "runnerbox-base-docker");
   assert.match(command, / --runtime=sysbox-runc /);
   assert.doesNotMatch(command, /privileged|docker\.sock/);
