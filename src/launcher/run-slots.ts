@@ -1,4 +1,5 @@
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
+import type { JoinMemoryLine } from "./memory-line.ts";
 
 const MINT_RETRY_MS = 60_000;
 const NEXT_RUNNER_MS = 5_000;
@@ -14,6 +15,8 @@ type SlotActions = {
   image: () => string;
   // Why there's no room for another job right now, or null when there is.
   roomForJob: () => Promise<string | null>;
+  // The same check, taken in turn with every other slot. A slot registers only when this says so.
+  joinLine: JoinMemoryLine;
   // Removes a runner that hasn't taken a job. False when GitHub refuses, as it does mid-job.
   release: (runnerId: number) => Promise<boolean>;
   // Calls `check` every `ms` until the returned function is called.
@@ -44,23 +47,25 @@ export async function runSlots(
 }
 
 async function runSlot(installName: string, slot: number, actions: SlotActions, registered: Map<number, number>) {
-  const { mint, runContainer, image, roomForJob, release, every, wait, now, log, record, stopping } = actions;
+  const { mint, runContainer, image, roomForJob, joinLine, release, every, wait, now, log, record, stopping } = actions;
   const iso = (ms: number) => new Date(ms).toISOString();
 
   while (!stopping()) {
     // A runner takes any job it's offered, so the only time to hold a job back is before registering.
-    let waitedFor = await roomForJob();
+    const turn = joinLine();
+    let waitedFor = await turn.room();
     if (waitedFor) {
       const waitStarted = now();
       log(`slot ${slot}: waiting for memory: ${waitedFor}`);
       while (waitedFor && !stopping()) {
         await wait(CHECK_MS);
-        waitedFor = await roomForJob();
+        waitedFor = await turn.room();
       }
       record({ event: "memory_wait", slot, startedAt: iso(waitStarted), durationMs: now() - waitStarted });
-      if (stopping()) return;
-      log(`slot ${slot}: memory is back above the floor`);
+      if (!stopping()) log(`slot ${slot}: memory is back above the floor`);
     }
+    turn.leave();
+    if (stopping()) return;
 
     const runnerName = `${installName}-${slot}-${Math.floor(now() / 1000)}`;
 

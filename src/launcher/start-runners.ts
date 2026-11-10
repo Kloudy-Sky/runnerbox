@@ -14,6 +14,7 @@ import { dockerRunCommand, shellQuote } from "./docker-command.ts";
 import { every } from "./every.ts";
 import { type LauncherConfig, loadLauncherConfig, type RunnerType } from "./launcher-config.ts";
 import { checkMemoryFloor } from "./memory-floor.ts";
+import { createMemoryLine } from "./memory-line.ts";
 import { runSlots } from "./run-slots.ts";
 import { readTokenFile } from "./token-file.ts";
 
@@ -39,6 +40,7 @@ export async function startRunners(configPath: string) {
       host: () => readFile("/proc/meminfo", "utf8"),
       vm: () => readFromVm({ vm: config.vm, command: "cat /proc/meminfo" }),
     });
+  const joinLine = createMemoryLine(roomForJob);
   const remove = async (runnerId: number) =>
     removeRunner({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerId });
 
@@ -93,6 +95,7 @@ export async function startRunners(configPath: string) {
           },
           image: image.current,
           roomForJob,
+          joinLine,
           release: (runnerId) => remove(runnerId).then(() => true, () => false),
           every,
           wait: async (ms) => void (await wait(ms)),

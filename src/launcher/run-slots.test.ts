@@ -32,6 +32,7 @@ function fakes({
     recorded,
     actions: {
       roomForJob: async () => rooms.shift() ?? null,
+      joinLine: () => ({ room: async () => rooms.shift() ?? null, leave: () => {} }),
       release: async (runnerId: number) => {
         events.push(`release ${runnerId}`);
         return releasable;
