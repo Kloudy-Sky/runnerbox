@@ -1,0 +1,19 @@
+{
+  "name": "mac",
+  "scope": { "org": "example" },
+  "tokenFile": "/Users/you/.config/runnerbox/mac.token",
+  "host": { "user": "runnerbox" },
+  "memoryFloor": { "hostMiB": 2048 },
+  "runners": [
+    {
+      "name": "macos",
+      "label": "example-macos",
+      "slots": 1,
+      "env": {},
+      "allowedWorkflows": [
+        "owner/name/.github/workflows/release.yml@refs/tags/v*",
+        "owner/name/.github/workflows/release.yml@refs/heads/main"
+      ]
+    }
+  ]
+}

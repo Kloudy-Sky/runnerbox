@@ -7,6 +7,7 @@ Throwaway GitHub Actions runners on your own hardware, with job tracking that sh
 ## What it will do
 
 - Run each job in a fresh container, inside a firewalled VM on a machine you own.
+- Run macOS jobs on a Mac's own OS, as a separate user that's wiped after every job, for work a Linux VM can't do.
 - Mint a single-use registration for each job on the host, so the VM holds no credential that outlives a job.
 - Record every job as one line of NDJSON in a local file. No server needed. OTLP export is optional.
 - Answer four questions: why was this job slow, is this test flaky, was this failure infrastructure or code, and what are we saving.
@@ -83,6 +84,29 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 
 Stopping `up` (SIGTERM or Ctrl-C) drains it: no slot registers again, runners still waiting for a job are removed, and `up` exits once every busy job has finished. A second signal exits at once, and busy containers then finish in the VM on their own. Don't start `up` again while one is still running, because each slot starts by removing its container, which kills the job in it. The service unit gives a drain 30 minutes. Lowering `slots` can leave containers running in the VM until their job finishes, so remove those with `docker rm -f`. If the VM or SSH is down, slots log that they're waiting for memory and register nothing, unless `memoryFloor.vmMiB` is `0`. If the image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
 
+## Jobs on a Mac's own OS
+
+A Linux VM can't sign a Mac app. A host install runs jobs on the Mac itself, with no VM or container around them, so it protects much less. Read [what it gives up](docs/threat-model.md#jobs-on-the-hosts-own-os) first, and only give it workflows you'd run on that Mac by hand.
+
+```bash
+node runnerbox.js host render --config mac.json --out ~/.local/share/runnerbox/mac
+sudo ~/.local/share/runnerbox/mac/setup.sh
+node runnerbox.js up --config mac.json
+```
+
+Copy [`runnerbox.host.example.json`](runnerbox.host.example.json) to start. It needs a Mac with Apple silicon. `render` only writes files. Read `setup.sh` and `run-job` before you run setup, because both run as root. Setup creates the job user, removes other accounts' access to your home folder, installs `run-job` and the files it reads under `/usr/local/libexec/runnerbox/<name>`, downloads the runner and checks its sha256, and adds one sudoers rule that lets you run `run-job` as root without a password. Run `render` and setup again after you change the config or update runnerbox.
+
+A host config has `host` in place of `vm`, and its one runner has no `image`, `limits` or `docker`:
+
+- `host.user` is an account that exists only to run jobs. It's a standard user, hidden from the login window, with a password nobody knows.
+- `memoryFloor.hostMiB` works as above. On a Mac it counts free, inactive and speculative memory.
+- `runners` holds one kind with one slot, because cleanup removes everything the job user has.
+- `allowedWorkflows`, optional, lists the only workflows whose jobs may run here. Each entry is matched against the job's workflow ref, such as `owner/name/.github/workflows/release.yml@refs/tags/v1.2.3`, and `*` matches any run of characters. Any other job fails before its first step. For a job in a reusable workflow, the ref is the workflow that called it. Without the list, every job that asks for the label runs on your Mac.
+
+For each job, `run-job` loads a packet filter that binds only the job user, kills that user's processes, deletes its files, unpacks a fresh runner into an empty home, and runs the job with a clean environment. It cleans up the same way when the job ends. The filter drops the job's TCP and UDP to private, CGNAT and link-local addresses, to every loopback listener that isn't the job's own, and all its IPv6.
+
+Jobs use the tools already on the Mac, read-only: Xcode's command line tools and whatever is in `/opt/homebrew/bin` and `/usr/local/bin`. They can't install with Homebrew or use `sudo`. Each job starts with an empty home, so it downloads its dependencies again. There are no samples for a host install, so reports show its jobs without machine columns.
+
 ## How a project uses it
 
 A workflow only names a label:
@@ -91,7 +115,7 @@ A workflow only names a label:
 runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}
 ```
 
-Your project never imports runnerbox code, so changing that variable moves your CI on or off it. Containers never get the VM's Docker socket. Jobs that use `services:`, `container:`, Docker actions or `docker build` need a runner kind with `"docker": true` and an image built `FROM runnerbox-base-docker`, which gives each job its own Docker daemon under the sysbox runtime that VM setup installs. The base image is minimal, so anything else a job expects from `ubuntu-24.04` goes in your image layer.
+Your project never imports runnerbox code, so changing that variable moves your CI on or off it. A Mac job works the same way: `runs-on: ${{ vars.MAC_RUNNER || 'macos-15' }}`. Containers never get the VM's Docker socket. Jobs that use `services:`, `container:`, Docker actions or `docker build` need a runner kind with `"docker": true` and an image built `FROM runnerbox-base-docker`, which gives each job its own Docker daemon under the sysbox runtime that VM setup installs. The base image is minimal, so anything else a job expects from `ubuntu-24.04` goes in your image layer.
 
 | runnerbox owns | Your project owns |
 | --- | --- |

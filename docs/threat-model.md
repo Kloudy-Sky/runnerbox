@@ -23,6 +23,30 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | The token `report` syncs with | A job or VM reads it and uses it on the repository | It lives only on the host, in an owner-only `~/.config/runnerbox/report.env` read by the report timer, and never reaches the VM. It needs only read access to Actions, so it can't mint runners or change code. | Coded |
 | Project names in a shared summary | Whoever reads a summary learns repo, job, runner and host names | `summary --redact` replaces every name with an HMAC-SHA256 keyed by a random owner-only `summary.key` on the host, so hashes can't be checked against guessed names without it. A malformed key stops redaction. Numbers, durations and dates stay readable. | Coded |
 
+## Jobs on the host's own OS
+
+A host install runs jobs on a Mac itself, as a separate standard user. It has no VM and no container, so these controls replace the ones above for that install, and they are weaker. None has run a real job yet.
+
+| Asset | Threat | Control | Status |
+| --- | --- | --- | --- |
+| The GitHub token that mints runners | A job steals it | It stays in the owner's `600` file. Setup removes other accounts' access to the owner's home folder, and the job runs as another user with a clean environment. | Coded |
+| The owner's files | A job reads them | The same: a separate standard user, and an owner's home no other account can enter. Files the owner keeps world-readable elsewhere on the disk stay readable. | Coded |
+| Later jobs, and their secrets | A job leaves a process, a scheduled task or a file to read them | Before and after every job, `run-job` removes the job user's launchd services and crontab, kills its processes, deletes its files in the shared temp folders, and deletes and recreates its home, which holds its keychains. It refuses to start a job while a process survives. | Coded |
+| The machine | A job installs software or changes settings | The job user isn't an administrator and can't use `sudo`. `run-job` refuses a job user that is an administrator. | Coded |
+| The owner's root access | The sudoers rule is used for something else | It names one root-owned script that takes no arguments and reads only root-owned files, plus the registration on stdin. | Coded |
+| Services on the machine, the LAN and a tailnet | A job connects to them | A pf anchor that matches only the job user's sockets drops its TCP and UDP to private, CGNAT, link-local, multicast and broadcast addresses, to loopback listeners that aren't its own, and all its IPv6. `run-job` loads it before every job and won't run one without it. | Coded. The loopback rule depends on a packet tag surviving the loopback interface, which no test has shown yet |
+| Which jobs reach the machine | A pull request, or another workflow, names the label | With `allowedWorkflows`, a root-owned hook fails any job whose workflow ref isn't listed, before its first step. | Coded |
+
+What a host install doesn't protect, on top of the list below:
+
+- **No kernel boundary.** A local privilege escalation bug gives a job the whole machine, including the token and the owner's keychain. The VM kinds need a container escape and then a VM escape for that.
+- **No resource limits.** A job can use every core, all the memory and the whole disk. The memory floor only holds a runner back before it registers.
+- **The owner's other accounts and other users.** The filter stops the job reaching them over the network, and file permissions do the rest. Anything another account leaves world-readable or world-writable is exposed.
+- **Other protocols.** pf matches a socket's owner for TCP and UDP only, so the filter doesn't stop ICMP.
+- **The registration.** It's an argument of the runner, so every account on the machine can read it with `ps` while the job runs.
+- **The machine's tools.** Jobs run the compilers and Homebrew tools already installed. A job can't change them, but whoever can is trusted with every job's secrets.
+- **Cleanup that misses a place.** It covers the home, the temp folders and `/Users/Shared`. A folder elsewhere that the owner made writable to everyone would keep a job's files.
+
 ## What isn't protected
 
 **Container escape.** This is the risk to think about first. Only the container is thrown away. The VM persists between jobs, concurrent jobs share its kernel and Docker daemon, and jobs have passwordless sudo inside their container. A kernel or container runtime bug would let a job read a neighbouring job's secrets and stay in the VM to read later ones. It doesn't need to break out of the VM to do this.
@@ -52,6 +76,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 - Don't run jobs holding production or deploy credentials next to untrusted code. If you run them here anyway, you're accepting the container escape risk above for those credentials.
 - Don't share the host with anything you can't afford to expose.
 - Give the host a token that can only manage runners, not an admin login. A repository-scoped token needs the Administration permission, which can do much more, so prefer an org-scoped one.
+- Give a host install `allowedWorkflows`, and keep it to workflows that only run from protected branches and tags. Signing keys a job is given sit on that machine for the length of the job.
 - Give each install on a VM its own `name`. Installs sharing a name remove each other's containers, and installs sharing a VM still share everything in the container escape risk above.
 
 ## This repository's own CI

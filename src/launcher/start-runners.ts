@@ -1,7 +1,10 @@
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
+import { promisify } from "node:util";
 import { mintRegistration, removeRunner } from "../github/runner-registration.ts";
+import { installPaths } from "../host/install-paths.ts";
 import { buildInVm } from "../image/build-in-vm.ts";
 import { hashContext } from "../image/context-hash.ts";
 import { createImageKeeper } from "../image/image-keeper.ts";
@@ -12,10 +15,11 @@ import { stateDir } from "../tracking/state-dir.ts";
 import { readFromVm, runInVm } from "../vm/run-in-vm.ts";
 import { dockerRunCommand, shellQuote } from "./docker-command.ts";
 import { every } from "./every.ts";
-import { type LauncherConfig, loadLauncherConfig, type RunnerType } from "./launcher-config.ts";
-import { checkMemoryFloor } from "./memory-floor.ts";
+import { loadLauncherConfig, type RunnerType, type VmInstall } from "./launcher-config.ts";
+import { checkMemoryFloor, memAvailableMiB, vmStatAvailableMiB } from "./memory-floor.ts";
 import { createMemoryLine } from "./memory-line.ts";
 import { runSlots } from "./run-slots.ts";
+import { runWithSecret } from "./run-with-secret.ts";
 import { readTokenFile } from "./token-file.ts";
 
 const IMAGE_CHECK_MS = 5 * 60_000;
@@ -23,6 +27,16 @@ const IMAGE_RETRY_MS = 60_000;
 const SAMPLE_MS = 60_000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+// A Mac reports its memory through vm_stat, and Linux through /proc.
+const hostAvailableMiB = async () =>
+  process.platform === "darwin"
+    ? vmStatAvailableMiB((await promisify(execFile)("vm_stat")).stdout)
+    : memAvailableMiB(await readFile("/proc/meminfo", "utf8"));
+
+// How one install runs a job: what its slots call the thing a job runs in, and the command that
+// runs one job and returns its exit code.
+type Job = { image: () => string; run: (slot: number, registration: string, image: string) => Promise<number | null> };
 
 type RecordEvent = (event: LauncherEvent & { runnerType?: string }) => void;
 
@@ -33,13 +47,22 @@ export async function startRunners(configPath: string) {
   // What `up` did and what the machines looked like, kept locally for `report`. See docs/analytics.md.
   const events = createRotatingLog(join(stateDir(), config.name, "events.ndjson"));
   const record: RecordEvent = (event) => void events.append({ time: new Date().toISOString(), ...event });
-  startSampler(config);
+  // Samples come from /proc on the host and the VM, so a host install has none.
+  if ("vm" in config) startSampler(config);
   // One floor for every runner type, so together they can't overload the machines.
   const roomForJob = () =>
-    checkMemoryFloor(config.memoryFloor, {
-      host: () => readFile("/proc/meminfo", "utf8"),
-      vm: () => readFromVm({ vm: config.vm, command: "cat /proc/meminfo" }),
-    });
+    checkMemoryFloor([
+      { name: "host", floorMiB: config.memoryFloor.hostMiB, availableMiB: hostAvailableMiB },
+      ...("vm" in config
+        ? [
+            {
+              name: "VM",
+              floorMiB: config.memoryFloor.vmMiB,
+              availableMiB: async () => memAvailableMiB(await readFromVm({ vm: config.vm, command: "cat /proc/meminfo" })),
+            },
+          ]
+        : []),
+    ]);
   const joinLine = createMemoryLine(roomForJob);
   const remove = async (runnerId: number) =>
     removeRunner({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerId });
@@ -70,44 +93,59 @@ export async function startRunners(configPath: string) {
     });
   }
 
-  await Promise.all(
-    config.runners.map(async (runner, index) => {
-      const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
-      const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping);
-      // Draining before this kind's image was ever ready, so it has no slots to wait for.
-      if (!image) return;
-      await runSlots(
-        `${config.name}-${runner.name}`,
-        runner.slots,
-        {
-          mint: async (runnerName) =>
-            mintRegistration({
-              scope: config.scope,
-              token: await readTokenFile(config.tokenFile),
-              runnerName,
-              label: runner.label,
-            }),
-          runContainer: async (slot, secret, tag) => {
-            const command = dockerRunCommand(config.name, runner, slot, tag);
-            const exitCode = await runInVm({ vm: config.vm, command, secret });
+  const startSlots = (runner: { name: string; label: string; slots: number }, index: number, job: Job) =>
+    runSlots(
+      `${config.name}-${runner.name}`,
+      runner.slots,
+      {
+        mint: async (runnerName) =>
+          mintRegistration({
+            scope: config.scope,
+            token: await readTokenFile(config.tokenFile),
+            runnerName,
+            label: runner.label,
+          }),
+        runContainer: job.run,
+        image: job.image,
+        roomForJob,
+        joinLine,
+        release: (runnerId) => remove(runnerId).then(() => true, () => false),
+        every,
+        wait: async (ms) => void (await wait(ms)),
+        now: Date.now,
+        log: (line) => console.log(`${runner.name} ${line}`),
+        record: (event) => record({ ...event, runnerType: runner.name }),
+        stopping: () => stopping,
+      },
+      registered[index],
+    );
+
+  if ("vm" in config) {
+    await Promise.all(
+      config.runners.map(async (runner, index) => {
+        const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
+        const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping);
+        // Draining before this kind's image was ever ready, so it has no slots to wait for.
+        if (!image) return;
+        await startSlots(runner, index, {
+          image: image.current,
+          run: async (slot, secret, tag) => {
+            const exitCode = await runInVm({ vm: config.vm, command: dockerRunCommand(config.name, runner, slot, tag), secret });
             await image.prune();
             return exitCode;
           },
-          image: image.current,
-          roomForJob,
-          joinLine,
-          release: (runnerId) => remove(runnerId).then(() => true, () => false),
-          every,
-          wait: async (ms) => void (await wait(ms)),
-          now: Date.now,
-          log: (line) => console.log(`${runner.name} ${line}`),
-          record: recordForType,
-          stopping: () => stopping,
-        },
-        registered[index],
-      );
-    }),
-  );
+        });
+      }),
+    );
+  } else {
+    // sudo -n fails instead of asking for a password, which setup.sh's rule makes unnecessary.
+    const { runJob } = installPaths(config);
+    await Promise.all(
+      config.runners.map((runner, index) =>
+        startSlots(runner, index, { image: () => "host", run: (_slot, secret) => runWithSecret("sudo", ["-n", runJob], secret) }),
+      ),
+    );
+  }
   // Timers for samples and images would keep the process alive after the last slot returns.
   console.log("drained");
   process.exit(0);
@@ -117,7 +155,7 @@ export async function startRunners(configPath: string) {
 // nothing uses. A build context is built before that type's slots start, then checked for changes
 // every few minutes.
 async function keepImage(
-  config: LauncherConfig,
+  config: VmInstall,
   runner: RunnerType,
   roomForJob: () => Promise<string | null>,
   record: RecordEvent,
@@ -154,7 +192,7 @@ async function keepImage(
 }
 
 // One sample a minute of the host, the VM and every container in it, whether or not jobs are running.
-function startSampler(config: LauncherConfig) {
+function startSampler(config: VmInstall) {
   const samples = createRotatingLog(join(stateDir(), config.name, "samples.ndjson"));
   const readProc = (file: string) => readFile(`/proc/${file}`, "utf8");
   const sample = createSampler({
