@@ -46,9 +46,9 @@ test("the job gets the hook and its env, quoted, and nothing from the caller's e
   assert.ok(script.includes(`'ACTIONS_RUNNER_HOOK_JOB_STARTED=${installPaths(config).jobStarted}'`));
 });
 
-test("the filter binds only the job user, and lets it reach its own loopback listeners", () => {
-  const rules = pfRules(config).split("\n").filter((line) => /^(pass|block)/.test(line));
-  assert.ok(rules.length > 0 && rules.every((rule) => / user (!= )?runnerbox( |$)/.test(rule)));
-  assert.match(rules[0] ?? "", /^pass out quick on lo0 .* tag RUNNERBOX_RUNNERBOX$/);
-  assert.match(rules[1] ?? "", /^block return in quick on lo0 .* tagged RUNNERBOX_RUNNERBOX user != runnerbox$/);
+test("every filter rule binds only the job user, and IPv6 loopback stays open to it", () => {
+  const rules = pfRules(config).split("\n").filter((line) => line.startsWith("block"));
+  assert.equal(rules.length, 2);
+  assert.ok(rules.every((rule) => rule.endsWith(" user runnerbox")));
+  assert.match(rules[1] ?? "", /on ! lo0 inet6/);
 });

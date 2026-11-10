@@ -25,7 +25,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 
 ## Jobs on the host's own OS
 
-A host install runs jobs on a Mac itself, as a separate standard user. It has no VM and no container, so these controls replace the ones above for that install, and they are weaker. None has run a real job yet.
+A host install runs jobs on a Mac itself, as a separate standard user. It has no VM and no container, so these controls replace the ones above for that install, and they are weaker. Each was checked by hand on one Mac, as the job user, but none has run a real job yet.
 
 | Asset | Threat | Control | Status |
 | --- | --- | --- | --- |
@@ -34,7 +34,8 @@ A host install runs jobs on a Mac itself, as a separate standard user. It has no
 | Later jobs, and their secrets | A job leaves a process, a scheduled task or a file to read them | Before and after every job, `run-job` removes the job user's launchd services and crontab, kills its processes, deletes its files in the shared temp folders, and deletes and recreates its home, which holds its keychains. It refuses to start a job while a process survives. | Coded |
 | The machine | A job installs software or changes settings | The job user isn't an administrator and can't use `sudo`. `run-job` refuses a job user that is an administrator. | Coded |
 | The owner's root access | The sudoers rule is used for something else | It names one root-owned script that takes no arguments and reads only root-owned files, plus the registration on stdin. | Coded |
-| Services on the machine, the LAN and a tailnet | A job connects to them | A pf anchor that matches only the job user's sockets drops its TCP and UDP to private, CGNAT, link-local, multicast and broadcast addresses, to loopback listeners that aren't its own, and all its IPv6. `run-job` loads it before every job and won't run one without it. | Coded. The loopback rule depends on a packet tag surviving the loopback interface, which no test has shown yet |
+| The LAN and a tailnet | A job connects to them | A pf anchor that matches only the job user's sockets drops its TCP and UDP to private, CGNAT, link-local, multicast and broadcast addresses, and all its IPv6 outside loopback. `run-job` loads it before every job and won't run one without it. | Coded |
+| Services listening on the machine | A job connects to the owner's dev server, debugger or database on loopback | pf can't tell whose listener a loopback packet is going to, so `run-job` lists the ports other accounts are listening on and blocks the job user from them, again every 5 seconds. | Coded |
 | Which jobs reach the machine | A pull request, or another workflow, names the label | With `allowedWorkflows`, a root-owned hook fails any job whose workflow ref isn't listed, before its first step. | Coded |
 
 What a host install doesn't protect, on top of the list below:
@@ -42,6 +43,8 @@ What a host install doesn't protect, on top of the list below:
 - **No kernel boundary.** A local privilege escalation bug gives a job the whole machine, including the token and the owner's keychain. The VM kinds need a container escape and then a VM escape for that.
 - **No resource limits.** A job can use every core, all the memory and the whole disk. The memory floor only holds a runner back before it registers.
 - **The owner's other accounts and other users.** The filter stops the job reaching them over the network, and file permissions do the rest. Anything another account leaves world-readable or world-writable is exposed.
+- **A port opened mid-job.** A service another account starts while a job runs is reachable by the job for up to 5 seconds, and a connection made in that time stays open.
+- **Folders macOS keeps.** Not even root may delete the app containers and a few other folders under the job user's `Library`. `run-job` refuses to start only if a keychain, a launch agent or anything outside `Library` survives. A job that gets a sandboxed app to store data in its container could pass that data to a later job.
 - **Other protocols.** pf matches a socket's owner for TCP and UDP only, so the filter doesn't stop ICMP.
 - **The registration.** It's an argument of the runner, so every account on the machine can read it with `ps` while the job runs.
 - **The machine's tools.** Jobs run the compilers and Homebrew tools already installed. A job can't change them, but whoever can is trusted with every job's secrets.

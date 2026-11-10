@@ -28,6 +28,8 @@ PF_RULES=${q(paths.pfRules)}
 fail() { echo "run-job: $*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || fail "must run as root, through sudo."
+# The caller's folder is usually inside the owner's home, which the job user can't enter.
+cd /
 JOB_UID="$(id -u "$JOB_USER")" || fail "user $JOB_USER doesn't exist. Run setup.sh."
 # Never an account that owns anything else: cleanup kills its processes and deletes its files.
 [ "$JOB_UID" -gt 500 ] || fail "$JOB_USER is a system or first account."
@@ -48,25 +50,52 @@ clean() {
   # down in /private/var/folders.
   find /private/var/folders -mindepth 2 -maxdepth 2 -user "$JOB_USER" -exec rm -rf {} + 2>/dev/null || true
   find /private/tmp /private/var/tmp /Users/Shared -xdev -user "$JOB_USER" -delete 2>/dev/null || true
-  if [ -d "$JOB_HOME" ]; then
-    # A file the job locked would survive rm, even as root.
-    chflags -R nouchg "$JOB_HOME"
-    rm -rf "$JOB_HOME"
-  fi
+  # macOS won't let even root remove an account's home folder, or the app containers and a few
+  # other folders it keeps under Library. So the home is emptied as far as it goes, and the job only
+  # starts if what's left is under Library and isn't a keychain or a launch agent: nothing the next
+  # job would run or sign with. A file the job locked would survive too.
   install -d -o "$JOB_USER" -g "$(id -g "$JOB_USER")" -m 700 "$JOB_HOME"
+  chflags -R nouchg "$JOB_HOME" 2>/dev/null || true
+  find "$JOB_HOME" -mindepth 1 -delete 2>/dev/null || true
+  left="$(find "$JOB_HOME" -mindepth 1 \\( -path "$JOB_HOME/Library/Keychains/*" -o -path "$JOB_HOME/Library/LaunchAgents/*" \\
+    -o \\( ! -path "$JOB_HOME/Library" ! -path "$JOB_HOME/Library/*" \\) \\) -print -quit 2>/dev/null || true)"
+  if [ -n "$left" ]; then echo "run-job: couldn't remove $left." >&2; return 1; fi
+}
+
+# The ports other accounts are listening on, as a pf list. pf sees who sent a loopback packet or
+# who receives it, never both, so it can't simply keep the job away from other accounts' listeners.
+# A job still has to reach its own, so the job user is blocked from every port someone else holds.
+other_ports() {
+  lsof -nP "$@" -F un 2>/dev/null | awk -v job="$JOB_UID" '
+    /^u/ { uid = substr($0, 2) }
+    /^n/ && uid != job { n = split($0, part, ":"); if (part[n] ~ /^[0-9]+$/) print part[n] }' | sort -un | paste -sd, -
+}
+
+load_filter() {
+  local tcp udp
+  tcp="$(other_ports -iTCP -sTCP:LISTEN)"
+  udp="$(other_ports -iUDP)"
+  {
+    cat "$PF_RULES"
+    [ -z "$tcp" ] || echo "block return out quick on lo0 proto tcp to port { $tcp } user $JOB_UID"
+    [ -z "$udp" ] || echo "block return out quick on lo0 proto udp to port { $udp } user $JOB_UID"
+  } | pfctl -q -a "$PF_ANCHOR" -f - 2>/dev/null
 }
 
 IFS= read -r JIT
 [ -n "$JIT" ] || fail "no registration on stdin."
 
 # Fail closed: without the filter a job could reach this machine's own services, the LAN and a tailnet.
-pfctl -q -a "$PF_ANCHOR" -f "$PF_RULES"
+load_filter || fail "couldn't load the packet filter rules."
 pfctl -s info 2>/dev/null | grep -q '^Status: Enabled' || pfctl -q -E 2>/dev/null
 pfctl -s info 2>/dev/null | grep -q '^Status: Enabled' || fail "couldn't enable the packet filter."
+# Ports another account opens during the job are closed to it within a few seconds.
+while sleep 5; do load_filter || true; done &
+FILTER_LOOP=$!
 
 # Whatever an earlier job left, if this script was killed before it could clean up.
+trap 'kill "$FILTER_LOOP" 2>/dev/null; wait "$FILTER_LOOP" 2>/dev/null || true; clean' EXIT
 clean
-trap clean EXIT
 
 as_job_user() { sudo -u "$JOB_USER" -H "$@"; }
 as_job_user mkdir "$JOB_HOME/runner"
