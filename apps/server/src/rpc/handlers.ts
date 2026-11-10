@@ -1,11 +1,13 @@
 import { RunnerboxRpcGroup, StateReadError } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import type { Session } from "../auth/AuthStore.ts";
 import * as AuthStore from "../auth/AuthStore.ts";
 import * as JobHistory from "../history/JobHistory.ts";
 import type { LogReadError } from "../history/StateLogs.ts";
 import * as Inbox from "../inbox/Inbox.ts";
 import * as LauncherLogs from "../runners/LauncherLogs.ts";
+import * as RunnerState from "../runners/RunnerState.ts";
 
 const toWire = Effect.mapError((error: LogReadError) => new StateReadError({ what: error.what }));
 
@@ -16,6 +18,7 @@ export const layer = (session: Session) =>
     Effect.gen(function* () {
       const history = yield* JobHistory.JobHistory;
       const launcher = yield* LauncherLogs.LauncherLogs;
+      const runnerState = yield* RunnerState.RunnerState;
       const inbox = yield* Inbox.Inbox;
       const auth = yield* AuthStore.AuthStore;
       return {
@@ -28,6 +31,8 @@ export const layer = (session: Session) =>
         "inbox.list": ({ days }) => inbox.list(days).pipe(toWire),
         "runners.events": ({ days }) => launcher.events(days).pipe(toWire),
         "runners.samples": ({ days, maxPoints }) => launcher.samples(days, maxPoints).pipe(toWire),
+        "runners.state": () => runnerState.current.pipe(toWire),
+        "runners.subscribeState": () => runnerState.changes.pipe(Stream.mapError((error) => new StateReadError({ what: error.what }))),
         "access.sessions": () => auth.list(session.id).pipe(Effect.orDie),
         "access.createPairingCode": ({ scopes }) =>
           auth.delegatePairingCode(session, scopes).pipe(Effect.catchTags({ AuthStoreError: Effect.die })),

@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { issueTicket, openSession, pairWithCode } from "@runnerbox/client-runtime";
 import type { AuthScope } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import { createJobLog } from "runnerbox/src/tracking/job-log.ts";
 import { summarizeJobs } from "runnerbox/src/tracking/report.ts";
 import { startTestServer } from "../testing/testServer.ts";
@@ -95,4 +97,23 @@ test("a pairing code works once, and a WebSocket ticket opens one socket", async
     });
   assert.equal(await opens(), true);
   assert.equal(await opens(), false);
+});
+
+test("runner state streams from the file up keeps, and an install that stopped updating it is stale", async () => {
+  const { token } = await pairAs(["runners:read"]);
+  const quiet = join(server.stateDir, "quiet");
+  await mkdir(quiet);
+  const old = new Date(Date.now() - 10 * 60_000).toISOString();
+  await writeFile(
+    join(quiet, "state.json"),
+    JSON.stringify({ v: 1, install: "quiet", pid: 1, startedAt: old, updatedAt: old, stopping: false, kinds: [] }),
+  );
+  const [first] = await withClient(token, (client) => Stream.runCollect(Stream.take(client["runners.subscribeState"](), 1)));
+  const byInstall = Object.fromEntries((first ?? []).map((install) => [install.install, install]));
+  assert.equal(byInstall.example?.stale, false);
+  assert.deepEqual(
+    byInstall.example?.kinds.flatMap((kind) => kind.slots.map((slot) => `${kind.name} ${slot.slot} ${slot.phase}`)),
+    ["linux 1 busy", "linux 2 waiting", "docker 1 backoff"],
+  );
+  assert.equal(byInstall.quiet?.stale, true);
 });

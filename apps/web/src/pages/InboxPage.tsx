@@ -7,6 +7,7 @@ import { InboxTag } from "../components/InboxTag.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
+import { listening, useRunnerState } from "../hooks/useRunnerState.ts";
 import { formatAge, formatDuration, formatPercent } from "../lib/format.ts";
 
 const GROUPS = [
@@ -22,6 +23,8 @@ export function InboxPage() {
   const items = inbox.data ?? [];
   const selected = items.find((item) => item.id === selectedId) ?? items[0];
   const stats = overview.data;
+  const installs = useRunnerState();
+  const slots = installs && installs.length > 0 ? listening(installs) : null;
   return (
     <div className="flex h-full flex-col">
       {stats && stats.repos.length > 0 ? (
@@ -33,6 +36,7 @@ export function InboxPage() {
             [stats.noRunner, "never got a runner"],
             [formatDuration(stats.p50Ms), "p50 passing job"],
             [formatDuration(stats.queueP50Ms), "queue p50"],
+            ...(slots ? [[`${slots.online}/${slots.total}`, "slots listening"] as const] : []),
           ]}
         />
       ) : null}

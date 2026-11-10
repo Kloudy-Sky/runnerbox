@@ -96,7 +96,7 @@ export function AnalyticsPage() {
         </>
       ) : null}
       <Heading>Machine headroom</Heading>
-      {installs.size === 0 ? <p className="text-dim">No machine samples. They come from `runnerbox up` on this host.</p> : null}
+      {installs.size === 0 ? <p className="text-dim">No machine samples. They come from runnerbox up on that machine.</p> : null}
       {[...installs].map(([install, own]) => (
         <div key={install} className="mb-3">
           <div className="pb-1">{install}</div>

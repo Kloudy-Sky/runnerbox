@@ -9,6 +9,7 @@ Everything runnerbox records stays on the host, in `~/.local/state/runnerbox/` (
 | `<owner>__<repo>.ndjson` | `report` | One job, from GitHub's API |
 | `<install>/samples.ndjson` | `up`, every minute | The host, the VM and every container in the VM |
 | `<install>/events.ndjson` | `up` | One finished thing `up` did |
+| `<install>/state.json` | `up`, as things change and every 15 seconds | Not a log: what each slot is doing now |
 | `.server/` | `runnerbox-server` | Not analytics: the server's environment ID, and `auth.json` with pairing codes and sessions, stored as hashes |
 
 ## Samples
@@ -29,6 +30,13 @@ Every event has `time`, when it was written, and `startedAt` and `durationMs`. E
 - `runner`: one runner, from registration until its container ended. `exitCode` is the container's, or `null` if SSH failed. `released` is `"memory"` or `"image"` when the slot removed it unused, because memory dropped or a new image was ready, so its time was waiting, not work. Otherwise it's `false`. A runner's time includes waiting for a job, so match it to GitHub's job record for run time.
 - `memory_wait`: a slot waiting for `memoryFloor`, or for slots that started waiting before it, before registering.
 - `image_build`: a build of a project image, with `tag` and `ok`.
+
+## Live state
+
+`state.json` is rewritten whole, by renaming a new file over the old, so a reader never sees half of one. `updatedAt` changes at least every 15 seconds while `up` runs, so a file older than that by much means `up` stopped without draining. Each runner kind has its `image`, the tag new containers use, and `building`, a tag being built. Each slot has a `phase` and `since`, when it entered it:
+- `waiting`: for `memoryFloor`, or for slots that started waiting first. `detail` says which.
+- `minting`: registering a runner. `registered`: a runner is online, waiting for a job or running one, which `up` can't tell apart. `busy`: GitHub refused to remove it, so it has a job.
+- `backoff`: waiting before the next runner, after a failed mint or a runner that failed within a minute, or the usual 5 seconds between runners. `stopped`: drained.
 
 ## In `report`
 

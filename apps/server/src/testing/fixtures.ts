@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createSlotState } from "runnerbox/src/launcher/slot-state.ts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import type { LauncherEvent } from "runnerbox/src/tracking/launcher-event.ts";
 import type { Sample } from "runnerbox/src/tracking/sample-record.ts";
@@ -184,5 +185,17 @@ export async function writeFixtures(dir: string, now: number) {
   }
   await writeFile(join(dir, INSTALL, "events.ndjson"), ndjson(events.toSorted((a, b) => a.time.localeCompare(b.time))), { mode: 0o600 });
   await writeFile(join(dir, INSTALL, "samples.ndjson"), ndjson(samples), { mode: 0o600 });
+  // What `up` reports right now, written by the core's own writer: one linux slot on a job, one
+  // waiting in line for memory, and the docker slot backing off after its failures.
+  const live = createSlotState(join(dir, INSTALL, "state.json"), INSTALL, [
+    { name: "linux", label: "example-linux", slots: 2 },
+    { name: "docker", label: "example-docker", slots: 1 },
+  ], () => now);
+  live.image("linux", "app-ci:3f9a1c2b7d4e", null);
+  live.image("docker", null, "app-docker:9c1e2f3a4b5d");
+  live.slot("linux", 1, "busy", { runner: `${INSTALL}-linux-1-${Math.floor(now / 1000) - 300}` });
+  live.slot("linux", 2, "waiting", { detail: "VM has 1840 MiB available, below its floor of 2048 MiB" });
+  live.slot("docker", 1, "backoff", { detail: "the last runner exited 125 within a minute" });
+  await live.flush();
   return { jobs, events, samples };
 }

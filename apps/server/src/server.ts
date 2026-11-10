@@ -12,6 +12,7 @@ import * as Routes from "./http/routes.ts";
 import * as Inbox from "./inbox/Inbox.ts";
 import * as Ws from "./rpc/ws.ts";
 import * as LauncherLogs from "./runners/LauncherLogs.ts";
+import * as RunnerState from "./runners/RunnerState.ts";
 
 export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string };
 
@@ -19,7 +20,7 @@ export type ServeOptions = { readonly host: string; readonly port: number; reado
 // routes see the same instances.
 export const layerServices = (stateDir: string, label?: string) =>
   Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer).pipe(
-    Layer.provideMerge(StateLogs.layer),
+    Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(label))),
     Layer.provideMerge(ServerPaths.layer(stateDir)),
     Layer.provideMerge(NodeServices.layer),

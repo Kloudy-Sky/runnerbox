@@ -5,7 +5,7 @@ import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, PairingCode, SessionSummary } from "./auth.ts";
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { InboxItem } from "./inbox.ts";
-import { LauncherEvent, MachineSample } from "./runners.ts";
+import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
 export class StateReadError extends Schema.TaggedError<StateReadError>()("StateReadError", {
@@ -39,6 +39,8 @@ export const RPC_METHODS = {
   inboxList: "inbox.list",
   runnersEvents: "runners.events",
   runnersSamples: "runners.samples",
+  runnersState: "runners.state",
+  runnersSubscribeState: "runners.subscribeState",
   accessSessions: "access.sessions",
   accessCreatePairingCode: "access.createPairingCode",
   accessRevokeSession: "access.revokeSession",
@@ -85,6 +87,9 @@ export const RunnerboxRpcGroup = RpcGroup.make(
     success: Schema.Array(MachineSample),
     error: ReadError,
   }),
+  Rpc.make(RPC_METHODS.runnersState, { success: Schema.Array(InstallState), error: ReadError }),
+  // Sends every install's state now, then again whenever it changes.
+  Rpc.make(RPC_METHODS.runnersSubscribeState, { success: Schema.Array(InstallState), error: ReadError, stream: true }),
   Rpc.make(RPC_METHODS.accessSessions, { success: Schema.Array(SessionSummary), error: AuthorizationError }),
   Rpc.make(RPC_METHODS.accessCreatePairingCode, {
     payload: { scopes: Schema.Array(AuthScopeSchema) },
@@ -115,6 +120,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.inboxList]: ["history:read", "runners:read"],
   [RPC_METHODS.runnersEvents]: RUNNERS,
   [RPC_METHODS.runnersSamples]: RUNNERS,
+  [RPC_METHODS.runnersState]: RUNNERS,
+  [RPC_METHODS.runnersSubscribeState]: RUNNERS,
   [RPC_METHODS.accessSessions]: ACCESS,
   [RPC_METHODS.accessCreatePairingCode]: ACCESS,
   [RPC_METHODS.accessRevokeSession]: ACCESS,

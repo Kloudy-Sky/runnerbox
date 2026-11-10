@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { machineLookup } from "../history/machineLookup.ts";
 import * as StateLogs from "../history/StateLogs.ts";
+import * as RunnerState from "../runners/RunnerState.ts";
 import { deriveInbox } from "./rules.ts";
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -17,6 +18,7 @@ export class Inbox extends Context.Service<
 
 const make = Effect.gen(function* () {
   const logs = yield* StateLogs.StateLogs;
+  const runners = yield* RunnerState.RunnerState;
   const list = Effect.fn("Inbox.list")(function* (days: number) {
     const now = yield* Clock.currentTimeMillis;
     const since = now - days * DAY_MS;
@@ -25,7 +27,7 @@ const make = Effect.gen(function* () {
       jobs: yield* logs.allJobs(since),
       machine: machineLookup(yield* logs.samples(since)),
       events: yield* logs.events(since),
-      installs: [],
+      installs: yield* runners.current,
     });
   });
   return Inbox.of({ list });

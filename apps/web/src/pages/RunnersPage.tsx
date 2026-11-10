@@ -1,5 +1,7 @@
 import type { LauncherEvent } from "@runnerbox/contracts";
 import { Heading } from "../components/Heading.tsx";
+import { InstallState } from "../components/InstallState.tsx";
+import { useRunnerState } from "../hooks/useRunnerState.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { formatAge, formatDuration } from "../lib/format.ts";
@@ -7,11 +9,15 @@ import { formatAge, formatDuration } from "../lib/format.ts";
 export function RunnersPage() {
   const { days } = useRange();
   const events = useRpcQuery(["events", days], (client) => client["runners.events"]({ days }));
+  const installs = useRunnerState();
   const recent = (events.data ?? []).toReversed().slice(0, 200);
   return (
     <div className="px-3 py-2">
+      <Heading>Now</Heading>
+      {installs?.length === 0 ? <p className="text-dim">No install reports live state. It comes from runnerbox up on that machine while it runs.</p> : null}
+      {installs?.map((install) => <InstallState key={install.install} install={install} />)}
       <Heading>What up did, newest first</Heading>
-      {events.isSuccess && recent.length === 0 ? <p className="text-dim">No launcher events. They come from `runnerbox up` on this host.</p> : null}
+      {events.isSuccess && recent.length === 0 ? <p className="text-dim">No launcher events. They come from runnerbox up on that machine.</p> : null}
       <table className="border-collapse">
         <tbody>
           {recent.map((event) => (
