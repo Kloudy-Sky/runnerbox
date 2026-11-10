@@ -11,10 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo curl git jq ca-certificates xz-utils zip unzip
 RUN useradd -m -s /bin/bash runner && echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner
 WORKDIR /home/runner
-RUN curl -fsSL "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" -o r.tgz \
+RUN curl -fsSL --retry 5 --retry-all-errors "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz" -o r.tgz \
   && echo "${RUNNER_SHA256}  r.tgz" | sha256sum -c - && tar -xzf r.tgz && rm r.tgz && ./bin/installdependencies.sh
 # actions/setup-node finds this and skips its download.
-RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o n.txz \
+RUN curl -fsSL --retry 5 --retry-all-errors "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o n.txz \
   && echo "${NODE_SHA256}  n.txz" | sha256sum -c - \
   && mkdir -p "/opt/hostedtoolcache/node/${NODE_VERSION}/x64" \
   && tar -xJf n.txz --strip-components=1 -C "/opt/hostedtoolcache/node/${NODE_VERSION}/x64" && rm n.txz \

@@ -28,7 +28,7 @@ export function userData({ name, swapGiB }: VmConfig, sshPublicKey: string) {
     // The docker group only exists once its package is installed, so it can't go under `users`.
     "  - usermod -aG docker ci",
     "  - systemctl enable --now docker qemu-guest-agent",
-    `  - curl -fsSL -o /tmp/sysbox.deb ${SYSBOX.url} && echo "${SYSBOX.sha256}  /tmp/sysbox.deb" | sha256sum -c - && apt-get install -y /tmp/sysbox.deb && rm /tmp/sysbox.deb`,
+    `  - curl -fsSL --retry 5 --retry-all-errors -o /tmp/sysbox.deb ${SYSBOX.url} && echo "${SYSBOX.sha256}  /tmp/sysbox.deb" | sha256sum -c - && apt-get install -y /tmp/sysbox.deb && rm /tmp/sysbox.deb`,
     "",
   ].join("\n");
 }
