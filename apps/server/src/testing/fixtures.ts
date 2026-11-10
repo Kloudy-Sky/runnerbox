@@ -15,6 +15,9 @@ const INSTALL = "example";
 const SELF_HOSTED = ["self-hosted", "example-linux"];
 const HOSTED = ["ubuntu-24.04"];
 
+// A made-up commit SHA, the same for every run of one push.
+const shaFor = (push: number) => [...Array(5)].map((_, index) => ((push * 2_654_435_761 + index * 40_503) >>> 0).toString(16).padStart(8, "0")).join("");
+
 function random(seed: number) {
   let state = seed;
   return () => {
@@ -54,7 +57,7 @@ export async function writeFixtures(dir: string, now: number) {
   const runner = (labels: string[], slot: number, at: number) =>
     labels === HOSTED ? `GitHub Actions ${Math.floor(next() * 90) + 10}` : `${INSTALL}-linux-${slot}-${Math.floor(at / 1000)}`;
 
-  const add = (repo: string, plan: Plan, run: { runId: number; at: number; branch: string; attempt?: number }, outcome: {
+  const add = (repo: string, plan: Plan, run: { runId: number; at: number; branch: string; attempt?: number; headSha?: string }, outcome: {
     conclusion?: string;
     ms?: number;
     runner?: string | null;
@@ -78,6 +81,7 @@ export async function writeFixtures(dir: string, now: number) {
       runId: run.runId,
       attempt,
       branch: run.branch,
+      ...(run.headSha ? { headSha: run.headSha } : {}),
       conclusion,
       runner: name,
       labels: plan.labels,
@@ -110,13 +114,15 @@ export async function writeFixtures(dir: string, now: number) {
   // A run every 2 to 3 hours for two weeks, oldest first.
   for (let at = now - 14 * 24 * HOUR; at < now - HOUR; at += jitter(150 * MINUTE, 0.3)) {
     const branch = branches[Math.floor(next() * branches.length)]!;
-    const run = { runId: runId++, at, branch };
+    const run = { runId: runId++, at, branch, headSha: shaFor(runId) };
     const recent = now - at < 10 * HOUR;
     for (const plan of CI) {
       if (plan.job === "test" && branch === "feat/gate" && now - at < 3 * 24 * HOUR) {
         // Code: fails on both attempts.
         add("owner/name", plan, run, { conclusion: "failure", failStep: "Test", ms: jitter(250_000) });
         add("owner/name", plan, { ...run, attempt: 2 }, { conclusion: "failure", failStep: "Test", ms: jitter(250_000) });
+        // The same commit, re-run on hosted runners from another workflow run, fails there too.
+        add("owner/name", { ...plan, labels: HOSTED, ms: plan.ms * 1.3 }, { ...run, runId: runId++, at: at + 30 * MINUTE }, { conclusion: "failure", failStep: "Test", ms: jitter(320_000) });
       } else if (plan.job === "test" && next() < 0.07) {
         // Flaky: passes on the second attempt.
         add("owner/name", plan, run, { conclusion: "failure", failStep: "Test" });
@@ -137,7 +143,7 @@ export async function writeFixtures(dir: string, now: number) {
   // Infra: the test job's container was killed for memory 40 minutes ago, and the retry passed.
   const killedAt = now - 40 * MINUTE;
   pressure.push([killedAt, killedAt + 5 * MINUTE]);
-  const killed = { runId: runId++, at: killedAt, branch: "fix/cache" };
+  const killed = { runId: runId++, at: killedAt, branch: "fix/cache", headSha: shaFor(runId) };
   add("owner/name", CI[1]!, killed, { conclusion: "failure", failStep: "Test", slot: 2, exitCode: 137, ms: 4 * MINUTE });
   add("owner/name", CI[1]!, { ...killed, at: killedAt + 12 * MINUTE, attempt: 2 }, { slot: 1 });
 

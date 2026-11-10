@@ -78,6 +78,7 @@ const make = Effect.gen(function* () {
       .map(({ v: _v, labels, steps: _steps, ...job }) => ({
         ...job,
         runnerType: runnerType({ labels }),
+        headSha: job.headSha ?? null,
         durationMs: elapsedMs(job.startedAt, job.completedAt),
         queueMs: job.runner === null ? null : elapsedMs(job.createdAt, job.startedAt),
         verdict: verdicts.get(job.jobId) ?? null,

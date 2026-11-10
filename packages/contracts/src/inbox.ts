@@ -12,6 +12,9 @@ const NullableNumber = Schema.NullOr(Schema.Number);
 export const Attempt = Schema.Struct({
   jobId: Schema.Number,
   attempt: Schema.Number,
+  runId: Schema.Number,
+  // Null for records synced before the commit was recorded; their attempts are grouped by run.
+  headSha: Schema.NullOr(Schema.String),
   runner: Schema.NullOr(Schema.String),
   runnerType: Schema.String,
   conclusion: Schema.NullOr(Schema.String),

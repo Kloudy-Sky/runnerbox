@@ -52,6 +52,7 @@ export const JobRun = Schema.Struct({
   workflow: NullableString,
   job: Schema.String,
   branch: NullableString,
+  headSha: NullableString,
   conclusion: NullableString,
   runner: NullableString,
   runnerType: Schema.String,

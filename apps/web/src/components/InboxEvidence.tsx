@@ -36,11 +36,11 @@ export function InboxEvidence({ item }: { item: InboxItem }) {
       ) : null}
       {attempts.length > 0 ? (
         <>
-          <Heading>{item.kind === "no_runner" ? "Jobs" : "Attempts in this run"}</Heading>
+          <Heading>{item.kind === "no_runner" ? "Jobs" : attempts.some((attempt) => attempt.headSha !== null) ? "Attempts on this commit" : "Attempts in this run"}</Heading>
           {attempts.map((attempt) => (
             <div key={attempt.jobId} className="flex gap-2">
               {conclusionMark(attempt.conclusion)}
-              <span>{item.kind === "no_runner" ? attempt.conclusion : `attempt ${attempt.attempt}`}</span>
+              <span>{item.kind === "no_runner" ? attempt.conclusion : `#${attempt.runId}${attempt.attempt > 1 ? ` attempt ${attempt.attempt}` : ""}`}</span>
               <span className="text-dim">{attempt.runnerType}</span>
               <span className="flex-1" />
               <span className="text-dim tabular-nums">{formatDuration(attempt.durationMs)}</span>

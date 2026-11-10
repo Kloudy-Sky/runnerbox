@@ -41,6 +41,7 @@ export function RunsPage() {
             <th className="py-1 pr-3 font-medium">Job</th>
             <th className="py-1 pr-3 font-medium">Branch</th>
             <th className="py-1 pr-3 font-medium">Runner</th>
+            <th className="py-1 pr-3 font-medium">Commit</th>
             <th className="py-1 pr-3 font-medium">Run</th>
             <th className="py-1 pr-3 font-medium">Age</th>
             <th className="py-1 pr-3 text-right font-medium">Queue</th>
@@ -55,6 +56,7 @@ export function RunsPage() {
               <td className="py-0.5 pr-3 whitespace-nowrap">{jobName(run)}</td>
               <td className="py-0.5 pr-3 whitespace-nowrap text-dim">{run.branch}</td>
               <td className="py-0.5 pr-3 whitespace-nowrap">{run.runnerType}</td>
+              <td className="py-0.5 pr-3 font-mono text-[11.5px] text-dim">{run.headSha?.slice(0, 7) ?? "-"}</td>
               <td className="py-0.5 pr-3 font-mono text-[11.5px] whitespace-nowrap text-dim">#{run.runId}{run.attempt > 1 ? ` attempt ${run.attempt}` : ""}</td>
               <td className="py-0.5 pr-3 text-dim">{formatAge(run.createdAt)}</td>
               <td className="py-0.5 pr-3 text-right text-dim tabular-nums">{formatDuration(run.queueMs)}</td>

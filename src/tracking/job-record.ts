@@ -11,6 +11,8 @@ export const JobRecord = type({
   runId: "number",
   attempt: "number",
   branch: "string | null",
+  // The commit the job ran on. Optional so lines written before it was recorded still read.
+  "headSha?": "string",
   conclusion: "string | null",
   // Null means no machine ever picked the job up, even if GitHub reports start and end times.
   runner: "string | null",
@@ -54,6 +56,7 @@ export function toJobRecord(repo: string, job: GitHubJob): JobRecord {
     runId: job.run_id,
     attempt: job.run_attempt,
     branch: job.head_branch,
+    ...(job.head_sha ? { headSha: job.head_sha } : {}),
     conclusion: job.conclusion,
     runner: job.runner_name || null,
     labels: job.labels,

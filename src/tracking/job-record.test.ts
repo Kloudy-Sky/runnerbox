@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { distinctJobs, elapsedMs, type JobRecord } from "./job-record.ts";
+import { type } from "arktype";
+import type { GitHubJob } from "../github/github-client.ts";
+import { distinctJobs, elapsedMs, JobRecord, toJobRecord } from "./job-record.ts";
 
 const base: JobRecord = {
   v: 1,
@@ -39,4 +41,13 @@ test("jobs with no runner are only the same job if their IDs match", () => {
 test("an end before the start isn't a duration", () => {
   assert.equal(elapsedMs("2026-01-01T00:01:00Z", "2026-01-01T00:00:00Z"), null);
   assert.equal(elapsedMs("2026-01-01T00:00:00Z", "2026-01-01T00:01:00Z"), 60_000);
+});
+
+test("a job records the commit it ran on, and a line from before that still reads", () => {
+  const job: GitHubJob = {
+    id: 9, run_id: 4, run_attempt: 1, name: "test", workflow_name: "ci", head_branch: "main", head_sha: "3b8ac79e0f1d2c3b4a5968778695a4b3c2d1e0f9",
+    conclusion: "success", runner_name: "box-1", labels: ["box"], created_at: base.createdAt, started_at: base.startedAt, completed_at: base.completedAt,
+  };
+  assert.equal(toJobRecord("acme/app", job).headSha, "3b8ac79e0f1d2c3b4a5968778695a4b3c2d1e0f9");
+  assert.ok(!(JobRecord(JSON.parse(JSON.stringify(base))) instanceof type.errors));
 });

@@ -10,7 +10,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 
 let nextId = 1;
 function job(overrides: Partial<JobRecord> & { at?: number; ms?: number } = {}): JobRecord {
-  const { at = NOW - minutes(60), ms = minutes(5), ...rest } = overrides;
+  // A retry starts after the attempt before it, as it would in GitHub.
+  const { at = NOW - minutes(60) + ((overrides.attempt ?? 1) - 1) * minutes(10), ms = minutes(5), ...rest } = overrides;
   return {
     v: 1,
     repo: "owner/name",
@@ -90,7 +91,7 @@ test("low memory during a failed job points at the machine", () => {
 test("a job flaky three times needs a look, and a failure fixed by a later run doesn't", () => {
   const flaky = [1, 2, 3].flatMap((runId) => [
     job({ job: "lint", runId, conclusion: "failure", at: NOW - minutes(runId * 10) }),
-    job({ job: "lint", runId, attempt: 2, at: NOW - minutes(runId * 10) }),
+    job({ job: "lint", runId, attempt: 2, at: NOW - minutes(runId * 10) + minutes(5) }),
   ]);
   const runner = "example-linux-3-1780000000";
   const fixed = [
@@ -157,4 +158,34 @@ test("a slow run is noted, and three slow runs in a row need you", () => {
   assert.match(once[0]!.detail, /^12m 00s against a median of 5m 00s/);
   const regression = deriveInbox(input({ jobs: history(10, 3) })).filter((item) => item.kind === "slow_job");
   assert.deepEqual(regression.map((item) => item.group), ["needs_you"]);
+});
+
+test("attempts on one commit are judged together across runs and runner types, and old records group by run", () => {
+  const sha = "3b8ac79e0f1d2c3b4a5968778695a4b3c2d1e0f9";
+  const hosted = ["ubuntu-24.04"];
+  const items = deriveInbox(
+    input({
+      jobs: [
+        // One commit: failed self-hosted in one run, passed hosted in another, so it's flaky.
+        job({ job: "lint", runId: 1, headSha: sha, conclusion: "failure" }),
+        job({ job: "lint", runId: 2, headSha: sha, labels: hosted, runner: "GitHub Actions 3", at: NOW - minutes(30) }),
+        // Another commit: failed on both runner types in separate runs, so it's the code.
+        job({ job: "build", runId: 3, headSha: "a".repeat(40), conclusion: "failure" }),
+        job({ job: "build", runId: 4, headSha: "a".repeat(40), labels: hosted, runner: "GitHub Actions 4", conclusion: "failure", at: NOW - minutes(30) }),
+        // No commit recorded: two runs stay two units of one attempt each.
+        job({ job: "docs", runId: 5, conclusion: "failure" }),
+        job({ job: "docs", runId: 6, conclusion: "failure", at: NOW - minutes(30) }),
+      ],
+    }),
+  );
+  const byJob = Object.fromEntries(items.filter((item) => item.kind === "failure").map((item) => [item.title.split(" ")[2] ?? "", item] as const));
+  assert.equal(byJob.lint?.verdict, "flaky");
+  assert.match(byJob.lint!.evidence.reasons[0]!, /same commit/);
+  assert.deepEqual(byJob.lint!.evidence.attempts.map((attempt) => [attempt.runId, attempt.runnerType, attempt.conclusion]), [
+    [1, "example-linux", "failure"],
+    [2, "ubuntu-24.04", "success"],
+  ]);
+  assert.equal(byJob.build?.verdict, "code");
+  assert.match(byJob.build!.detail, /example-linux and ubuntu-24.04/);
+  assert.equal(byJob.docs?.verdict, "unconfirmed");
 });

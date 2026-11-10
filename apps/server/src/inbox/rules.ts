@@ -33,7 +33,12 @@ const isFailure = ({ conclusion }: JobRecord) => conclusion === "failure" || con
 const durationMs = (job: JobRecord) => elapsedMs(job.startedAt, job.completedAt);
 const present = <T>(value: T | null | undefined): value is T => value !== null && value !== undefined;
 const median = (values: readonly number[]) => percentile(values, 50);
-const unitKey = (job: JobRecord) => `${job.repo}\0${job.runId}\0${job.workflow}\0${job.job}`;
+// Attempts of a job on one commit, across every run and runner type. Records from before the
+// commit was recorded fall back to one run, which is always one commit.
+const unitKey = (job: JobRecord) => `${job.repo}\0${job.headSha ? `sha:${job.headSha}` : `run:${job.runId}`}\0${job.workflow}\0${job.job}`;
+const sameUnit = (a: JobRecord, b: JobRecord) => unitKey(a) === unitKey(b);
+// Attempt numbers restart in each run, so attempts on a commit are ordered by when they started.
+const startedMs = (job: JobRecord) => Date.parse(job.startedAt ?? job.createdAt);
 const jobKey = (job: JobRecord) => `${job.repo}\0${job.workflow}\0${job.job}`;
 const jobName = (job: Pick<JobRecord, "workflow" | "job">) => (job.workflow ? `${job.workflow} / ${job.job}` : job.job);
 const at = (job: JobRecord) => job.completedAt ?? job.startedAt ?? job.createdAt;
@@ -70,12 +75,13 @@ export function classifyFailures(jobs: readonly JobRecord[], input: Pick<InboxIn
   const considered = jobs.filter((job) => job.conclusion !== "skipped");
   const units: Unit[] = [];
   for (const [key, group] of Map.groupBy(considered, unitKey)) {
-    const attempts = group.toSorted((a, b) => a.attempt - b.attempt);
+    const attempts = group.toSorted((a, b) => startedMs(a) - startedMs(b));
     const failed = attempts.filter((job) => job.runner !== null && isFailure(job));
     if (failed.length === 0) continue;
     const reasons = failed.flatMap((job) => machineReasons(job, input));
-    const lastFailure = Math.max(...failed.map((job) => job.attempt));
-    const passedLater = attempts.some((job) => job.conclusion === "success" && job.attempt > lastFailure);
+    const lastFailure = Math.max(...failed.map(startedMs));
+    const passedLater = attempts.some((job) => job.conclusion === "success" && startedMs(job) > lastFailure);
+    const onCommit = attempts[0]?.headSha !== undefined;
     const types = new Set(failed.map(runnerType));
     const verdict: Verdict =
       reasons.length > 0
@@ -85,7 +91,7 @@ export function classifyFailures(jobs: readonly JobRecord[], input: Pick<InboxIn
           : failed.length >= 2 || types.size >= 2
             ? "code"
             : "unconfirmed";
-    if (verdict === "flaky") reasons.push(`failed on attempt ${lastFailure}, passed on a later attempt`);
+    if (verdict === "flaky") reasons.push(`failed, then passed on a later attempt ${onCommit ? "on the same commit" : "in the same run"}`);
     if (verdict === "code") {
       reasons.push(types.size >= 2 ? `failed on ${[...types].join(" and ")}` : `failed on all ${failed.length} attempts`);
     }
@@ -120,6 +126,8 @@ function evidenceFor(job: JobRecord, attempts: readonly JobRecord[], history: re
     attempts: attempts.map((attempt) => ({
       jobId: attempt.jobId,
       attempt: attempt.attempt,
+      runId: attempt.runId,
+      headSha: attempt.headSha ?? null,
       runner: attempt.runner,
       runnerType: runnerType(attempt),
       conclusion: attempt.conclusion,
@@ -159,7 +167,7 @@ function failureItems(input: InboxInput): InboxItem[] {
         other.branch === job.branch &&
         other.conclusion === "success" &&
         Date.parse(other.createdAt) > Date.parse(job.createdAt) &&
-        other.runId !== job.runId,
+        !sameUnit(other, job),
     );
   const groups = Map.groupBy(units, (unit) => `${jobKey(latestOf(unit))}\0${unit.verdict}`);
   return [...groups.values()].map((group) => {
@@ -221,6 +229,8 @@ function noRunnerItems(input: InboxInput): InboxItem[] {
         attempts: sorted.map((job) => ({
           jobId: job.jobId,
           attempt: job.attempt,
+          runId: job.runId,
+          headSha: job.headSha ?? null,
           runner: null,
           runnerType: label,
           conclusion: job.conclusion,
