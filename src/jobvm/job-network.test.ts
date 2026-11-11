@@ -19,18 +19,24 @@ function libvirt(hosts: string, filterDefined: boolean) {
 }
 
 test("only the missing filter and reservations are added", async () => {
-  const { virsh, changes } = libvirt("<host mac='52:54:00:a8:7a:14' ip='192.168.122.20'/>", false);
+  const { virsh, changes } = libvirt("<host mac='52:54:00:a8:7a:14' name='box-job-192-168-122-20' ip='192.168.122.20'/>", false);
   assert.equal(await ensureJobNetwork(network, virsh), "box-job");
   assert.deepEqual(changes, [
-    "nwfilter-define /dev/stdin < xml",
-    "net-update default add-last ip-dhcp-host <host mac='52:54:00:a8:7a:15' ip='192.168.122.21'/> --live --config",
+    "nwfilter-define < xml",
+    "net-update default add-last ip-dhcp-host <host mac='52:54:00:a8:7a:15' name='box-job-192-168-122-21' ip='192.168.122.21'/> --live --config",
   ]);
 });
 
-test("an address another machine has reserved is refused", async () => {
-  const { virsh, changes } = libvirt("<host mac='52:54:00:11:22:33' name='runnerbox' ip='192.168.122.21'/>", true);
-  await assert.rejects(ensureJobNetwork(network, virsh), /192\.168\.122\.21 is already reserved/);
-  assert.deepEqual(changes, []);
+test("an address another machine or install has reserved is refused", async () => {
+  for (const taken of [
+    "<host mac='52:54:00:11:22:33' name='runnerbox' ip='192.168.122.21'/>",
+    // Another install's job VM at this address has the same MAC, so only the name tells them apart.
+    "<host mac='52:54:00:a8:7a:15' name='other-job-192-168-122-21' ip='192.168.122.21'/>",
+  ]) {
+    const { virsh, changes } = libvirt(taken, true);
+    await assert.rejects(ensureJobNetwork(network, virsh), /192\.168\.122\.21 is already reserved/);
+    assert.deepEqual(changes, []);
+  }
 });
 
 test("a job VM's interface is filtered, with the address its reservation gives it", () => {

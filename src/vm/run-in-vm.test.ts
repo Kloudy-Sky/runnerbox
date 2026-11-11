@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { readFromVm, runInVm } from "./run-in-vm.ts";
+import { readFromVm, runInVm, sshArgs } from "./run-in-vm.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-test-"));
 after(() => rm(dir, { recursive: true }));
@@ -31,6 +31,13 @@ test("the secret goes over stdin and never into arguments, and host keys are enf
   assert.doesNotMatch(args, /top-secret/);
   assert.match(args, /StrictHostKeyChecking=yes/);
   assert.match(args, /ci@vm\ndocker run x\n$/);
+});
+
+test("a job VM is checked against the builder's host key, since it has no entry of its own", () => {
+  const args = sshArgs({ ...vm, host: "ci@192.168.122.20", hostKeyAlias: "192.168.122.10" }, "true");
+  assert.ok(args.includes("HostKeyAlias=192.168.122.10"));
+  assert.ok(args.includes("StrictHostKeyChecking=yes"));
+  assert.ok(!sshArgs(vm, "true").some((arg) => arg.startsWith("HostKeyAlias")));
 });
 
 test("the exit code comes back, and a missing ssh is null, not a crash", async () => {

@@ -35,7 +35,8 @@ export async function startJobVms(config: VmInstall, jobVms: NonNullable<VmInsta
     if (!runner.vm || !address) throw new Error(`${runner.name} slot ${slot} has no VM size or address`);
     const domain = containerName(install, runner.name, slot);
     const disk = `${domain}.qcow2`;
-    const vm: Vm = { ...builder, host: builder.host.replace(/@.*$/, `@${address}`) };
+    const [user, builderAddress = ""] = builder.host.split("@");
+    const vm: Vm = { ...builder, host: `${user}@${address}`, hostKeyAlias: builderAddress };
 
     // Only an image built from a context has to be in the copy. Docker pulls any other.
     const held = await golden.hold(typeof runner.image === "string" ? undefined : image).catch((error: unknown) => {

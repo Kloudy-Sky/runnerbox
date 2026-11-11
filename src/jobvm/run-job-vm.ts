@@ -39,7 +39,7 @@ export async function runJobVm(
     const capacity = /^Capacity:\s+(\d+)/m.exec(await virsh(["vol-info", "--pool", pool, golden, "--bytes"]))?.[1];
     if (!capacity) throw new Error(`couldn't read the size of ${golden}`);
     await virsh(["vol-create-as", pool, disk, capacity, "--format", "qcow2", "--backing-vol", golden, "--backing-vol-format", "qcow2"]);
-    await virsh(["create", "/dev/stdin"], xml);
+    await virsh(["create"], xml);
     await untilAnswers(answers, BOOT_TIMEOUT_MS, { wait, now });
   } catch (error) {
     log(`${domain}: the job VM didn't start: ${error instanceof Error ? error.message : error}`);

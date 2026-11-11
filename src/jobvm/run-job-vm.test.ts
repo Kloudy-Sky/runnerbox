@@ -10,8 +10,8 @@ function fakes({ boots = true, failing = "" } = {}) {
   return {
     calls,
     actions: {
-      virsh: async (args: string[], stdin = "") => {
-        calls.push(`${args.join(" ")}${stdin && ` < ${stdin}`}`);
+      virsh: async (args: string[], xml = "") => {
+        calls.push(`${args.join(" ")}${xml && ` < ${xml}`}`);
         if (args[0] === failing) throw new Error(`${failing} failed`);
         return args[0] === "vol-info" ? "Name: x\nCapacity:       1024\n" : "";
       },
@@ -39,7 +39,7 @@ test("a job gets a thin disk over the golden copy, and the VM and disk are gone 
     ...destroyed,
     "vol-info --pool default box-golden-1.qcow2 --bytes",
     "vol-create-as default box-linux-slot1.qcow2 1024 --format qcow2 --backing-vol box-golden-1.qcow2 --backing-vol-format qcow2",
-    "create /dev/stdin < <domain/>",
+    "create < <domain/>",
     "job",
     ...destroyed,
   ]);

@@ -1,22 +1,28 @@
-import { spawn } from "node:child_process";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 
-// Runs one virsh command against the host's system libvirt and returns its stdout. `stdin` feeds
-// commands told to read /dev/stdin, so XML never touches disk. There's no timeout, because copying
-// a disk takes minutes.
-export function virsh(args: string[], stdin = "", binary = "virsh") {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn(binary, ["--connect", "qemu:///system", ...args], { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.on("error", (error) => reject(new Error(`virsh ${args[0]} couldn't start: ${error.message}`)));
-    child.on("close", (code) =>
-      code === 0 ? resolve(stdout) : reject(new Error(`virsh ${args[0]} failed: ${stderr.trim().split("\n")[0]}`)),
-    );
-    child.stdin.on("error", () => {});
-    child.stdin.end(stdin);
-  });
+// Runs one virsh command against the host's system libvirt and returns its stdout. `xml` is for
+// commands that define something from a file: it's written to a private file whose path becomes the
+// last argument, because virsh can't read a definition from a pipe. There's no timeout, because
+// copying a disk takes minutes.
+export async function virsh(args: string[], xml?: string, binary = "virsh") {
+  const dir = xml === undefined ? null : await mkdtemp(join(tmpdir(), "runnerbox-virsh-"));
+  try {
+    const file = dir ? [join(dir, "definition.xml")] : [];
+    if (file[0] && xml !== undefined) await writeFile(file[0], xml, { mode: 0o600 });
+    const { stdout } = await promisify(execFile)(binary, ["--connect", "qemu:///system", ...args, ...file], {
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    return stdout;
+  } catch (error) {
+    const stderr = error instanceof Error && "stderr" in error ? String(error.stderr).trim().split("\n")[0] : "";
+    throw new Error(`virsh ${args[0]} failed: ${stderr || (error instanceof Error ? error.message : error)}`);
+  } finally {
+    if (dir) await rm(dir, { recursive: true, force: true });
+  }
 }
 
-export type Virsh = (args: string[], stdin?: string) => Promise<string>;
+export type Virsh = (args: string[], xml?: string) => Promise<string>;
