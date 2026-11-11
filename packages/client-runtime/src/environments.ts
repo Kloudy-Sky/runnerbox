@@ -22,6 +22,8 @@ export type Route = typeof Route.Type;
 
 // `routes` is tried in order until one connects. `token` is the session from pairing over a
 // direct or SSH route; a Connect route buys a fresh, key-bound session each time instead.
+// `serverPublicKey` is the environment's key, pinned at pairing. Environments saved before keys
+// were pinned have none until their next connect that the server authenticates.
 export const SavedEnvironment = Schema.Struct({
   environmentId: Schema.String,
   label: Schema.String,
@@ -29,6 +31,7 @@ export const SavedEnvironment = Schema.Struct({
   token: Schema.NullOr(Schema.String),
   scopes: Schema.Array(AuthScope),
   pairedAt: Schema.String,
+  serverPublicKey: Schema.optional(Schema.String),
 });
 export type SavedEnvironment = typeof SavedEnvironment.Type;
 

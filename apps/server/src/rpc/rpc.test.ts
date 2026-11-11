@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
-import { issueTicket, openSession, pairWithCode } from "@runnerbox/client-runtime";
+import { createClientRuntime, issueTicket, openSession, pairWithCode, type SavedEnvironment } from "@runnerbox/client-runtime";
 import type { AuthScope } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -139,4 +139,30 @@ test("revoking a session closes its open socket, and a revoked session can't del
     Effect.flip(server.auth.delegatePairingCode({ id: outcome.victim.id, label: "revoked admin", audience: "client", scopes: ["history:read", "access:write"] }, ["history:read"])),
   );
   assert.equal(delegated._tag === "AccessError" && delegated.reason, "unknown_session");
+});
+
+test("pairing pins the server's key, and an environment saved before pinning pins it on its first authenticated connect", async () => {
+  const saves: SavedEnvironment[] = [];
+  const runtime = createClientRuntime({ catalog: { list: async () => [], save: async (environment) => void saves.push(environment), remove: async () => {} } });
+  await runtime.load();
+  const { code } = await server.createPairingCode(["history:read"]);
+  const paired = await runtime.pairDirect(server.baseUrl, code, "pinned");
+  const descriptor = (await (await fetch(`${server.baseUrl}/.well-known/runnerbox/environment`)).json()) as { publicKey: string };
+  assert.equal(paired.serverPublicKey, descriptor.publicKey);
+  await runtime.remove(paired.environmentId);
+
+  // The same session, saved as a client from before pinning would have it.
+  const { serverPublicKey: _, ...legacy } = paired;
+  const upgraded = createClientRuntime({ catalog: { list: async () => [legacy], save: async (environment) => void saves.push(environment), remove: async () => {} } });
+  await upgraded.load();
+  await new Promise<void>((resolve) => {
+    const unsubscribe = upgraded.store.subscribe((state) => {
+      if (state.environments[0]?.serverPublicKey === undefined) return;
+      unsubscribe();
+      resolve();
+    });
+  });
+  assert.equal(upgraded.store.getState().connections[legacy.environmentId]?.status, "connected");
+  assert.equal(saves.at(-1)?.serverPublicKey, descriptor.publicKey);
+  await upgraded.remove(legacy.environmentId);
 });

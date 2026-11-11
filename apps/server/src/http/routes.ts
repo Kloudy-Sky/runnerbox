@@ -1,4 +1,5 @@
-import { DESCRIPTOR_PATH, PairRequest } from "@runnerbox/contracts";
+import { DESCRIPTOR_PATH, PairRequest, SERVER_PROOF_NONCE } from "@runnerbox/contracts";
+import * as Option from "effect/Option";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/http/HttpRouter";
@@ -12,13 +13,17 @@ import { dpopThumbprint } from "./dpop.ts";
 const noStore = { "cache-control": "no-store" };
 const fail = (status: number, error: string) => HttpServerResponse.jsonUnsafe({ error }, { status, headers: noStore });
 
-// Public: who this is, so a client can check it before sending any credential.
+// Public: who this is. With a client's nonce it also proves it holds the environment's key, so
+// the client can check that before sending any credential.
 const descriptor = HttpRouter.add(
   "GET",
   DESCRIPTOR_PATH,
   Effect.gen(function* () {
-    const { descriptor } = yield* EnvironmentIdentity.EnvironmentIdentity;
-    return HttpServerResponse.jsonUnsafe(descriptor, { headers: noStore });
+    const { descriptor, proveTo } = yield* EnvironmentIdentity.EnvironmentIdentity;
+    const nonce = Option.getOrUndefined(HttpServerRequest.toURL(yield* HttpServerRequest.HttpServerRequest))?.searchParams.get("nonce");
+    if (nonce === undefined || nonce === null) return HttpServerResponse.jsonUnsafe(descriptor, { headers: noStore });
+    if (!SERVER_PROOF_NONCE.test(nonce)) return fail(400, "invalid_nonce");
+    return HttpServerResponse.jsonUnsafe({ ...descriptor, proof: proveTo(nonce) }, { headers: noStore });
   }),
 );
 

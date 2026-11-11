@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { boundedLifetime, generateSigningKeyPair, signJwt, verifyJwt } from "@runnerbox/connect/jwt";
+import { boundedLifetime, signJwt, verifyJwt } from "@runnerbox/connect/jwt";
 import { relayClient } from "@runnerbox/connect/relay";
 import { CONNECT_TYP, environmentAudience, HealthRequestPayload, MCP_SCOPES, MintRequestPayload } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
@@ -58,9 +58,7 @@ export const LinkState = Schema.Struct({
   linkedAt: Schema.String,
 });
 export type LinkState = typeof LinkState.Type;
-const KeyFile = Schema.Struct({ publicKey: Schema.String, privateKey: Schema.String });
 const decodeState = Schema.decodeUnknownEffect(Schema.fromJsonString(LinkState));
-const decodeKey = Schema.decodeUnknownEffect(Schema.fromJsonString(KeyFile));
 const decodeMintRequest = Schema.decodeUnknownEffect(MintRequestPayload);
 const decodeHealthRequest = Schema.decodeUnknownEffect(HealthRequestPayload);
 
@@ -86,16 +84,15 @@ export class CloudLink extends Context.Service<
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const { serverDir } = yield* ServerPaths.ServerPaths;
-  const { descriptor } = yield* EnvironmentIdentity.EnvironmentIdentity;
+  const { descriptor, key } = yield* EnvironmentIdentity.EnvironmentIdentity;
   const auth = yield* AuthStore.AuthStore;
   const statePath = join(serverDir, "connect.json");
-  const keyPath = join(serverDir, "environment-key.json");
   const audience = environmentAudience(descriptor.environmentId);
   const promise = <A>(operation: CloudLinkError["operation"], run: () => Promise<A>) =>
     Effect.tryPromise({ try: run, catch: (cause) => new CloudLinkError({ operation, cause }) });
   const seconds = Clock.currentTimeMillis.pipe(Effect.map((ms) => Math.floor(ms / 1000)));
 
-  // A missing file reads as empty: not linked yet, or no key made yet.
+  // A missing file reads as empty: not linked yet.
   const readOrEmpty = (path: string) =>
     fs.readFileString(path).pipe(Effect.catchTag("PlatformError", (error) => (error.reason._tag === "NotFound" ? Effect.succeed("") : Effect.fail(error))));
 
@@ -104,21 +101,11 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new CloudLinkError({ operation: "read", cause })),
   );
 
-  // The environment's Ed25519 key, made on first use and kept owner-only beside the auth file.
-  const key = Effect.gen(function* () {
-    const text = yield* readOrEmpty(keyPath);
-    if (text !== "") return yield* decodeKey(text);
-    const pair = yield* Effect.promise(generateSigningKeyPair);
-    yield* fs.makeDirectory(serverDir, { recursive: true, mode: 0o700 });
-    yield* writeFileAtomic(fs, keyPath, JSON.stringify(pair));
-    return pair;
-  }).pipe(Effect.mapError((cause) => new CloudLinkError({ operation: "key", cause })));
-
   const linked = state.pipe(Effect.flatMap((current) => (current === null ? Effect.fail(new NotLinked()) : Effect.succeed(current))));
 
   const link = Effect.fn("CloudLink.link")(function* (input: { readonly relayUrl: string; readonly accessToken: string; readonly tunnelPort: number }) {
     const relay = relayClient(input.relayUrl);
-    const { publicKey, privateKey } = yield* key;
+    const { publicKey, privateKey } = key;
     const { relayIssuer } = yield* promise("relay", () => relay.config());
     const { challenge } = yield* promise("relay", () => relay.linkChallenge(input.accessToken));
     const now = yield* seconds;
@@ -159,7 +146,7 @@ const make = Effect.gen(function* () {
   // relay has agreed, so a failed attempt can be retried.
   const unlink = Effect.gen(function* () {
     const current = yield* linked;
-    const { privateKey } = yield* key;
+    const { privateKey } = key;
     const now = yield* seconds;
     const proof = yield* promise("key", () =>
       signJwt({
@@ -173,7 +160,7 @@ const make = Effect.gen(function* () {
   }).pipe(Effect.withSpan("CloudLink.unlink"));
 
   const signRecovery = Effect.fnUntraced(function* (typ: string, current: LinkState) {
-    const { privateKey } = yield* key;
+    const { privateKey } = key;
     const now = yield* seconds;
     return yield* promise("key", () =>
       signJwt({
@@ -246,7 +233,7 @@ const make = Effect.gen(function* () {
       .createPairingCode(MCP_SCOPES, { proofKeyThumbprint: payload.clientProofKeyThumbprint, ttlMs: CREDENTIAL_TTL_MS })
       .pipe(Effect.mapError((cause) => new CloudLinkError({ operation: "write", cause })));
     const exp = Math.floor(Date.parse(code.expiresAt) / 1000);
-    const { privateKey } = yield* key;
+    const { privateKey } = key;
     const signed = yield* promise("key", () =>
       signJwt({
         privateKey,
@@ -272,7 +259,7 @@ const make = Effect.gen(function* () {
     const { current, payload, now } = yield* verifyRelayRequest("health", proof, CONNECT_TYP.healthRequest, decodeHealthRequest);
     if (payload.scope.length !== 1 || payload.scope[0] !== "environment:status") return yield* new ConnectProofRejected({ request: "health" });
     const checkedAt = new Date(now).toISOString();
-    const { privateKey } = yield* key;
+    const { privateKey } = key;
     const signed = yield* promise("key", () =>
       signJwt({
         privateKey,

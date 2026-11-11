@@ -6,7 +6,7 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { createStore } from "zustand/vanilla";
 import type { ClientPlatform, Route, SavedEnvironment, SshRoute } from "./environments.ts";
-import { ConnectionError, fetchDescriptor, pairWithCode, type ProveRequest } from "./http.ts";
+import { ConnectionError, fetchProvenDescriptor, pairWithCode, type ProveRequest } from "./http.ts";
 import { openSession, type RunnerboxClient } from "./session.ts";
 
 export type ConnectionState =
@@ -23,14 +23,15 @@ export type ClientState = {
 // Seconds before each retry: quick at first, then every 15 seconds while the server stays away.
 const BACKOFF_SECONDS = [1, 2, 5, 10, 15];
 // These won't fix themselves by retrying, so the connection waits for the user.
-const FINAL: ReadonlySet<ConnectionError["reason"]> = new Set(["unauthorized", "incompatible", "wrong_environment"]);
+const FINAL: ReadonlySet<ConnectionError["reason"]> = new Set(["unauthorized", "incompatible", "wrong_environment", "server_unproven"]);
 
 const asConnectionError = (error: unknown) =>
   error instanceof ConnectionError ? error : new ConnectionError({ reason: "unreachable", cause: error });
 
-// Saved environments and one live connection to each. Reconnects on its own with backoff, and
-// before sending a token checks that the address still answers as the environment it was paired
-// with, so a reused address never receives another machine's credential.
+// Saved environments and one live connection to each. Reconnects on its own with backoff. Before
+// sending a token or credential it has the server sign a fresh nonce with the key pinned at
+// pairing, so a reused address answered by another machine gets none. An environment saved before
+// keys were pinned sends its token once on trust, and pins the key if the server accepts it.
 export function createClientRuntime(platform: ClientPlatform) {
   const store = createStore<ClientState>(() => ({ loaded: false, environments: [], connections: {} }));
   const loops = new Map<string, Fiber.Fiber<unknown, unknown>>();
@@ -46,13 +47,16 @@ export function createClientRuntime(platform: ClientPlatform) {
   const baseUrlFor = (route: Exclude<Route, { kind: "connect" }>) =>
     route.kind === "direct" ? Effect.succeed(route.url) : tunnel(route).pipe(Effect.map(({ baseUrl }) => baseUrl));
 
-  // The address to use and how to authenticate there. Over Connect that's a fresh session: a new
-  // proof key, a credential from the relay bound to it, and a pairing that proves the key.
-  const sessionFor = (environment: SavedEnvironment, route: Route) =>
+  // The address to use, and how to get a session there once the server has proven itself. Over
+  // Connect that's a fresh session: a new proof key, a credential from the relay bound to it, and a
+  // pairing that proves the key.
+  const reach = (environment: SavedEnvironment, route: Route) =>
     Effect.gen(function* () {
       if (route.kind !== "connect") {
-        if (environment.token === null) return yield* new ConnectionError({ reason: "unauthorized" });
-        return { baseUrl: yield* baseUrlFor(route), token: environment.token, prove: undefined };
+        const token = environment.token;
+        if (token === null) return yield* new ConnectionError({ reason: "unauthorized" });
+        const session: { token: string; prove: ProveRequest | undefined } = { token, prove: undefined };
+        return { baseUrl: yield* baseUrlFor(route), authenticate: Effect.succeed(session) };
       }
       const connect = platform.connect;
       if (!connect) return yield* new ConnectionError({ reason: "relay_refused", cause: new Error("Connect routes need the desktop app") });
@@ -62,24 +66,37 @@ export function createClientRuntime(platform: ClientPlatform) {
         try: () => connect.requestCredential(environment.environmentId, key.thumbprint),
         catch: (cause) => new ConnectionError({ reason: "relay_refused", cause }),
       });
-      const paired = yield* pairWithCode(granted.httpBaseUrl, granted.credential, "connect", prove);
-      return { baseUrl: granted.httpBaseUrl, token: paired.token, prove };
+      const authenticate = pairWithCode(granted.httpBaseUrl, granted.credential, "connect", prove).pipe(Effect.map((paired) => ({ token: paired.token, prove })));
+      return { baseUrl: granted.httpBaseUrl, authenticate };
+    });
+
+  // Pins the key an environment's server proved. It's kept in memory even if saving fails, as it
+  // does without a keychain, and the next start pins it again.
+  const pin = (environment: SavedEnvironment, serverPublicKey: string) =>
+    Effect.promise(async () => {
+      const pinned = { ...environment, serverPublicKey };
+      await platform.catalog.save(pinned).catch(() => undefined);
+      store.setState((current) => ({ environments: current.environments.map((saved) => (saved.environmentId === pinned.environmentId ? pinned : saved)) }));
     });
 
   // Walks the routes in order and keeps the first that connects. An incompatible server stops the
   // walk, since it's the same server on every route.
-  const connectOnce = (environment: SavedEnvironment) =>
+  const connectOnce = (saved: SavedEnvironment) =>
     Effect.gen(function* () {
+      // The latest copy, which has the key once an earlier attempt pinned it.
+      const environment = store.getState().environments.find((current) => current.environmentId === saved.environmentId) ?? saved;
       let last = new ConnectionError({ reason: "unreachable" });
       for (const route of environment.routes) {
         const attempt = yield* Effect.exit(
           Effect.scoped(
             Effect.gen(function* () {
-              const { baseUrl, token, prove } = yield* sessionFor(environment, route);
-              const descriptor = yield* fetchDescriptor(baseUrl);
-              if (descriptor.environmentId !== environment.environmentId) return yield* new ConnectionError({ reason: "wrong_environment" });
+              const { baseUrl, authenticate } = yield* reach(environment, route);
+              const { publicKey } = yield* fetchProvenDescriptor(baseUrl, environment);
+              const { token, prove } = yield* authenticate;
               const { client, closed } = yield* openSession(baseUrl, token, prove);
               setConnection(environment.environmentId, { status: "connected", client, since: Date.now(), route });
+              // The server accepted the session, so the key it proved is this environment's.
+              if (environment.serverPublicKey === undefined) yield* pin(environment, publicKey);
               yield* closed;
             }),
           ),
@@ -139,7 +156,7 @@ export function createClientRuntime(platform: ClientPlatform) {
     Effect.runPromise(
       Effect.gen(function* () {
         const baseUrl = yield* baseUrlFor(route);
-        const descriptor = yield* fetchDescriptor(baseUrl);
+        const descriptor = yield* fetchProvenDescriptor(baseUrl);
         // A server can name any environment ID, so pairing never replaces a saved one: forgetting it
         // first is the way to pair it again.
         if (store.getState().environments.some((saved) => saved.environmentId === descriptor.environmentId)) {
@@ -158,6 +175,7 @@ export function createClientRuntime(platform: ClientPlatform) {
           token: paired.token,
           scopes: paired.scopes,
           pairedAt: new Date().toISOString(),
+          serverPublicKey: descriptor.publicKey,
         } satisfies SavedEnvironment;
       }),
     ).then(save);
