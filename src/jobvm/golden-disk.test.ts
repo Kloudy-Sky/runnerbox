@@ -9,7 +9,7 @@ function fakes({ cloneFails = false } = {}) {
   const volumes = new Set(["builder.qcow2", "box-golden-5.qcow2", "other-golden-5.qcow2"]);
   const world = { state: "running", tags: ["app:aaa"], time: 100_000 };
   const golden = createGoldenDisk(
-    { install: "box", domain: "builder", pool: "default" },
+    { install: "box", domain: "builder", disk: "/pool/builder.qcow2", pool: "default" },
     {
       virsh: async (args) => {
         const [command, ...rest] = args;
@@ -45,7 +45,7 @@ test("the first hold copies the stopped builder, restarts it, and removes copies
   assert.equal(held.volume, "box-golden-100.qcow2");
   assert.deepEqual(calls, [
     "shutdown builder",
-    "vol-clone --pool default builder.qcow2 box-golden-100.qcow2",
+    "vol-clone --pool default /pool/builder.qcow2 box-golden-100.qcow2",
     "start builder",
     "vol-delete --pool default box-golden-5.qcow2",
   ]);

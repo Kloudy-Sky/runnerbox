@@ -11,8 +11,9 @@ type JobVm = {
   memoryMiB: number;
   // The path of this job's own disk, a thin layer over a golden copy of the builder's.
   diskPath: string;
-  // The path of the builder's cloud-init seed. With the same instance id, cloud-init does nothing on boot.
-  seedPath: string;
+  // The path of the builder's cloud-init seed, if it has one. With the same instance id, cloud-init
+  // does nothing on boot.
+  seedPath: string | undefined;
   network: string;
   address: string;
   filter: string;
@@ -23,7 +24,16 @@ type JobVm = {
 // named by path, as `vm render` names the builder's. Every other value comes from config that only
 // allows characters safe in XML.
 export function jobVmXml({ domain, cpus, memoryMiB, diskPath, seedPath, network, address, filter }: JobVm) {
-  const escaped = (path: string) => path.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll("'", "&apos;");
+  const escapedPath = (path: string) => path.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll("'", "&apos;");
+  const seed = seedPath
+    ? `    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='${escapedPath(seedPath)}'/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+    </disk>
+`
+    : "";
   return `<domain type='kvm'>
   <name>${domain}</name>
   <memory unit='MiB'>${memoryMiB}</memory>
@@ -37,16 +47,10 @@ export function jobVmXml({ domain, cpus, memoryMiB, diskPath, seedPath, network,
   <devices>
     <disk type='file' device='disk'>
       <driver name='qemu' type='qcow2'/>
-      <source file='${escaped(diskPath)}'/>
+      <source file='${escapedPath(diskPath)}'/>
       <target dev='vda' bus='virtio'/>
     </disk>
-    <disk type='file' device='cdrom'>
-      <driver name='qemu' type='raw'/>
-      <source file='${escaped(seedPath)}'/>
-      <target dev='sda' bus='sata'/>
-      <readonly/>
-    </disk>
-    <interface type='network'>
+${seed}    <interface type='network'>
       <mac address='${jobMac(address)}'/>
       <source network='${network}'/>
       <model type='virtio'/>

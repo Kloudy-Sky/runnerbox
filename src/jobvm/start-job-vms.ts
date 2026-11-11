@@ -2,6 +2,7 @@ import { setTimeout as wait } from "node:timers/promises";
 import { containerName } from "../launcher/docker-command.ts";
 import type { RunnerType, VmInstall } from "../launcher/launcher-config.ts";
 import { readFromVm, type Vm } from "../vm/run-in-vm.ts";
+import { builderDisks } from "./builder-disks.ts";
 import { createGoldenDisk } from "./golden-disk.ts";
 import { createTurns } from "./in-turn.ts";
 import { ensureJobNetwork } from "./job-network.ts";
@@ -15,11 +16,11 @@ export async function startJobVms(config: VmInstall, jobVms: NonNullable<VmInsta
   const { name: install, vm: builder, runners } = config;
   const { pool, network, addresses } = jobVms;
   const filter = await ensureJobNetwork({ install, ...jobVms }, virsh);
-  const seedPath = (await virsh(["vol-path", "--pool", pool, `${jobVms.builder}-seed.iso`])).trim();
+  const { disk: builderDisk, seed: seedPath } = await builderDisks(jobVms.builder, virsh);
   const inBuilder = createTurns();
   const clock = { wait: async (ms: number) => void (await wait(ms)), now: Date.now, log: console.log };
   const golden = createGoldenDisk(
-    { install, domain: jobVms.builder, pool },
+    { install, domain: jobVms.builder, disk: builderDisk, pool },
     {
       virsh,
       inTurn: inBuilder,

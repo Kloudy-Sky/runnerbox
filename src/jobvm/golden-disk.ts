@@ -6,8 +6,9 @@ const BUILDER_TIMEOUT_MS = 3 * 60_000;
 
 type Builder = {
   install: string;
-  // The builder's libvirt domain. `vm render` names its disk `<domain>.qcow2`.
+  // The builder's libvirt domain, and the path of its disk.
   domain: string;
+  disk: string;
   pool: string;
 };
 
@@ -24,7 +25,7 @@ type GoldenActions = {
 // Keeps a golden copy of the builder's disk for job VMs to boot from. A copy is taken with the
 // builder shut down, so it's always consistent, and nothing else changes it afterwards: jobs write
 // to their own thin layer on top. Jobs never run in the builder itself.
-export function createGoldenDisk({ install, domain, pool }: Builder, actions: GoldenActions) {
+export function createGoldenDisk({ install, domain, disk, pool }: Builder, actions: GoldenActions) {
   const { virsh, inTurn, builderTags, wait, now, log } = actions;
   const clock = { wait, now };
   let current: { volume: string; tags: Set<string> } | null = null;
@@ -45,7 +46,7 @@ export function createGoldenDisk({ install, domain, pool }: Builder, actions: Go
       await untilAnswers(async () => {
         if ((await state()) !== "shut off") throw new Error(`${domain} didn't shut down`);
       }, BUILDER_TIMEOUT_MS, clock);
-      await virsh(["vol-clone", "--pool", pool, `${domain}.qcow2`, volume]);
+      await virsh(["vol-clone", "--pool", pool, disk, volume]);
     } finally {
       // A builder left down would fail every later image build. Starting one that never stopped fails harmlessly.
       await virsh(["start", domain]).catch(() => {});
