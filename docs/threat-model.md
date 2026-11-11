@@ -1,6 +1,6 @@
 # Threat model
 
-This describes the intended design. **Tested** means the control is in this repo and held in a real test run. **Tested in CI** means CI builds it on a clean machine and checks it, but it hasn't run real jobs yet. **Coded** means it's in this repo and unit tested only. **Design** means it isn't in this repo yet.
+This describes the intended design. **Tested** means the control is in this repo and held in a real test run. **Tested in CI** means CI builds it on a clean machine and checks it, but it hasn't run real jobs yet. **Tested locally** means end-to-end tests run its real code against a real server, with outside services such as Clerk and Cloudflare faked, but it hasn't run deployed. **Coded** means it's in this repo and unit tested only. **Design** means it isn't in this repo yet.
 
 ## What we assume
 
@@ -21,6 +21,15 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |
 | The host and VM's memory | Overcommitted jobs push both into swap | `up` registers a runner only while the host's and VM's `MemAvailable` are above `memoryFloor`, and removes idle runners when memory drops. It can't take back a job a runner already has. | Coded |
 | The token `report` syncs with | A job or VM reads it and uses it on the repository | It lives only on the host, in an owner-only `~/.config/runnerbox/report.env` read by the report timer, and never reaches the VM. It needs only read access to Actions, so it can't mint runners or change code. | Coded |
+| The token that mints runners, from the server | A client or agent reads it through `runnerbox-server` | The server reads only the state directory, never a launcher config or token file, and no RPC method or MCP tool returns a credential. | Coded |
+| The server's data | Someone on the network reads job history or runner state | `serve` binds 127.0.0.1 unless told otherwise, and warns when it isn't loopback. Another machine reaches it by forwarding that port over SSH. | Coded |
+| Pairing | A code is guessed, replayed or read from disk | Codes are 100 random bits, work once, expire after 15 minutes, and are stored only as SHA-256 hashes. Making one takes a shell as the server's user (`pair`) or a session with `access:write`. | Coded |
+| Client sessions | A token leaks from disk, a URL or the access list | Tokens are stored only as SHA-256 hashes, in an owner-only file. Only the pairing response returns one. Sockets open with a ticket that lasts 30 seconds and opens one socket, so tokens stay out of URLs. A session can be revoked. | Coded |
+| What a session may read | A paired client calls more than it was granted | Every RPC method declares the scopes it needs (`history:read`, `runners:read`, `access:write`), and middleware checks them before the handler runs. A session can only delegate scopes it holds. | Coded |
+| Agent access over MCP | An agent changes something, or its token is used as an app login | `/mcp` exposes only read-only tools, each marked read-only. Its tokens come from `mcp-token`, which takes a shell as the server's user, hold only `history:read` and `runners:read`, and work only on `/mcp`; app sessions are refused there. They show in the app's access list and can be revoked. | Coded |
+| The SSH route | A saved route runs something other than ssh, or trusts a new host key | Desktop main spawns ssh directly, never through a shell, refuses hosts that would parse as options, and passes `BatchMode=yes`, so ssh neither prompts for a password nor accepts an unknown host key. The forward binds 127.0.0.1 here to 127.0.0.1 there, so the server keeps listening on loopback only. Run against a throwaway loopback sshd, not a second machine. | Coded |
+| Saved server tokens in the desktop app | Another program or user reads them from disk | They're encrypted with the OS keychain through Electron's `safeStorage`, in an owner-only file in the app's own data directory. A plain browser has no keychain, so there they sit in that origin's local storage. | Coded |
+| The desktop app's machine | A server, or a page it loads, runs code through the app | The UI renders server data as text in a sandboxed renderer with context isolation and no Node. Main answers IPC only from the app's own page, checks every argument, refuses navigation and new windows, and denies every permission request. | Coded |
 | Project names in a shared summary | Whoever reads a summary learns repo, job, runner and host names | `summary --redact` replaces every name with an HMAC-SHA256 keyed by a random owner-only `summary.key` on the host, so hashes can't be checked against guessed names without it. A malformed key stops redaction. Numbers, durations and dates stay readable. | Coded |
 
 ## Jobs on the host's own OS
@@ -72,6 +81,10 @@ What a host install doesn't protect, on top of the list below:
 
 **Tracking data.** A job can write whatever it likes to its own output, so reports can't trust anything a job says about itself unless GitHub's data confirms it. The local job log holds job and branch names and is readable by anyone with access to your account on that machine.
 
+**The server's descriptor.** Any program that can reach the server, including a web page open on the same machine, can read its environment ID and label, and try pairing codes. The API accepts any origin because it takes bearer tokens, never cookies, so a page has no credential to borrow.
+
+**A shell on the server's machine.** Anyone who can run commands as the server's user can mint a pairing code and read every log directly, so the server adds no boundary against them.
+
 **Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed. `memoryFloor` keeps new runners from registering while the host or VM is short, but it can't take a job back once a runner has it.
 
 ## What we recommend
@@ -81,6 +94,42 @@ What a host install doesn't protect, on top of the list below:
 - Give the host a token that can only manage runners, not an admin login. A repository-scoped token needs the Administration permission, which can do much more, so prefer an org-scoped one.
 - Give a host install `allowedWorkflows`, and keep it to workflows that only run from protected branches and tags. Signing keys a job is given sit on that machine for the length of the job.
 - Give each install on a VM its own `name`. Installs sharing a name remove each other's containers, and installs sharing a VM still share everything in the container escape risk above.
+
+## Runnerbox Connect
+
+Connect gives an environment a public hostname through a Cloudflare tunnel, on a machine that may also hold the token that mints runners. Everything served stays read-only, and the server never reads the launcher config or token file. **Tested locally** below means the control held in end-to-end tests against a real server and the relay's real code, with Clerk and Cloudflare faked; nothing here has run deployed.
+
+| Asset | Threat | Control | Status |
+| --- | --- | --- | --- |
+| Environment sessions | The relay, or anyone holding its database, uses them | The relay never receives a session. It asks the environment for a one-time credential, and the client redeems that directly with the environment. The relay proxies no app traffic. | Tested locally |
+| Which environments a user reaches | Someone signed in reaches an environment they didn't link | Every relay call needs a Clerk token, and connect and status need that user's own link. Links and tunnels belong to a user and environment pair, so claiming another machine's (public) environment ID only makes a separate, useless link. | Tested locally, with Clerk faked |
+| Linking | A link is forged, replayed, or points the tunnel elsewhere | The link proof is signed by the environment's own Ed25519 key, names a relay challenge issued to the signed-in user, lives at most 5 minutes, and both its ID and the challenge's are used once. The origin must be a loopback host and port. | Tested locally |
+| The environment's network | A tunnel exposes another service on it | The relay's ingress routes only the allocated hostname, only to the loopback origin from the link proof; anything else gets 404. | Coded; ingress shape unit tested, not against Cloudflare |
+| Mint requests to an environment | Someone other than the relay gets a credential minted, or replays a real request | The environment accepts only requests signed by the relay it linked to, for itself and its linked user, at most 5 minutes old, with the client key's thumbprint in `cnf.jkt`, and exactly the `environment:connect` scope. The request's ID and nonce are each used once. | Tested locally |
+| Mint answers to the relay | Another process behind the tunnel hands the client its own credential | The environment signs its answer with its key, bound to the relay's nonce, the client key and the credential. The relay checks all of them against the key pinned at link time. | Tested locally |
+| Relay egress | A health or mint request is bounced to another host | The relay calls only the address of its own allocation and refuses any redirect. | Tested locally |
+| A captured Connect credential | Someone else redeems it | It's bound to the client's key: redeeming needs a DPoP proof from that key. It works once, within 2 minutes, and a wrong key leaves it unspent. | Tested locally |
+| A captured Connect session token | Someone else uses it | The session stays bound to the same key, and every WebSocket ticket needs a fresh DPoP proof whose ID is used once. Proofs are checked by method and path, not host, because behind the tunnel the server can't see the host the client used. | Tested locally |
+| What reaches the server through the tunnel | Someone on the internet redeems a CLI pairing code, uses an app session or an MCP token, or opens a socket with a loopback ticket | `cloudflared` points only at a second loopback listener, whose port the relay pins at link time. It serves the descriptor, the relay's mint and health requests, pairing that redeems only key-bound codes (a CLI code stays unspent), tickets only for key-bound sessions, and sockets only with tickets it issued itself. It doesn't serve MCP. Nothing depends on a header, so a local process reaching that port gets less, not more. The relay's endpoints aren't served on the loopback listener. | Tested locally |
+| What a Connect session can do | It changes something, or hands out more access | A key-bound credential only ever buys `history:read` and `runners:read`, whatever was asked, so it can't reach access management or mint pairing codes. | Tested locally |
+| The connector token | It shows up where other users can read it | It's stored owner-only in `.server/connect.json` and passed to `cloudflared` in its environment, never on its command line. | Tested locally, with a stand-in `cloudflared` |
+| Tunnel teardown | A delayed cleanup deletes a tunnel a newer link just set up | Teardown first claims the allocation at the generation it read, and every change bumps it. Unlink revokes the link before tearing down, so a failed teardown leaves nothing usable. | Tested locally |
+| Idle-tunnel reclaim | A sweep deletes a tunnel a machine is using, or one the relay doesn't own | A sweep deletes only tunnels Cloudflare reports down for 5 minutes (or never connected for an hour), owned by an allocation whose host registered recovery. It looks at the tunnel once more, then claims the allocation at the generation it read; a host that registers in between bumps it and keeps its tunnel. Tunnels with no allocation are never deleted. Off unless configured. | Tested locally, with Cloudflare faked |
+| Recovery and replacement requests | Someone re-routes a tunnel or gets a new connector token | Both are signed by the environment's pinned key for its linked user, live at most 5 minutes, are used once, and name only a loopback origin. A replacement is refused while the allocation still has a tunnel, and keeps its hostname and DNS record. | Tested locally |
+| Leaving Connect | A machine can't leave without its owner signing in again | Unlink is signed by the environment's key, so it works from a headless machine. | Tested locally |
+| Clerk tokens on the desktop | Another program reads them | Main holds them, encrypted with the OS keychain, and makes every relay call; the renderer only ever gets a credential bound to its own key. | Coded |
+
+### What Connect doesn't protect
+
+**A public hostname.** Anyone can reach the tunnel listener: its descriptor, Connect pairing, the relay's endpoints and the socket. All need a key-bound credential or a relay signature, but a bug in that code is now reachable from the internet, not just from this machine. There is no rate limit at the relay or the server.
+
+**The relay's signing key.** Whoever holds it can have any linked environment mint read-only sessions, for the user it's linked to. Treat it like the runner token.
+
+**Cloudflare and Clerk.** TLS ends at Cloudflare's edge, so Cloudflare can see job history in transit. Whoever takes over the Clerk account can read every environment it linked.
+
+**Idle tunnels, while reclaim is off.** By default the relay keeps tunnels whose connector has stopped. See [connect-setup.md](connect-setup.md) for turning reclaim on and what it costs.
+
+**A connector that comes back without telling the relay.** `cloudflared` reconnects to Cloudflare directly. If it does so in the moment between a sweep's last look and its delete, that tunnel is deleted, and the host gets a replacement the next time it checks, within about two minutes of the connector failing.
 
 ## This repository's own CI
 

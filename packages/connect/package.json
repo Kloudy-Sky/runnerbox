@@ -1,0 +1,21 @@
+{
+  "name": "@runnerbox/connect",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./jwt": "./src/jwt.ts",
+    "./dpop": "./src/dpop.ts",
+    "./oauth": "./src/oauth.ts",
+    "./relay": "./src/relayClient.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@runnerbox/contracts": "workspace:*",
+    "effect": "4.0.5",
+    "jose": "6.2.2"
+  }
+}

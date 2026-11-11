@@ -20,11 +20,14 @@ import { checkMemoryFloor, memAvailableMiB, vmStatAvailableMiB } from "./memory-
 import { createMemoryLine } from "./memory-line.ts";
 import { runSlots } from "./run-slots.ts";
 import { runWithSecret } from "./run-with-secret.ts";
+import { createSlotState } from "./slot-state.ts";
 import { readTokenFile } from "./token-file.ts";
 
 const IMAGE_CHECK_MS = 5 * 60_000;
 const IMAGE_RETRY_MS = 60_000;
 const SAMPLE_MS = 60_000;
+// Often enough that a reader can tell within a minute that `up` stopped without saying so.
+const HEARTBEAT_MS = 15_000;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -49,6 +52,10 @@ export async function startRunners(configPath: string) {
   const record: RecordEvent = (event) => void events.append({ time: new Date().toISOString(), ...event });
   // Samples come from /proc on the host and the VM, so a host install has none.
   if ("vm" in config) startSampler(config);
+  // What each slot is doing now, for runnerbox-server to show live.
+  const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners);
+  void slotState.flush();
+  every(HEARTBEAT_MS, slotState.heartbeat);
   // One floor for every runner type, so together they can't overload the machines.
   const roomForJob = () =>
     checkMemoryFloor([
@@ -88,6 +95,7 @@ export async function startRunners(configPath: string) {
     process.on(signal, () => {
       if (stopping) process.exit(1);
       stopping = true;
+      void slotState.stopping();
       console.log(`${signal}: draining. Busy jobs finish first; send it again to exit now.`);
       void removeWaitingRunners();
     });
@@ -116,6 +124,7 @@ export async function startRunners(configPath: string) {
         log: (line) => console.log(`${runner.name} ${line}`),
         record: (event) => record({ ...event, runnerType: runner.name }),
         stopping: () => stopping,
+        report: (slot, phase, details) => slotState.slot(runner.name, slot, phase, details),
       },
       registered[index],
     );
@@ -124,7 +133,8 @@ export async function startRunners(configPath: string) {
     await Promise.all(
       config.runners.map(async (runner, index) => {
         const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
-        const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping);
+        const onImage = (current: string | null, building: string | null) => slotState.image(runner.name, current, building);
+        const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping, onImage);
         // Draining before this kind's image was ever ready, so it has no slots to wait for.
         if (!image) return;
         await startSlots(runner, index, {
@@ -148,6 +158,7 @@ export async function startRunners(configPath: string) {
   }
   // Timers for samples and images would keep the process alive after the last slot returns.
   console.log("drained");
+  await slotState.flush();
   process.exit(0);
 }
 
@@ -160,16 +171,28 @@ async function keepImage(
   roomForJob: () => Promise<string | null>,
   record: RecordEvent,
   stopping: () => boolean,
+  // Tells the live state file which tag new containers use, and which one is building.
+  onImage: (current: string | null, building: string | null) => void,
 ) {
   const { vm } = config;
   const { image } = runner;
-  if (typeof image === "string") return { current: () => image, prune: async () => {} };
+  if (typeof image === "string") {
+    onImage(image, null);
+    return { current: () => image, prune: async () => {} };
+  }
 
   const inVm = (command: string) => readFromVm({ vm, command }).then((output) => output.trim() === "yes");
   const keeper = createImageKeeper(image.name, {
     contextHash: () => hashContext(image.context),
     existsInVm: (tag) => inVm(`docker image inspect ${shellQuote(tag)} >/dev/null 2>&1 && echo yes || echo no`),
-    build: (tag) => buildInVm({ vm, context: image.context, tag }),
+    build: async (tag) => {
+      onImage(keeper.current(), tag);
+      try {
+        return await buildInVm({ vm, context: image.context, tag });
+      } finally {
+        onImage(keeper.current(), null);
+      }
+    },
     remove: (tag) => inVm(`docker image rm ${shellQuote(tag)} >/dev/null 2>&1 && echo yes || echo no`),
     roomForJob,
     log: (line) => console.log(`${runner.name} ${line}`),
@@ -177,7 +200,7 @@ async function keepImage(
     now: Date.now,
   });
   const report = (error: unknown) => console.log(`${runner.name} image: ${message(error)}`);
-  const refresh = () => keeper.refresh().catch(report);
+  const refresh = () => keeper.refresh().catch(report).then(() => onImage(keeper.current(), null));
 
   while (!stopping()) {
     await refresh();

@@ -1,4 +1,5 @@
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
+import type { SlotPhase } from "./slot-state.ts";
 import type { JoinMemoryLine } from "./memory-line.ts";
 
 const MINT_RETRY_MS = 60_000;
@@ -27,6 +28,8 @@ type SlotActions = {
   record: (event: LauncherEvent) => void;
   // True once `up` is draining: each slot finishes its current runner, then registers no more.
   stopping: () => boolean;
+  // What the slot is doing now, for the live state file. Optional, since nothing depends on it.
+  report?: (slot: number, phase: SlotPhase, details?: { runner?: string; detail?: string }) => void;
 };
 
 // Keeps `slots` runners waiting for jobs, each with a single-use registration minted here on the
@@ -48,6 +51,7 @@ export async function runSlots(
 
 async function runSlot(installName: string, slot: number, actions: SlotActions, registered: Map<number, number>) {
   const { mint, runContainer, image, roomForJob, joinLine, release, every, wait, now, log, record, stopping } = actions;
+  const report = actions.report ?? (() => {});
   const iso = (ms: number) => new Date(ms).toISOString();
 
   while (!stopping()) {
@@ -58,6 +62,7 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
       const waitStarted = now();
       log(`slot ${slot}: waiting for memory: ${waitedFor}`);
       while (waitedFor && !stopping()) {
+        report(slot, "waiting", { detail: waitedFor });
         await wait(CHECK_MS);
         waitedFor = await turn.room();
       }
@@ -65,25 +70,28 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
       if (!stopping()) log(`slot ${slot}: memory is back above the floor`);
     }
     turn.leave();
-    if (stopping()) return;
+    if (stopping()) return report(slot, "stopped");
 
     const runnerName = `${installName}-${slot}-${Math.floor(now() / 1000)}`;
+    report(slot, "minting", { runner: runnerName });
 
     const registration = await mint(runnerName).catch((error: unknown) => {
       log(`slot ${slot}: could not mint a registration: ${error instanceof Error ? error.message : error}`);
       return null;
     });
     if (!registration) {
+      report(slot, "backoff", { detail: "could not mint a registration" });
       await wait(MINT_RETRY_MS);
       continue;
     }
     // A drain that began while this mint was in flight couldn't see this runner to remove it.
     if (stopping()) {
       await release(registration.runnerId);
-      return;
+      return report(slot, "stopped");
     }
 
     registered.set(slot, registration.runnerId);
+    report(slot, "registered", { runner: runnerName });
     const startedAt = now();
     // An idle runner is removed when memory drops, so the slot waits again, or when the image changes,
     // so the next job gets it. A refusal means it took a job, which a JIT runner never gives back.
@@ -97,6 +105,7 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
       if (!newImage && !short) return;
       if (!(await release(registration.runnerId))) {
         busy = true;
+        report(slot, "busy", { runner: runnerName });
         return;
       }
       released = newImage ? "image" : "memory";
@@ -111,9 +120,11 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
     registered.delete(slot);
     record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released });
     log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
-    if (stopping()) return;
+    if (stopping()) return report(slot, "stopped");
     // A released runner exits fast on purpose, so that isn't a broken VM.
     const brokenFast = !released && exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS;
+    report(slot, "backoff", { detail: brokenFast ? `the last runner exited ${exitCode} within a minute` : "starting the next runner" });
     await wait(brokenFast ? MINT_RETRY_MS : NEXT_RUNNER_MS);
   }
+  report(slot, "stopped");
 }

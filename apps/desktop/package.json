@@ -1,0 +1,24 @@
+{
+  "name": "@runnerbox/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "ensure:electron": "node node_modules/electron/install.js",
+    "build": "node scripts/build.ts",
+    "start": "electron .",
+    "typecheck": "tsc -p .",
+    "test": "node --test \"src/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@runnerbox/client-runtime": "workspace:*",
+    "@runnerbox/contracts": "workspace:*",
+    "effect": "4.0.5",
+    "@runnerbox/connect": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "44.10.0",
+    "esbuild": "0.28.2"
+  }
+}

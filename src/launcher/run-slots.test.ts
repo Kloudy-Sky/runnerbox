@@ -24,12 +24,14 @@ function fakes({
   const nextImage = () => (image = images.shift() ?? image);
   const events: string[] = [];
   const recorded: LauncherEvent[] = [];
+  const phases: string[] = [];
   const checks: (() => Promise<void>)[] = [];
   let waits = 0;
   let time = 1_700_000_000_000;
   return {
     events,
     recorded,
+    phases,
     actions: {
       roomForJob: async () => rooms.shift() ?? null,
       joinLine: () => ({ room: async () => rooms.shift() ?? null, leave: () => {} }),
@@ -61,6 +63,8 @@ function fakes({
       log: (message: string) => void events.push(`log ${message}`),
       record: (event: LauncherEvent) => void recorded.push(event),
       stopping: () => stopAfterFirst && events.some((event) => event.startsWith("run ")),
+      report: (slot: number, phase: string, details: { detail?: string } = {}) =>
+        void phases.push([slot, phase, details.detail].filter((part) => part !== undefined).join(" ")),
     },
   };
 }
@@ -210,4 +214,11 @@ test("a runner's registration is removed once its container exits", async () => 
   await assert.rejects(runSlots("box", 1, actions), Stop);
   const run = events.findIndex((event) => event.startsWith("run "));
   assert.ok(events.indexOf("release 7") > run);
+});
+
+test("a slot reports each phase it passes through, for the live state file", async () => {
+  // Short of memory once before registering, then short again while its runner has a job.
+  const { actions, phases } = fakes({ rooms: ["short", null, "short"], releasable: false, stopAfterFirst: true, waitsBeforeStop: 9 });
+  await runSlots("box", 1, actions);
+  assert.deepEqual(phases, ["1 waiting short", "1 minting", "1 registered", "1 busy", "1 stopped"]);
 });

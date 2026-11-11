@@ -80,7 +80,7 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
   - `env`, environment variables set in every job's container. Test runners size their worker counts from the VM's CPUs, not the container's share, so cap them here.
   - `docker`, optional. `true` gives each job its own Docker daemon: the container runs under sysbox, and its image must start the daemon, as `runnerbox-base-docker` does. It needs sysbox in the VM. VM setup installs it on first boot, so a VM made before that needs it installed by hand: stop every container first, because installing it restarts Docker, then install the `.deb` named in `src/vm/cloud-init.ts` after checking its sha256. Without sysbox, every slot of that kind fails with `unknown or invalid runtime name: sysbox-runc`.
 
-`up` records a sample of the host, the VM and its containers every minute, plus one line for each runner, memory wait and image build, in local files described in [docs/analytics.md](docs/analytics.md).
+`up` records a sample of the host, the VM and its containers every minute, plus one line for each runner, memory wait and image build, in local files described in [docs/analytics.md](docs/analytics.md). It also keeps `state.json` beside them, with what each slot is doing now, for the desktop app's Runners tab.
 
 Stopping `up` (SIGTERM or Ctrl-C) drains it: no slot registers again, runners still waiting for a job are removed, and `up` exits once every busy job has finished. A second signal exits at once, and busy containers then finish in the VM on their own. Don't start `up` again while one is still running, because each slot starts by removing its container, which kills the job in it. The service unit gives a drain 30 minutes. Lowering `slots` can leave containers running in the VM until their job finishes, so remove those with `docker rm -f`. If the VM or SSH is down, slots log that they're waiting for memory and register nothing, unless `memoryFloor.vmMiB` is `0`. If the image is broken, a slot waits a minute between attempts, and each attempt registers a runner that shows as offline until GitHub removes it.
 
@@ -108,6 +108,23 @@ A host config has `host` in place of `vm`, and its one runner has no `image`, `l
 For each job, `run-job` loads a packet filter that binds only the job user, kills that user's processes, deletes its files, unpacks a fresh runner into an empty home, and runs the job with a clean environment. It cleans up the same way when the job ends. The filter drops the job's TCP and UDP to private, CGNAT and link-local addresses, and all its IPv6 outside loopback. On loopback it drops the job's traffic to every port another account is listening on, and looks for new ones every 5 seconds, so a job can reach its own local services but not yours.
 
 Jobs use the tools already on the Mac, read-only: Xcode's command line tools and whatever is in `/opt/homebrew/bin` and `/usr/local/bin`. They can't install with Homebrew or use `sudo`. Each job starts with an empty home, so it downloads its dependencies again, and the first run of a tool there can take several seconds longer. There are no samples for a host install, so reports show its jobs without machine columns.
+
+## Desktop app
+
+A desktop app shows the same history, plus what CI needs from you, for one or more machines. Each machine runs `runnerbox-server`, which reads the logs above and answers over HTTP and WebSocket. It changes nothing.
+
+```bash
+node runnerbox-server.js serve    # on the machine with the logs: prints a pairing code
+node runnerbox-server.js pair     # a fresh code, valid once for 15 minutes
+```
+
+`serve` listens on 127.0.0.1:4517. In the app, pair by address with that code. For a server on another machine, pair over SSH instead: the app forwards that machine's port 4517 over SSH and, if you leave the code empty, runs the server's `pair --json` there to get one. It uses your `~/.ssh/config`, keys and agent, and never asks for a password or accepts an unknown host key. From a checkout, `pnpm server serve` runs it, and `pnpm --filter @runnerbox/web build && pnpm --filter @runnerbox/desktop build && pnpm --filter @runnerbox/desktop start` runs the app (after `pnpm --filter @runnerbox/desktop ensure:electron` once).
+
+**Runnerbox Connect** reaches a machine through a managed Cloudflare tunnel after one sign-in, with nothing to open on its network. It needs a relay you deploy yourself; [docs/connect-setup.md](docs/connect-setup.md) has the steps and costs. A session made through Connect only reads.
+
+An agent you already run can read the same history and runner state over MCP. `runnerbox-server mcp-token` prints a token and the `claude mcp add` line that uses it. The token only reads, works only at `/mcp`, and can be revoked from the app.
+
+The **Inbox** lists what needs you, by rules over the logs: failures the machine caused (low memory, a container that died, lost SSH), jobs that keep passing only on retry, jobs that never got a runner, slots that keep failing, and jobs slower than their own history. Failures in a job's own code go under "no action", since the check already told its author.
 
 ## How a project uses it
 

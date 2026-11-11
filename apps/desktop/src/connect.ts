@@ -1,0 +1,75 @@
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { clerkEndpoints, loopbackAuthorize, refreshTokens, type Tokens } from "@runnerbox/connect/oauth";
+import { relayClient } from "@runnerbox/connect/relay";
+import * as Schema from "effect/Schema";
+import type { TokenCipher } from "./catalog.ts";
+
+// The desktop app's Runnerbox Connect sign-in. Main holds the Clerk tokens, encrypted at rest, and
+// makes every relay call; the renderer only ever gets a one-time credential bound to its own key.
+
+type Saved = { relayUrl: string; tokens: Tokens };
+
+const StoredFile = Schema.fromJsonString(Schema.Struct({ relayUrl: Schema.String, tokens: Schema.String, encrypted: Schema.Boolean }));
+const StoredTokens = Schema.fromJsonString(Schema.Struct({ accessToken: Schema.String, refreshToken: Schema.NullOr(Schema.String), expiresAt: Schema.Number }));
+const decodeFile = Schema.decodeUnknownSync(StoredFile);
+const decodeTokens = Schema.decodeUnknownSync(StoredTokens);
+
+export function createConnect(directory: string, cipher: TokenCipher, openBrowser: (url: string) => void) {
+  const path = join(directory, "connect.json");
+  let cached: Saved | null | undefined;
+
+  async function load() {
+    if (cached !== undefined) return cached;
+    const text = await readFile(path, "utf8").catch(() => "");
+    try {
+      const stored = decodeFile(text);
+      cached = { relayUrl: stored.relayUrl, tokens: decodeTokens(stored.encrypted ? cipher.decrypt(stored.tokens) : stored.tokens) };
+    } catch {
+      cached = null;
+    }
+    return cached;
+  }
+
+  async function store(saved: Saved | null) {
+    cached = saved;
+    if (!saved) return rm(path, { force: true });
+    const encrypted = cipher.available();
+    const tokens = JSON.stringify(saved.tokens);
+    await writeFile(`${path}.tmp`, JSON.stringify({ relayUrl: saved.relayUrl, tokens: encrypted ? cipher.encrypt(tokens) : tokens, encrypted }), { mode: 0o600 });
+    await rename(`${path}.tmp`, path);
+  }
+
+  // A current access token, refreshed a minute before it expires.
+  async function accessToken() {
+    const saved = await load();
+    if (!saved) throw new Error("Sign in to Runnerbox Connect first.");
+    if (saved.tokens.expiresAt - Date.now() > 60_000) return { relayUrl: saved.relayUrl, token: saved.tokens.accessToken };
+    if (!saved.tokens.refreshToken) throw new Error("Your Runnerbox Connect sign-in expired. Sign in again.");
+    const config = await relayClient(saved.relayUrl).config();
+    const tokens = await refreshTokens({ endpoints: clerkEndpoints(config.clerkFrontendApi), clientId: config.desktopClientId, refreshToken: saved.tokens.refreshToken });
+    await store({ relayUrl: saved.relayUrl, tokens });
+    return { relayUrl: saved.relayUrl, token: tokens.accessToken };
+  }
+
+  return {
+    async status() {
+      const saved = await load();
+      return { relayUrl: saved?.relayUrl ?? null, signedIn: saved !== null };
+    },
+    async signIn(relayUrl: string) {
+      const config = await relayClient(relayUrl).config();
+      const tokens = await loopbackAuthorize({ endpoints: clerkEndpoints(config.clerkFrontendApi), clientId: config.desktopClientId, openBrowser });
+      await store({ relayUrl, tokens });
+    },
+    signOut: () => store(null),
+    async environments() {
+      const { relayUrl, token } = await accessToken();
+      return relayClient(relayUrl).environments(token);
+    },
+    async requestCredential(environmentId: string, clientProofKeyThumbprint: string) {
+      const { relayUrl, token } = await accessToken();
+      return relayClient(relayUrl).connect(token, environmentId, clientProofKeyThumbprint);
+    },
+  };
+}

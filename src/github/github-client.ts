@@ -35,6 +35,7 @@ const Job = type({
   runner_name: "string | null",
   labels: "string[]",
   head_branch: "string | null",
+  "head_sha?": "string",
   workflow_name: "string | null",
   "steps?": Step.array(),
 });

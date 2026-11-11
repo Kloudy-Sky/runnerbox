@@ -1,0 +1,32 @@
+# Copy to wrangler.toml (gitignored) and fill in your own values. See docs/connect-setup.md.
+name = "runnerbox-relay"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+routes = [{ pattern = "relay.example.com", custom_domain = true }]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "runnerbox-relay"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+# The idle-tunnel sweep. It does nothing until RELAY_TUNNEL_CLEANUP_MODE says otherwise.
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+RELAY_ISSUER = "https://relay.example.com"
+CLERK_FRONTEND_API = "clerk.example.com"
+CLERK_CLI_CLIENT_ID = "replace-with-cli-oauth-client-id"
+CLERK_DESKTOP_CLIENT_ID = "replace-with-desktop-oauth-client-id"
+CLOUDFLARE_ACCOUNT_ID = "replace-with-account-id"
+CLOUDFLARE_ZONE_ID = "replace-with-zone-id"
+# Tunnel hostnames are rbx-<hash>.<this>. One level under the zone stays on free Universal SSL.
+TUNNEL_BASE_DOMAIN = "example.com"
+# off, dry-run or enabled. Read at deploy time, so changing it means deploying again.
+RELAY_TUNNEL_CLEANUP_MODE = "off"
+
+# Secrets, set with `wrangler secret put`, never in this file:
+#   RELAY_SIGNING_PRIVATE_KEY, RELAY_SIGNING_PUBLIC_KEY, CLOUDFLARE_API_TOKEN
