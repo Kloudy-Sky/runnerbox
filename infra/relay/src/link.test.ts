@@ -82,3 +82,16 @@ test("a challenge stays used until it expires, even after a shorter-lived proof 
   const again = await call("/v1/link", { proof: await linkProof(environment, once) });
   assert.deepEqual([again.status, again.body.error], [400, "replayed"]);
 });
+
+test("of two first links racing under different keys, one wins and the other gets no tunnel or token", async () => {
+  const { call, challenge, linkProof, store, tunnels } = await setup();
+  const first = await generateSigningKeyPair();
+  const second = await generateSigningKeyPair();
+  const proofs = [await linkProof(first, await challenge()), await linkProof(second, await challenge(), { port: 22 })];
+  const answers = await Promise.all(proofs.map((proof) => call("/v1/link", { proof })));
+  assert.deepEqual(answers.map((answer) => answer.status).toSorted(), [200, 409]);
+  assert.equal(answers.filter((answer) => "connectorToken" in answer.body).length, 1, "only the winner gets a connector token");
+  assert.equal(tunnels.calls.filter((entry) => entry.startsWith("provision")).length, 1);
+  const winner = answers[0]!.status === 200 ? first : second;
+  assert.equal((await store.link({ userId: "user_alice", environmentId: ENVIRONMENT }))?.environment_public_key, winner.publicKey);
+});

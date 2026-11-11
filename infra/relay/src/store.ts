@@ -53,16 +53,20 @@ export function createStore(db: D1Like, now: () => number) {
       (await db.prepare("SELECT * FROM links WHERE user_id = ? ORDER BY linked_at").bind(userId).all<Link>()).results,
     linksForEnvironment: async (environmentId: string) =>
       (await db.prepare("SELECT * FROM links WHERE environment_id = ?").bind(environmentId).all<Link>()).results,
-    // Never changes a link's key: the relay refuses a relink under another key before this.
-    upsertLink: (link: Omit<Link, "linked_at">) =>
-      db
+    // Creates the link, or updates one made with the same key, in one statement. False when a link
+    // under another key exists, including one a concurrent request made a moment ago, so only one
+    // key can ever win and the loser can stop before touching the allocation.
+    claimLink: async (link: Omit<Link, "linked_at">) => {
+      const { meta } = await db
         .prepare(
           `INSERT INTO links (user_id, environment_id, label, environment_public_key, http_base_url, linked_at) VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT (user_id, environment_id) DO UPDATE SET label = excluded.label, http_base_url = excluded.http_base_url
            WHERE links.environment_public_key = excluded.environment_public_key`,
         )
         .bind(link.user_id, link.environment_id, link.label, link.environment_public_key, link.http_base_url, iso())
-        .run(),
+        .run();
+      return meta.changes === 1;
+    },
     deleteLink: ({ userId, environmentId }: Key) =>
       db.prepare("DELETE FROM links WHERE user_id = ? AND environment_id = ?").bind(userId, environmentId).run(),
 

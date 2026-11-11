@@ -182,16 +182,23 @@ export function createRelay(deps: RelayDeps) {
       }
 
       const key = { userId, environmentId: candidate.environmentId };
-      // A link stays pinned to the key it was made with. Someone holding the user's sign-in could
-      // otherwise link a key of their own and take over the tunnel; only an unlink signed by the
-      // pinned key frees the link for another.
-      const existing = await store.link(key);
-      if (existing && existing.environment_public_key !== candidate.environmentPublicKey) throw new Refusal(409, "environment_key_mismatch");
       // Named from the user and environment together, so the hostname gives away neither.
       const name = `rbx-${(await sha256Hex(`${userId}\0${candidate.environmentId}`)).slice(0, 16)}`;
       const hostname = `${name}.${config.tunnelBaseDomain}`;
       const httpBaseUrl = tunnels.baseUrlFor(hostname);
       if (config.requireHttps && !httpBaseUrl.startsWith("https://")) throw new Refusal(500, "endpoint_not_secure");
+      // A link stays pinned to the key it was made with. Someone holding the user's sign-in could
+      // otherwise link a key of their own and take over the tunnel; only an unlink signed by the
+      // pinned key frees the link for another. The claim comes before anything touches the
+      // allocation, so a request that loses, even to a concurrent one, gets no tunnel or token.
+      const claimed = await store.claimLink({
+        user_id: userId,
+        environment_id: candidate.environmentId,
+        label: candidate.descriptor.label,
+        environment_public_key: candidate.environmentPublicKey,
+        http_base_url: httpBaseUrl,
+      });
+      if (!claimed) throw new Refusal(409, "environment_key_mismatch");
       const previous = await store.allocation(key);
       const allocation = await store.beginAllocation(key, { hostname, httpBaseUrl, originHost: localHttpHost, originPort: localHttpPort });
       const provisioned = await tunnels
@@ -207,13 +214,6 @@ export function createRelay(deps: RelayDeps) {
           throw new Refusal(502, "tunnel_provisioning_failed");
         });
       await store.checkpoint(key, allocation.generation, { tunnelId: provisioned.tunnelId, dnsRecordId: provisioned.dnsRecordId, ready: true });
-      await store.upsertLink({
-        user_id: userId,
-        environment_id: candidate.environmentId,
-        label: candidate.descriptor.label,
-        environment_public_key: candidate.environmentPublicKey,
-        http_base_url: httpBaseUrl,
-      });
       return json({
         environmentId: candidate.environmentId,
         cloudUserId: userId,
