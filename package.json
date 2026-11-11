@@ -9,7 +9,7 @@
   "packageManager": "pnpm@10.28.1",
   "scripts": {
     "runnerbox": "node src/cli.ts",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/runnerbox.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/runnerbox.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" && node scripts/bundle-check.ts",
     "test": "node --test \"src/**/*.test.ts\" && pnpm -r test",
     "typecheck": "tsc && pnpm -r typecheck",
     "leak-check": "node scripts/leak-check.ts",

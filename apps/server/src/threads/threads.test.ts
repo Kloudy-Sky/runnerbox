@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { type FakeStep, makeFakeProvider } from "../testing/FakeProvider.ts";
+import { mcpSession } from "../testing/mcpClient.ts";
 import { startTestServer } from "../testing/testServer.ts";
 
 type Server = Awaited<ReturnType<typeof startTestServer>>;
@@ -154,7 +155,7 @@ test("threads need threads:operate, which a Connect session never gets", () =>
     assert.equal(viaTunnel._tag === "AuthorizationError" && viaTunnel.requiredScope, "threads:operate");
   }));
 
-test("an agent can only call runnerbox's tools, and a turn can't start without a provider", async () => {
+test("an agent can only call runnerbox's tools, with a token that ends with its turn, and a turn can't start without a provider", async () => {
   await withServer([[{ tool: "Bash", input: { command: "cat ~/.config/runnerbox/token" } }, { tool: "list_runs", input: { repo: "../../etc", days: 7 } }]], async (server, fake) => {
     const { token } = await appSession(server);
     await withClient(server, token, (client) =>
@@ -167,7 +168,13 @@ test("an agent can only call runnerbox's tools, and a turn can't start without a
       }),
     );
     assert.deepEqual(fake.toolResults.map((result) => result.isError), [true, true]);
-    assert.match(fake.toolResults[0]?.text ?? "", /No tool is named Bash/);
+    assert.match(fake.toolResults[0]?.text ?? "", /Tool 'Bash' not found/);
+    // The turn's token was read-only, worked only at /mcp, and stops working when the turn ends.
+    const turnToken = fake.inputs[0]?.mcp.token ?? "";
+    assert.equal(fake.inputs[0]?.mcp.url, `${server.baseUrl}/mcp`);
+    assert.equal((await mcpSession(`${server.baseUrl}/mcp`, turnToken)).init.status, 401);
+    const sessions = await withClient(server, token, (client) => client["access.sessions"]());
+    assert.ok(!sessions.some((session) => session.label === "agent thread"));
   });
 
   const none = await startTestServer();

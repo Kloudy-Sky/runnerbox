@@ -1,6 +1,6 @@
 # Third-party notices
 
-Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), and the options that keep agent threads' Claude Code process away from the user's own settings, MCP servers and hooks. T3 Code is under the MIT license below.
+Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), and the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks. T3 Code is under the MIT license below.
 
 ```
 MIT License
@@ -25,5 +25,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-
-`runnerbox.js` bundles `@anthropic-ai/claude-agent-sdk`, which threads use to run Claude Code. It is © Anthropic PBC and used under Anthropic's terms: https://code.claude.com/docs/en/legal-and-compliance.

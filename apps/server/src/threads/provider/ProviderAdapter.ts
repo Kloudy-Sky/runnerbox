@@ -3,7 +3,6 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type * as Stream from "effect/Stream";
-import type { AgentTools } from "../AgentTools.ts";
 
 export class ProviderError extends Schema.TaggedError<ProviderError>()("ProviderError", { message: Schema.String }) {}
 
@@ -19,7 +18,8 @@ export type TurnInput = {
   // The whole conversation so far, packet first. Threads keep their own log, so a provider never
   // needs session state of its own, and a thread survives the provider's process.
   readonly prompt: string;
-  readonly tools: AgentTools;
+  // runnerbox's own `/mcp` on loopback, and a read-only token that lasts this turn only.
+  readonly mcp: { readonly url: string; readonly token: string };
 };
 
 // One agent provider on the environment. Claude today; another provider is another layer.

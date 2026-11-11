@@ -19,12 +19,13 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as AuthStore from "../auth/AuthStore.ts";
 import { newId } from "../auth/secrets.ts";
+import * as LocalEndpoint from "../config/LocalEndpoint.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import type * as StateLogs from "../history/StateLogs.ts";
 import type * as Inbox from "../inbox/Inbox.ts";
 import type * as RunnerState from "../runners/RunnerState.ts";
-import * as AgentTools from "./AgentTools.ts";
 import { SYSTEM_PROMPT, turnPrompt } from "./prompt.ts";
 import { ProviderAdapter, type ProviderEvent } from "./provider/ProviderAdapter.ts";
 import { subjectPacket } from "./subjectPacket.ts";
@@ -50,13 +51,16 @@ export class Threads extends Context.Service<
 type Running = { readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
 
 const MAX_TOOL_INPUT = 300;
+// A turn's MCP token is revoked when the turn ends. This only bounds one a crash left behind.
+const TURN_TOKEN_TTL_MS = 30 * 60_000;
 const nowIso = Clock.currentTimeMillis.pipe(Effect.map((ms) => new Date(ms).toISOString()));
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const { serverDir } = yield* ServerPaths.ServerPaths;
   const provider = yield* ProviderAdapter;
-  const tools = yield* AgentTools.make;
+  const auth = yield* AuthStore.AuthStore;
+  const { baseUrl } = yield* LocalEndpoint.LocalEndpoint;
   const readers = yield* Effect.context<Inbox.Inbox | StateLogs.StateLogs | RunnerState.RunnerState>();
   const log = ThreadLog.make(fs, serverDir);
   const scope = yield* Effect.scope;
@@ -172,9 +176,17 @@ const make = Effect.gen(function* () {
         turn.nextSeq += 1;
         running.set(id, turn);
         const prompt = turnPrompt(file.header.packet, file.items, text);
+        // The agent's tools are `/mcp` itself, read-only, with a token that lives for this turn.
         // Forked into the service's scope, so stopping the server interrupts it and logs that.
-        turn.fiber = yield* provider.runTurn({ systemPrompt: SYSTEM_PROMPT, prompt, tools }).pipe(
-          Stream.runForEach(onEvent(id, turn)),
+        turn.fiber = yield* Effect.gen(function* () {
+          const grant = yield* Effect.acquireRelease(auth.mintMcpToken("agent thread", { ttlMs: TURN_TOKEN_TTL_MS }), ({ session }) =>
+            auth.revoke(session.id).pipe(Effect.ignore),
+          );
+          yield* provider
+            .runTurn({ systemPrompt: SYSTEM_PROMPT, prompt, mcp: { url: `${baseUrl}/mcp`, token: grant.token } })
+            .pipe(Stream.runForEach(onEvent(id, turn)));
+        }).pipe(
+          Effect.scoped,
           Effect.onExit((exit) => endTurn(id, turn, exit)),
           Effect.forkIn(scope),
         );

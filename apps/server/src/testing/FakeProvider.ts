@@ -1,11 +1,22 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import type { ToolResult } from "../threads/AgentTools.ts";
 import { ProviderAdapter, ProviderError, type ProviderEvent, type TurnInput } from "../threads/provider/ProviderAdapter.ts";
+import { mcpSession } from "./mcpClient.ts";
+
+export type ToolResult = { readonly status: number; readonly text: string; readonly isError: boolean };
+
+// Calls one tool the way Claude Code would: over the turn's `/mcp` URL with its token.
+async function callTool(mcp: TurnInput["mcp"], name: string, input: unknown): Promise<ToolResult> {
+  const { init, request } = await mcpSession(mcp.url, mcp.token);
+  if (init.status !== 200) return { status: init.status, text: "", isError: true };
+  const { body } = await request("tools/call", { name, arguments: input ?? {} });
+  const result: { content?: { text: string }[]; isError?: boolean } | undefined = body.result;
+  return result ? { status: 200, text: result.content?.map((part) => part.text).join("") ?? "", isError: result.isError === true } : { status: 200, text: JSON.stringify(body.error), isError: true };
+}
 
 // A provider that replays scripted turns, for tests and for driving the app without spending a
-// subscription. Text streams word by word; a tool step really calls the thread's tools.
+// subscription. Text streams word by word; a tool step really calls `/mcp` with the turn's token.
 export type FakeStep =
   | { readonly text: string }
   | { readonly tool: string; readonly input?: unknown }
@@ -28,7 +39,7 @@ export function makeFakeProvider(options: { readonly turns: ReadonlyArray<Readon
     }
     if ("tool" in step) {
       return Stream.fromEffect(
-        Effect.promise(() => input.tools.call(step.tool, step.input)).pipe(
+        Effect.promise(() => callTool(input.mcp, step.tool, step.input)).pipe(
           Effect.tap((result) => Effect.sync(() => toolResults.push(result))),
           Effect.as<ProviderEvent>({ _tag: "ToolCall", name: step.tool, input: step.input ?? {} }),
         ),

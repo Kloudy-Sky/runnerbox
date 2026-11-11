@@ -1,8 +1,8 @@
 import * as Schema from "effect/Schema";
 import type { ProviderEvent } from "./ProviderAdapter.ts";
-import { SERVER_NAME } from "./sdkMcpServer.ts";
+import { SERVER_NAME } from "./claudeCommand.ts";
 
-// The few SDK messages a turn needs, decoded rather than trusted: text as it streams, finished
+// The few lines of `claude --output-format=stream-json` a turn needs, decoded rather than trusted: text as it streams, finished
 // text and tool calls, and the result. Anything else, and anything from a subagent, is skipped.
 
 const TopLevel = { parent_tool_use_id: Schema.Null };
@@ -25,7 +25,7 @@ const Result = Schema.Struct({
   result: Schema.optionalKey(Schema.String),
 });
 const Message = Schema.Union([StreamDelta, Assistant, Result]);
-const decode = Schema.decodeUnknownOption(Message);
+const decode = Schema.decodeUnknownOption(Schema.fromJsonString(Message));
 
 const PREFIX = `mcp__${SERVER_NAME}__`;
 const STOPPED: Record<string, string> = {
@@ -35,8 +35,8 @@ const STOPPED: Record<string, string> = {
 
 export type Decoded = { readonly events: ReadonlyArray<ProviderEvent>; readonly error: string | null };
 
-export function decodeMessage(message: unknown): Decoded {
-  const decoded = decode(message);
+export function decodeLine(line: string): Decoded {
+  const decoded = decode(line);
   if (decoded._tag === "None") return { events: [], error: null };
   const value = decoded.value;
   switch (value.type) {

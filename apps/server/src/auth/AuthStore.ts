@@ -46,7 +46,7 @@ const StoredSession = Schema.Struct({
   // Set for a session bought with a Connect credential: every use must carry a DPoP proof from
   // the key with this thumbprint.
   proofKeyThumbprint: Schema.optionalKey(Schema.String),
-  // Key-bound sessions expire; others last until revoked.
+  // Key-bound sessions and a thread turn's MCP token expire; others last until revoked.
   expiresAt: Schema.optionalKey(Schema.String),
 });
 const StoredCode = Schema.Struct({
@@ -105,7 +105,8 @@ export class AuthStore extends Context.Service<
       // Refuses a code that isn't bound to a key, leaving it unspent for its owner.
       readonly keyBoundOnly?: boolean;
     }) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError | PairingRejected>;
-    readonly mintMcpToken: (label: string) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError>;
+    // `ttlMs` makes the token expire on its own, for one that should be revoked but might not be.
+    readonly mintMcpToken: (label: string, options?: { readonly ttlMs?: number }) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError>;
     readonly authenticate: (
       token: string,
       audience: SessionAudience,
@@ -242,8 +243,17 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const mintMcpToken = Effect.fn("AuthStore.mintMcpToken")(function* (label: string) {
-    return yield* update((file, now) => Effect.succeed(addSession(file, now, { label, audience: "mcp", scopes: MCP_SCOPES })));
+  const mintMcpToken = Effect.fn("AuthStore.mintMcpToken")(function* (label: string, options: { readonly ttlMs?: number } = {}) {
+    return yield* update((file, now) =>
+      Effect.succeed(
+        addSession(file, now, {
+          label,
+          audience: "mcp",
+          scopes: MCP_SCOPES,
+          ...(options.ttlMs === undefined ? {} : { expiresAt: new Date(now + options.ttlMs).toISOString() }),
+        }),
+      ),
+    );
   });
 
   const authenticate = Effect.fn("AuthStore.authenticate")(function* (
