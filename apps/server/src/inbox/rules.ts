@@ -28,6 +28,8 @@ const FAILING_STREAK = 3;
 const SLOW_FACTOR = 1.5;
 const SLOW_MIN_EXTRA_MS = 60_000;
 const SLOW_MIN_HISTORY = 5;
+// A job with no runner that ended sooner than this was cancelled or superseded, not starved.
+const STARVED_AFTER_MS = 5 * 60_000;
 
 const isFailure = ({ conclusion }: JobRecord) => conclusion === "failure" || conclusion === "timed_out";
 const durationMs = (job: JobRecord) => elapsedMs(job.startedAt, job.completedAt);
@@ -153,7 +155,7 @@ const VERDICT_TITLE: Record<Verdict, string> = {
   infra: "failed on the machine",
   flaky: "is flaky",
   code: "fails in its code",
-  unconfirmed: "failed once",
+  unconfirmed: "failed",
 };
 
 function failureItems(input: InboxInput): InboxItem[] {
@@ -195,8 +197,20 @@ function failureItems(input: InboxInput): InboxItem[] {
   });
 }
 
+// The runner types this machine's launcher serves: any it has a live kind for, or whose jobs ran on
+// a runner it recorded. Other labels belong to GitHub's own runners or to another machine.
+function servedTypes(input: InboxInput) {
+  const ours = new Set(input.events.flatMap((event) => (event.event === "runner" ? [event.runner] : [])));
+  const fromJobs = input.jobs.filter((job) => job.runner !== null && ours.has(job.runner)).map(runnerType);
+  const fromKinds = input.installs.flatMap((install) => install.kinds.map((kind) => kind.label));
+  return new Set([...fromJobs, ...fromKinds]);
+}
+
 function noRunnerItems(input: InboxInput): InboxItem[] {
-  const waiting = input.jobs.filter((job) => job.runner === null && job.conclusion !== "skipped");
+  const waiting = input.jobs.filter(
+    (job) => job.runner === null && job.conclusion !== "skipped" && (elapsedMs(job.createdAt, job.completedAt) ?? 0) >= STARVED_AFTER_MS,
+  );
+  const served = servedTypes(input);
   const groups = Map.groupBy(waiting, (job) => `${job.repo}\0${runnerType(job)}`);
   return [...groups.values()].map((group) => {
     const sorted = group.toSorted((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
@@ -214,15 +228,20 @@ function noRunnerItems(input: InboxInput): InboxItem[] {
     const times = overlapping.length === 1 ? "once" : `${overlapping.length} times`;
     const reasons = overlapping.length > 0 ? [`slots were waiting for memory ${times} meanwhile`] : [];
     const recent = input.now - Date.parse(latest.createdAt) < DAY_MS;
+    const ours = served.has(label);
     return {
       id: `no_runner:${latest.repo}:${label}`,
       kind: "no_runner",
-      group: recent ? "needs_you" : "no_action",
+      group: recent && ours ? "needs_you" : "no_action",
       verdict: null,
       repo: latest.repo,
       install: null,
-      title: `${group.length} ${group.length === 1 ? "job" : "jobs"} on ${label} never got a runner`,
-      detail: reasons.length > 0 ? `${capitalize(reasons[0]!)}.` : "No runner picked them up before they ended.",
+      title: `${group.length} ${group.length === 1 ? "job" : "jobs"} on ${label} waited over ${STARVED_AFTER_MS / 60_000}m and never got a runner`,
+      detail: !ours
+        ? "This machine doesn't serve that label."
+        : reasons.length > 0
+          ? `${capitalize(reasons[0]!)}.`
+          : "No runner picked them up before they ended.",
       at: latest.createdAt,
       evidence: {
         steps: [],

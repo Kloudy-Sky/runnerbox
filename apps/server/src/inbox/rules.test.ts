@@ -109,21 +109,38 @@ test("a job flaky three times needs a look, and a failure fixed by a later run d
   assert.match(byVerdict.infra!.detail, /later run on this branch passed/);
 });
 
-test("jobs that never got a runner need you while recent, with memory waits as the reason", () => {
-  const waiting = job({ runner: null, conclusion: "cancelled", at: NOW - minutes(30), ms: minutes(20) });
-  const old = job({ repo: "owner/other", runner: null, conclusion: "cancelled", at: NOW - 3 * 24 * minutes(60) });
+test("only jobs that waited on a label this machine serves count as starved and need you", () => {
+  const starved = (overrides: Partial<JobRecord> & { at?: number; ms?: number }) => {
+    const { at = NOW - minutes(30), ms = minutes(20), ...rest } = overrides;
+    // No runner, so the whole time from creation to the end was spent waiting.
+    return job({ runner: null, conclusion: "cancelled", createdAt: iso(at), startedAt: iso(at), completedAt: iso(at + ms), ...rest });
+  };
+  const jobs = [
+    // Ran here, which is how the machine is known to serve example-linux.
+    job({ runner: "example-linux-1-1780000000" }),
+    starved({}),
+    // Cancelled seconds after it was created: superseded by a newer push, not starved.
+    starved({ ms: 4_000 }),
+    starved({ repo: "owner/other", at: NOW - 3 * 24 * minutes(60) }),
+    // A GitHub-hosted label, which no runner on this machine could have picked up.
+    starved({ repo: "owner/hosted", labels: ["ubuntu-24.04"] }),
+  ];
   const events: LauncherEvent[] = [
+    { install: "example", event: "runner", slot: 1, runner: "example-linux-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: minutes(6) },
     { install: "example", event: "memory_wait", slot: 1, startedAt: iso(NOW - minutes(40)), durationMs: minutes(30) },
   ];
-  const items = deriveInbox(input({ jobs: [waiting, old], events })).filter((item) => item.kind === "no_runner");
+  const items = deriveInbox(input({ jobs, events })).filter((item) => item.kind === "no_runner");
   assert.deepEqual(
-    items.map((item) => [item.repo, item.group]),
+    items.map((item) => [item.repo, item.group, item.evidence.attempts.length]).toSorted(),
     [
-      ["owner/name", "needs_you"],
-      ["owner/other", "no_action"],
+      ["owner/hosted", "no_action", 1],
+      ["owner/name", "needs_you", 1],
+      ["owner/other", "no_action", 1],
     ],
   );
-  assert.match(items[0]!.detail, /waiting for memory once/);
+  const byRepo = new Map(items.map((item) => [item.repo, item]));
+  assert.match(byRepo.get("owner/name")!.detail, /waiting for memory once/);
+  assert.match(byRepo.get("owner/hosted")!.detail, /doesn't serve that label/);
 });
 
 test("a slot whose last three runners failed is reported, and a success ends the streak", () => {
