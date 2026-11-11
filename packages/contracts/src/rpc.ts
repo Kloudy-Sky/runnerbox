@@ -6,6 +6,7 @@ import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, Pairi
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { InboxItem } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
+import { CreateThread, MessageText, ProviderStatus, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
 export class StateReadError extends Schema.TaggedError<StateReadError>()("StateReadError", {
@@ -27,6 +28,8 @@ export class AccessError extends Schema.TaggedError<AccessError>()("AccessError"
 }
 
 const ReadError = Schema.Union([AuthorizationError, StateReadError]);
+const ThreadFailure = Schema.Union([AuthorizationError, ThreadError]);
+const ThreadId = { id: Schema.String };
 const Window = { repo: RepoName, days: Days };
 
 export const RPC_METHODS = {
@@ -44,6 +47,13 @@ export const RPC_METHODS = {
   accessSessions: "access.sessions",
   accessCreatePairingCode: "access.createPairingCode",
   accessRevokeSession: "access.revokeSession",
+  threadsProvider: "threads.provider",
+  threadsList: "threads.list",
+  threadsRead: "threads.read",
+  threadsCreate: "threads.create",
+  threadsStartTurn: "threads.startTurn",
+  threadsInterrupt: "threads.interrupt",
+  threadsSubscribe: "threads.subscribe",
 } as const;
 
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
@@ -100,6 +110,18 @@ export const RunnerboxRpcGroup = RpcGroup.make(
     payload: { id: Schema.String },
     error: Schema.Union([AuthorizationError, AccessError]),
   }),
+  Rpc.make(RPC_METHODS.threadsProvider, { success: ProviderStatus, error: AuthorizationError }),
+  Rpc.make(RPC_METHODS.threadsList, {
+    payload: { subject: Schema.optionalKey(ThreadSubject) },
+    success: Schema.Array(ThreadSummary),
+    error: ThreadFailure,
+  }),
+  Rpc.make(RPC_METHODS.threadsRead, { payload: ThreadId, success: ThreadDetail, error: ThreadFailure }),
+  Rpc.make(RPC_METHODS.threadsCreate, { payload: CreateThread, success: ThreadSummary, error: ThreadFailure }),
+  // Returns once the question is logged; the answer arrives on the thread's stream.
+  Rpc.make(RPC_METHODS.threadsStartTurn, { payload: { ...ThreadId, text: MessageText }, success: Schema.Struct({ turnId: Schema.String }), error: ThreadFailure }),
+  Rpc.make(RPC_METHODS.threadsInterrupt, { payload: ThreadId, error: ThreadFailure }),
+  Rpc.make(RPC_METHODS.threadsSubscribe, { payload: ThreadId, success: ThreadEvent, error: ThreadFailure, stream: true }),
 ).middleware(RpcScopeAuthorization);
 
 export type RpcMethod = RpcGroup.Rpcs<typeof RunnerboxRpcGroup>["_tag"];
@@ -109,6 +131,8 @@ export type RpcMethod = RpcGroup.Rpcs<typeof RunnerboxRpcGroup>["_tag"];
 const HISTORY = ["history:read"] as const;
 const RUNNERS = ["runners:read"] as const;
 const ACCESS = ["access:write"] as const;
+// The agent reads history and runner state through its tools, so a thread needs both as well.
+const THREADS = ["history:read", "runners:read", "threads:operate"] as const;
 export const RPC_SCOPES = {
   [RPC_METHODS.historyRepos]: HISTORY,
   [RPC_METHODS.historyOverview]: HISTORY,
@@ -125,4 +149,11 @@ export const RPC_SCOPES = {
   [RPC_METHODS.accessSessions]: ACCESS,
   [RPC_METHODS.accessCreatePairingCode]: ACCESS,
   [RPC_METHODS.accessRevokeSession]: ACCESS,
+  [RPC_METHODS.threadsProvider]: THREADS,
+  [RPC_METHODS.threadsList]: THREADS,
+  [RPC_METHODS.threadsRead]: THREADS,
+  [RPC_METHODS.threadsCreate]: THREADS,
+  [RPC_METHODS.threadsStartTurn]: THREADS,
+  [RPC_METHODS.threadsInterrupt]: THREADS,
+  [RPC_METHODS.threadsSubscribe]: THREADS,
 } as const satisfies Record<RpcMethod, ReadonlyArray<AuthScope>>;

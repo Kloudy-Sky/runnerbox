@@ -8,6 +8,7 @@ import type { LogReadError } from "../history/StateLogs.ts";
 import * as Inbox from "../inbox/Inbox.ts";
 import * as LauncherLogs from "../runners/LauncherLogs.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
+import * as Threads from "../threads/Threads.ts";
 
 const toWire = Effect.mapError((error: LogReadError) => new StateReadError({ what: error.what }));
 
@@ -21,6 +22,7 @@ export const layer = (session: Session) =>
       const runnerState = yield* RunnerState.RunnerState;
       const inbox = yield* Inbox.Inbox;
       const auth = yield* AuthStore.AuthStore;
+      const threads = yield* Threads.Threads;
       return {
         "history.repos": () => history.repos.pipe(toWire),
         "history.overview": ({ days }) => history.overview(days).pipe(toWire),
@@ -38,6 +40,13 @@ export const layer = (session: Session) =>
           auth.delegatePairingCode(session, scopes).pipe(Effect.catchTags({ AuthStoreError: Effect.die })),
         "access.revokeSession": ({ id }) =>
           auth.revoke(id).pipe(Effect.catchTags({ AuthStoreError: Effect.die })),
+        "threads.provider": () => threads.provider,
+        "threads.list": ({ subject }) => threads.list(subject),
+        "threads.read": ({ id }) => threads.read(id),
+        "threads.create": ({ subject, days }) => threads.create(subject, days),
+        "threads.startTurn": ({ id, text }) => threads.startTurn(id, text),
+        "threads.interrupt": ({ id }) => threads.interrupt(id),
+        "threads.subscribe": ({ id }) => threads.subscribe(id),
       };
     }),
   );

@@ -5,3 +5,4 @@ export * from "./inbox.ts";
 export * from "./rpc.ts";
 export * from "./runners.ts";
 export * from "./connect.ts";
+export * from "./threads.ts";

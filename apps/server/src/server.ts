@@ -18,13 +18,21 @@ import * as Inbox from "./inbox/Inbox.ts";
 import * as Ws from "./rpc/ws.ts";
 import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
+import * as ClaudeAdapter from "./threads/provider/ClaudeAdapter.ts";
+import type { ProviderAdapter } from "./threads/provider/ProviderAdapter.ts";
+import * as Threads from "./threads/Threads.ts";
 
 export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string };
 
-// Every service, shared by the RPC socket and, later, MCP. Built outside `HttpRouter.serve` so all
-// routes see the same instances.
-export const layerServices = (stateDir: string, label?: string) =>
-  Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer).pipe(
+// Which agent provider threads use. Tests swap in a scripted one.
+type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
+
+// Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
+// see the same instances.
+export const layerServices = (stateDir: string, label?: string, provider: Provider = ClaudeAdapter.layer) =>
+  Threads.layer.pipe(
+    Layer.provide(provider),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer)),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(label))),
     Layer.provideMerge(ServerPaths.layer(stateDir)),
@@ -51,8 +59,8 @@ const layerListeners = (input: { host: string; port: number; tunnelPort: number 
 
 // The listeners over the shared services, exposing the services so tests can mint codes on the
 // same instance.
-export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string }) =>
-  layerListeners(input).pipe(Layer.provideMerge(layerServices(input.stateDir, input.label)));
+export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string; provider?: Provider }) =>
+  layerListeners(input).pipe(Layer.provideMerge(layerServices(input.stateDir, input.label, input.provider)));
 
 // `serve`: the listeners, with the tunnel one on the port the link chose, and for a linked
 // environment its connector, all over one set of services.
