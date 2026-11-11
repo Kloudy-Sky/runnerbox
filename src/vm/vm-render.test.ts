@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -66,11 +66,9 @@ test("the filter pins the VM to its reserved address and drops multicast and bro
   assert.ok(xml.includes("dstipaddr='255.255.255.255' dstipmask='32'"));
 });
 
-test("create.sh's checks hold when virsh is still writing after the line they look for", async () => {
-  const { mkdtemp, writeFile, chmod, rm } = await import("node:fs/promises");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
+test("create.sh's checks hold when virsh is still writing after the line they look for", async (t) => {
   const bin = await mkdtemp(join(tmpdir(), "runnerbox-bin-"));
+  t.after(() => rm(bin, { recursive: true }));
   // A virsh that keeps printing after the answer, as a real one can. A check that stops reading
   // early kills it, and with pipefail that reads as the network being down.
   const virsh = `#!/bin/bash
@@ -90,5 +88,4 @@ esac`;
     () => execFileSync("bash", ["-s"], { input: createScript(config), env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ["pipe", "pipe", "pipe"] }),
     /Storage pool default isn't running/,
   );
-  await rm(bin, { recursive: true });
 });

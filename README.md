@@ -2,7 +2,7 @@
 
 Throwaway GitHub Actions runners on your own hardware, with job tracking that shows what's slow, flaky or broken.
 
-**Status: early.** `runnerbox report` works today. Jobs on a Mac's own OS have passed a first real test on one Mac. `runnerbox up` has passed one real test, three jobs on a test repository, but VM setup isn't scripted. A VM for each job has passed one real test too, four jobs on a test repository. Don't point real CI at this yet.
+**Status: early.** `runnerbox report` works today. Jobs on a Mac's own OS have passed a first real test on one Mac. `runnerbox up` has passed one real test, three jobs on a test repository, but VM setup isn't scripted. Don't point real CI at this yet.
 
 ## What it will do
 
