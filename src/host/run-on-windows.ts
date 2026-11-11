@@ -23,7 +23,8 @@ export async function runOnWindowsHost(config: Pick<HostInstall, "name">, regist
     for (let idle = 0; idle < 2; ) {
       await wait(POLL_MS);
       const code = await readFile(result, "utf8").catch(() => null);
-      if (code !== null) return Number(code.trim());
+      // An empty file is one the task has created and not yet written.
+      if (code?.trim()) return Number(code.trim());
       idle = (await taskRunning()) ? 0 : idle + 1;
     }
     return null;
