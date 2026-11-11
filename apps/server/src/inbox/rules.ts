@@ -155,7 +155,7 @@ const VERDICT_TITLE: Record<Verdict, string> = {
   infra: "failed on the machine",
   flaky: "is flaky",
   code: "fails in its code",
-  unconfirmed: "failed once",
+  unconfirmed: "failed",
 };
 
 function failureItems(input: InboxInput): InboxItem[] {
