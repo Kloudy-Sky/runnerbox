@@ -5,6 +5,10 @@ import { calculateJwkThumbprint, decodeProtectedHeader, exportJWK, generateKeyPa
 
 export const DPOP_TYP = "dpop+jwt";
 const MAX_AGE_SECONDS = 60;
+const CLOCK_TOLERANCE_SECONDS = 30;
+// jose compares whole seconds, so a proof is still accepted during the second after its limit.
+// The replay record outlives that by a margin, so no proof is accepted after its record is gone.
+const REPLAY_MARGIN_SECONDS = 5;
 
 export type ProofKey = { readonly privateKey: CryptoKey; readonly publicJwk: JWK; readonly thumbprint: string };
 
@@ -32,11 +36,11 @@ export async function verifyProof(proof: string, request: { method: string; path
   try {
     const header = decodeProtectedHeader(proof);
     if (header.typ !== DPOP_TYP || header.alg !== "ES256" || !header.jwk || "d" in header.jwk) throw new DpopError("bad header");
-    const { payload } = await jwtVerify(proof, EmbeddedJWK, { typ: DPOP_TYP, algorithms: ["ES256"], maxTokenAge: MAX_AGE_SECONDS, clockTolerance: 30, currentDate: new Date(request.now) });
+    const { payload } = await jwtVerify(proof, EmbeddedJWK, { typ: DPOP_TYP, algorithms: ["ES256"], maxTokenAge: MAX_AGE_SECONDS, clockTolerance: CLOCK_TOLERANCE_SECONDS, currentDate: new Date(request.now) });
     if (payload.htm !== request.method.toUpperCase() || typeof payload.htu !== "string" || new URL(payload.htu).pathname !== request.path || typeof payload.jti !== "string") {
       throw new DpopError("proof is for another request");
     }
-    return { thumbprint: await calculateJwkThumbprint(header.jwk), jti: payload.jti, expiresAt: ((payload.iat ?? 0) + MAX_AGE_SECONDS + 30) * 1000 };
+    return { thumbprint: await calculateJwkThumbprint(header.jwk), jti: payload.jti, expiresAt: ((payload.iat ?? 0) + MAX_AGE_SECONDS + CLOCK_TOLERANCE_SECONDS + REPLAY_MARGIN_SECONDS) * 1000 };
   } catch (error) {
     throw error instanceof DpopError ? error : new DpopError(error instanceof Error ? error.message : "invalid proof");
   }

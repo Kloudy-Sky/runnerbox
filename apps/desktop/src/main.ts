@@ -44,6 +44,7 @@ const decodeRelayUrl = (value: unknown) => {
 const decodeEnvironment = Schema.decodeUnknownSync(SavedEnvironment);
 const decodeId = Schema.decodeUnknownSync(Schema.String);
 const decodeRoute = Schema.decodeUnknownSync(SshRoute);
+const decodeProofRequest = Schema.decodeUnknownSync(Schema.Struct({ method: Schema.String, url: Schema.String }));
 const tunnels = createTunnels();
 
 // Only the app's own page may call main; anything else that loads in a window gets nothing.
@@ -84,6 +85,14 @@ function registerIpc() {
   ipcMain.handle(CHANNELS.connectRequestCredential, (event, environmentId: unknown, thumbprint: unknown) => {
     fromApp(event);
     return connect.requestCredential(decodeId(environmentId), decodeId(thumbprint));
+  });
+  ipcMain.handle(CHANNELS.connectCreateProofKey, (event) => {
+    fromApp(event);
+    return connect.createProofKey();
+  });
+  ipcMain.handle(CHANNELS.connectProve, (event, keyId: unknown, request: unknown) => {
+    fromApp(event);
+    return connect.prove(decodeId(keyId), decodeProofRequest(request));
   });
   ipcMain.handle(CHANNELS.sshOpenTunnel, (event, route: unknown) => {
     fromApp(event);

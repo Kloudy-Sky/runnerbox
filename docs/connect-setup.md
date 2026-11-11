@@ -44,7 +44,9 @@ wrangler d1 migrations apply runnerbox-relay --remote
    - **CLI**: redirect URI `http://127.0.0.1/callback`. Turn on the **device authorization grant**, which `link --device` uses on machines you reach over SSH. Its client ID is `CLERK_CLI_CLIENT_ID`.
    - **Desktop**: redirect URI `http://127.0.0.1/callback`. Its client ID is `CLERK_DESKTOP_CLIENT_ID`.
    - Scopes: `openid profile email offline_access`.
-3. Both sign-ins listen on a random loopback port. Check that Clerk accepts any port on the loopback redirect, as RFC 8252 asks; if it insists on an exact port, the sign-in fails at Clerk's redirect.
+   - Have both issue **access tokens as JWTs**. The relay accepts only Clerk-signed JWTs naming one of these two clients in `client_id`, and refuses opaque tokens, since a public client can't ask Clerk which client one belongs to.
+3. **Restrict sign-ups** (Clerk's restrictions settings: an allowlist, or invitations only). The relay has no rate limits yet, and every account that links an environment creates a tunnel and a DNS record in your Cloudflare account.
+4. Both sign-ins listen on a random loopback port. Check that Clerk accepts any port on the loopback redirect, as RFC 8252 asks; if it insists on an exact port, the sign-in fails at Clerk's redirect.
 
 ## 5. Relay keys and secrets
 
@@ -82,6 +84,8 @@ On each machine running `runnerbox serve`:
 1. Install `cloudflared` 2026.10.4 (the tested release; 2025.6.1 is the oldest accepted) from Cloudflare's releases, on `PATH` or at `RUNNERBOX_CLOUDFLARED_PATH`. runnerbox doesn't download it for you.
 2. `node runnerbox.js link --relay https://relay.example.com` opens a browser to sign in. Over SSH, add `--device` and approve the code from any browser.
 3. Restart `serve`. It opens a second loopback listener for the tunnel alone (by default on its own port plus one; `link --tunnel-port` chooses another), and starts `cloudflared`, pointed only at that listener. Through the tunnel, only Connect works: CLI pairing codes, app sessions and MCP tokens are refused there, and keep working on loopback and over SSH.
+
+A link stays pinned to the key the machine linked with (`.server/environment-key.json` under its state directory). If that key is lost, the machine can't unlink or relink until you delete its row: `wrangler d1 execute runnerbox-relay --remote --command "DELETE FROM links WHERE environment_id = '<id>'"`.
 
 `node runnerbox.js link-status` shows the link, and `node runnerbox.js unlink` removes it and its tunnel. Unlinking needs no sign-in.
 

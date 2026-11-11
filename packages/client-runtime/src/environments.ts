@@ -72,6 +72,11 @@ export interface ClientPlatform {
     readonly environments: () => Promise<ReadonlyArray<LinkedEnvironment>>;
     // Asks the relay for a one-time credential bound to the key with this thumbprint.
     readonly requestCredential: (environmentId: string, clientProofKeyThumbprint: string) => Promise<ConnectResponse>;
+    // A new proof key, kept by the platform, and DPoP proofs signed with it. The desktop app keeps
+    // keys in main, where WebCrypto is always there; its renderer, served from a scheme that isn't a
+    // secure context, has none.
+    readonly createProofKey: () => Promise<{ readonly keyId: string; readonly thumbprint: string }>;
+    readonly prove: (keyId: string, request: { readonly method: string; readonly url: string }) => Promise<string>;
   };
   readonly ssh?: {
     // Forwards a local port to the route's server and returns the URL to use, reusing a live forward.

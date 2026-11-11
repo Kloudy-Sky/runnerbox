@@ -141,9 +141,6 @@ importers:
 
   packages/client-runtime:
     dependencies:
-      '@runnerbox/connect':
-        specifier: workspace:*
-        version: link:../connect
       '@runnerbox/contracts':
         specifier: workspace:*
         version: link:../contracts

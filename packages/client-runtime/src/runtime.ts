@@ -6,7 +6,6 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { createStore } from "zustand/vanilla";
 import type { ClientPlatform, Route, SavedEnvironment, SshRoute } from "./environments.ts";
-import { createProof, createProofKey } from "@runnerbox/connect/dpop";
 import { ConnectionError, fetchDescriptor, pairWithCode, type ProveRequest } from "./http.ts";
 import { openSession, type RunnerboxClient } from "./session.ts";
 
@@ -57,8 +56,8 @@ export function createClientRuntime(platform: ClientPlatform) {
       }
       const connect = platform.connect;
       if (!connect) return yield* new ConnectionError({ reason: "relay_refused", cause: new Error("Connect routes need the desktop app") });
-      const key = yield* Effect.promise(createProofKey);
-      const prove: ProveRequest = (request) => createProof(key, request);
+      const key = yield* Effect.tryPromise({ try: () => connect.createProofKey(), catch: (cause) => new ConnectionError({ reason: "relay_refused", cause }) });
+      const prove: ProveRequest = (request) => connect.prove(key.keyId, request);
       const granted = yield* Effect.tryPromise({
         try: () => connect.requestCredential(environment.environmentId, key.thumbprint),
         catch: (cause) => new ConnectionError({ reason: "relay_refused", cause }),

@@ -24,6 +24,8 @@ const bridge: ClientPlatform = {
     signOut: () => invoke(CHANNELS.connectSignOut),
     environments: () => invoke(CHANNELS.connectEnvironments),
     requestCredential: (environmentId, thumbprint) => invoke(CHANNELS.connectRequestCredential, environmentId, thumbprint),
+    createProofKey: () => invoke(CHANNELS.connectCreateProofKey),
+    prove: (keyId, request) => invoke(CHANNELS.connectProve, keyId, request),
   },
   ssh: {
     openTunnel: (route) => invoke(CHANNELS.sshOpenTunnel, route),

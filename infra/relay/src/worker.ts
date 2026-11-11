@@ -42,7 +42,7 @@ function relayFor(env: Env) {
         cleanupMode: cleanupMode(env.RELAY_TUNNEL_CLEANUP_MODE),
       },
       store: createStore(env.DB, now),
-      identity: clerkIdentity({ frontendApi: env.CLERK_FRONTEND_API }),
+      identity: clerkIdentity({ frontendApi: env.CLERK_FRONTEND_API, clientIds: [env.CLERK_CLI_CLIENT_ID, env.CLERK_DESKTOP_CLIENT_ID] }),
       tunnels: cloudflareTunnels({ accountId: env.CLOUDFLARE_ACCOUNT_ID, zoneId: env.CLOUDFLARE_ZONE_ID, apiToken: env.CLOUDFLARE_API_TOKEN }),
       now,
       fetch: (input, init) => fetch(input, init),

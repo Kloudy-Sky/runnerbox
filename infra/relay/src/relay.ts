@@ -172,12 +172,21 @@ export function createRelay(deps: RelayDeps) {
       if (!LOOPBACK.has(localHttpHost.toLowerCase()) || !Number.isInteger(localHttpPort) || localHttpPort < 1 || localHttpPort > 65535) {
         throw new Refusal(400, "origin_not_allowed");
       }
-      const expiresAt = candidate.exp * 1000;
-      if (!(await store.consumeOnce(`link-proof:${candidate.environmentId}:${candidate.jti}`, expiresAt)) || !(await store.consumeOnce(`challenge:${challenge.jti}`, expiresAt))) {
+      // Each ID is kept until its own expiry: a short-lived proof mustn't free a longer-lived challenge.
+      const challengeExpiresAt = typeof challenge.exp === "number" ? challenge.exp * 1000 : now() + PROOF_SECONDS * 1000;
+      if (
+        !(await store.consumeOnce(`link-proof:${candidate.environmentId}:${candidate.jti}`, candidate.exp * 1000)) ||
+        !(await store.consumeOnce(`challenge:${challenge.jti}`, challengeExpiresAt))
+      ) {
         throw new Refusal(400, "replayed");
       }
 
       const key = { userId, environmentId: candidate.environmentId };
+      // A link stays pinned to the key it was made with. Someone holding the user's sign-in could
+      // otherwise link a key of their own and take over the tunnel; only an unlink signed by the
+      // pinned key frees the link for another.
+      const existing = await store.link(key);
+      if (existing && existing.environment_public_key !== candidate.environmentPublicKey) throw new Refusal(409, "environment_key_mismatch");
       // Named from the user and environment together, so the hostname gives away neither.
       const name = `rbx-${(await sha256Hex(`${userId}\0${candidate.environmentId}`)).slice(0, 16)}`;
       const hostname = `${name}.${config.tunnelBaseDomain}`;
