@@ -41,26 +41,43 @@ const make = (label: string | undefined) =>
     const { serverDir } = yield* ServerPaths.ServerPaths;
     yield* fs.makeDirectory(serverDir, { recursive: true, mode: 0o700 });
     const readOrEmpty = (path: string) => fs.readFileString(path).pipe(Effect.orElseSucceed(() => ""));
-    // `wx` lets only one of two servers starting at once create a file; the other reads the
-    // winner's. A file left empty or broken by a crash is replaced.
-    const create = (path: string, text: string, existing: string) =>
-      fs.writeFileString(path, text, { flag: existing === "" ? "wx" : "w", mode: 0o600 }).pipe(Effect.ignore);
+    // Writes the file whole beside its place, then links it in. The link fails if the file is
+    // there already, so of two servers starting at once only one creates it and the other reads
+    // the winner's, and no reader ever sees half a file.
+    const create = (path: string, text: string) => {
+      const temporary = `${path}.${process.pid}.tmp`;
+      return fs.writeFileString(temporary, text, { mode: 0o600 }).pipe(
+        Effect.andThen(fs.link(temporary, path)),
+        Effect.ignore,
+        Effect.ensuring(fs.remove(temporary).pipe(Effect.ignore)),
+      );
+    };
+    // A file that's there but holds nothing usable is removed first, so `create` can replace it. A
+    // missing one isn't touched, so a server never removes the file another just created.
+    const replace = (path: string, text: string) =>
+      fs.exists(path).pipe(
+        Effect.orElseSucceed(() => false),
+        Effect.flatMap((exists) => (exists ? fs.remove(path).pipe(Effect.ignore) : Effect.void)),
+        Effect.andThen(create(path, text)),
+      );
 
     const idPath = join(serverDir, "environment-id");
     let environmentId = (yield* readOrEmpty(idPath)).trim();
     if (!UUID.test(environmentId)) {
-      yield* create(idPath, `${randomUUID()}\n`, environmentId);
+      // An ID that isn't one can't have been handed to a client, so it's safe to replace.
+      yield* replace(idPath, `${randomUUID()}\n`);
       environmentId = (yield* readOrEmpty(idPath)).trim();
     }
     if (!UUID.test(environmentId)) return yield* new EnvironmentIdError({ cause: new Error("ID file unreadable") });
 
     const keyPath = join(serverDir, "environment-key.json");
     let keyText = yield* readOrEmpty(keyPath);
-    // Only a missing key is made. Replacing a broken one would break every client's pin and the
-    // relay link, so that stops the server instead.
-    if (keyText === "") {
+    // Only a missing or empty key is made: `create` never leaves one half-written, so a key with
+    // anything in it may be pinned by clients and the relay. Replacing a broken one would break
+    // those pins, so that stops the server instead.
+    if (keyText.trim() === "") {
       const pair = generateKeyPairSync("ed25519", { publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
-      yield* create(keyPath, JSON.stringify(pair), keyText);
+      yield* replace(keyPath, JSON.stringify(pair));
       keyText = yield* readOrEmpty(keyPath);
     }
     const key = decodeKey(keyText);
