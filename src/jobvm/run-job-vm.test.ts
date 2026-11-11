@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runJobVm } from "./run-job-vm.ts";
 
-const run = { domain: "box-linux-slot1", pool: "default", disk: "box-linux-slot1.qcow2", golden: "box-golden-1.qcow2", xml: "<domain/>" };
+const run = { domain: "box-linux-slot1", pool: "default", disk: "box-linux-slot1.qcow2", golden: "box-golden-1.qcow2", xml: (diskPath: string) => `<domain disk='${diskPath}'/>` };
 
 function fakes({ boots = true, failing = "" } = {}) {
   const calls: string[] = [];
@@ -13,6 +13,7 @@ function fakes({ boots = true, failing = "" } = {}) {
       virsh: async (args: string[], xml = "") => {
         calls.push(`${args.join(" ")}${xml && ` < ${xml}`}`);
         if (args[0] === failing) throw new Error(`${failing} failed`);
+        if (args[0] === "vol-path") return "/pool/slot1.qcow2\n";
         return args[0] === "vol-info" ? "Name: x\nCapacity:       1024\n" : "";
       },
       answers: async () => {
@@ -39,7 +40,8 @@ test("a job gets a thin disk over the golden copy, and the VM and disk are gone 
     ...destroyed,
     "vol-info --pool default box-golden-1.qcow2 --bytes",
     "vol-create-as default box-linux-slot1.qcow2 1024 --format qcow2 --backing-vol box-golden-1.qcow2 --backing-vol-format qcow2",
-    "create < <domain/>",
+    "vol-path --pool default box-linux-slot1.qcow2",
+    "create < <domain disk='/pool/slot1.qcow2'/>",
     "job",
     ...destroyed,
   ]);

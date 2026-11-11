@@ -9,20 +9,21 @@ type JobVm = {
   domain: string;
   cpus: number;
   memoryMiB: number;
-  pool: string;
-  // This job's own disk, a thin layer over a golden copy of the builder's.
-  disk: string;
-  // The builder's cloud-init seed. With the same instance id, cloud-init does nothing on boot.
-  seed: string;
+  // The path of this job's own disk, a thin layer over a golden copy of the builder's.
+  diskPath: string;
+  // The path of the builder's cloud-init seed. With the same instance id, cloud-init does nothing on boot.
+  seedPath: string;
   network: string;
   address: string;
   filter: string;
 };
 
 // The libvirt domain for one job's VM. It's created transient, so libvirt forgets it once it stops,
-// and it stops instead of rebooting, so a job can't restart into a VM nobody is watching. Every
-// value comes from config that only allows characters safe in XML.
-export function jobVmXml({ domain, cpus, memoryMiB, pool, disk, seed, network, address, filter }: JobVm) {
+// and it stops instead of rebooting, so a job can't restart into a VM nobody is watching. Disks are
+// named by path, as `vm render` names the builder's. Every other value comes from config that only
+// allows characters safe in XML.
+export function jobVmXml({ domain, cpus, memoryMiB, diskPath, seedPath, network, address, filter }: JobVm) {
+  const escaped = (path: string) => path.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll("'", "&apos;");
   return `<domain type='kvm'>
   <name>${domain}</name>
   <memory unit='MiB'>${memoryMiB}</memory>
@@ -34,14 +35,14 @@ export function jobVmXml({ domain, cpus, memoryMiB, pool, disk, seed, network, a
   <on_reboot>destroy</on_reboot>
   <on_crash>destroy</on_crash>
   <devices>
-    <disk type='volume' device='disk'>
+    <disk type='file' device='disk'>
       <driver name='qemu' type='qcow2'/>
-      <source pool='${pool}' volume='${disk}'/>
+      <source file='${escaped(diskPath)}'/>
       <target dev='vda' bus='virtio'/>
     </disk>
-    <disk type='volume' device='cdrom'>
+    <disk type='file' device='cdrom'>
       <driver name='qemu' type='raw'/>
-      <source pool='${pool}' volume='${seed}'/>
+      <source file='${escaped(seedPath)}'/>
       <target dev='sda' bus='sata'/>
       <readonly/>
     </disk>

@@ -15,6 +15,7 @@ export async function startJobVms(config: VmInstall, jobVms: NonNullable<VmInsta
   const { name: install, vm: builder, runners } = config;
   const { pool, network, addresses } = jobVms;
   const filter = await ensureJobNetwork({ install, ...jobVms }, virsh);
+  const seedPath = (await virsh(["vol-path", "--pool", pool, `${jobVms.builder}-seed.iso`])).trim();
   const inBuilder = createTurns();
   const clock = { wait: async (ms: number) => void (await wait(ms)), now: Date.now, log: console.log };
   const golden = createGoldenDisk(
@@ -32,7 +33,8 @@ export async function startJobVms(config: VmInstall, jobVms: NonNullable<VmInsta
 
   async function run(runner: RunnerType, slot: number, image: string, job: (vm: Vm) => Promise<number | null>) {
     const address = addresses[(firstAddress[runners.indexOf(runner)] ?? 0) + slot - 1];
-    if (!runner.vm || !address) throw new Error(`${runner.name} slot ${slot} has no VM size or address`);
+    const size = runner.vm;
+    if (!size || !address) throw new Error(`${runner.name} slot ${slot} has no VM size or address`);
     const domain = containerName(install, runner.name, slot);
     const disk = `${domain}.qcow2`;
     const [user, builderAddress = ""] = builder.host.split("@");
@@ -51,7 +53,7 @@ export async function startJobVms(config: VmInstall, jobVms: NonNullable<VmInsta
           pool,
           disk,
           golden: held.volume,
-          xml: jobVmXml({ domain, ...runner.vm, pool, disk, seed: `${jobVms.builder}-seed.iso`, network, address, filter }),
+          xml: (diskPath) => jobVmXml({ domain, ...size, diskPath, seedPath, network, address, filter }),
         },
         {
           virsh,

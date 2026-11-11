@@ -9,7 +9,8 @@ type JobVmRun = {
   disk: string;
   // The golden volume this job's disk is a thin layer over.
   golden: string;
-  xml: string;
+  // The domain's definition, given the path libvirt put this job's disk at.
+  xml: (diskPath: string) => string;
 };
 
 type JobVmActions = {
@@ -39,7 +40,8 @@ export async function runJobVm(
     const capacity = /^Capacity:\s+(\d+)/m.exec(await virsh(["vol-info", "--pool", pool, golden, "--bytes"]))?.[1];
     if (!capacity) throw new Error(`couldn't read the size of ${golden}`);
     await virsh(["vol-create-as", pool, disk, capacity, "--format", "qcow2", "--backing-vol", golden, "--backing-vol-format", "qcow2"]);
-    await virsh(["create"], xml);
+    const diskPath = (await virsh(["vol-path", "--pool", pool, disk])).trim();
+    await virsh(["create"], xml(diskPath));
     await untilAnswers(answers, BOOT_TIMEOUT_MS, { wait, now });
   } catch (error) {
     log(`${domain}: the job VM didn't start: ${error instanceof Error ? error.message : error}`);

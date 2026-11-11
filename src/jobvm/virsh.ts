@@ -18,7 +18,8 @@ export async function virsh(args: string[], xml?: string, binary = "virsh") {
     });
     return stdout;
   } catch (error) {
-    const stderr = error instanceof Error && "stderr" in error ? String(error.stderr).trim().split("\n")[0] : "";
+    // virsh often names the command on its first line and the reason on the next.
+    const stderr = error instanceof Error && "stderr" in error ? String(error.stderr).trim().replace(/\s*\n\s*/g, " ") : "";
     throw new Error(`virsh ${args[0]} failed: ${stderr || (error instanceof Error ? error.message : error)}`);
   } finally {
     if (dir) await rm(dir, { recursive: true, force: true });

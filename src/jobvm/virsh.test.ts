@@ -26,7 +26,7 @@ test("a definition reaches virsh as a file, which is gone afterwards", async () 
   await assert.rejects(writeFile(file, "", { flag: "r+" }), /ENOENT/);
 });
 
-test("a failure carries virsh's own first line", async () => {
+test("a failure carries what virsh said, on one line", async () => {
   const binary = await fakeVirsh('echo "error: failed to get domain" >&2; echo "more" >&2; exit 1');
-  await assert.rejects(virsh(["domstate", "x"], undefined, binary), /^Error: virsh domstate failed: error: failed to get domain$/);
+  await assert.rejects(virsh(["domstate", "x"], undefined, binary), /^Error: virsh domstate failed: error: failed to get domain more$/);
 });

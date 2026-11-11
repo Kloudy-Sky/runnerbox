@@ -41,8 +41,8 @@ test("an address another machine or install has reserved is refused", async () =
 
 test("a job VM's interface is filtered, with the address its reservation gives it", () => {
   const xml = jobVmXml({
-    domain: "box-linux-slot1", cpus: 4, memoryMiB: 4096, pool: "default", disk: "box-linux-slot1.qcow2",
-    seed: "runnerbox-seed.iso", network: "default", address: "192.168.122.20", filter: "box-job",
+    domain: "box-linux-slot1", cpus: 4, memoryMiB: 4096, diskPath: "/pool/box-linux-slot1.qcow2",
+    seedPath: "/pool/runnerbox-seed.iso", network: "default", address: "192.168.122.20", filter: "box-job",
   });
   assert.ok(xml.includes("<mac address='52:54:00:a8:7a:14'/>"));
   assert.ok(xml.includes("<filterref filter='box-job'><parameter name='IP' value='192.168.122.20'/></filterref>"));
