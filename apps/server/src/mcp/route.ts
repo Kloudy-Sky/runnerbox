@@ -10,7 +10,7 @@ import { bearerToken } from "../http/bearer.ts";
 import * as Handlers from "./handlers.ts";
 import { RunnerboxToolkit } from "./tools.ts";
 
-// `/mcp` takes only tokens from `runnerbox-server mcp-token`, never an app's session: a token kept
+// `/mcp` takes only tokens from `runnerbox mcp-token`, never an app's session: a token kept
 // in an agent's config can read, and can't open the RPC socket or manage access.
 const layerAuth = HttpRouter.middleware(
   Effect.gen(function* () {
@@ -21,7 +21,7 @@ const layerAuth = HttpRouter.middleware(
         const session = token === undefined ? undefined : yield* store.authenticate(token, "mcp").pipe(Effect.orElseSucceed(() => undefined));
         if (!session) {
           return HttpServerResponse.jsonUnsafe(
-            { error: "invalid_credential", message: "Use a token from `runnerbox-server mcp-token` as a Bearer token." },
+            { error: "invalid_credential", message: "Use a token from `runnerbox mcp-token` as a Bearer token." },
             { status: 401, headers: { "cache-control": "no-store", "www-authenticate": "Bearer" } },
           );
         }

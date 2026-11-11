@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { SERVER_COMMANDS } from "../apps/server/src/commandNames.ts";
 import { createGitHubClient, REPO_NAME, resolveToken } from "./github/github-client.ts";
 import { renderHost } from "./host/render-host.ts";
 import { loadLauncherConfig } from "./launcher/launcher-config.ts";
@@ -26,6 +27,7 @@ const USAGE = `Usage:
   runnerbox host render --config <file> --out <dir>
   runnerbox report --repo <owner/name> [options]
   runnerbox summary --repo <owner/name> [--since <days>d] [--by labels|runner] [--redact]
+  runnerbox serve | pair | mcp-token | link | unlink | link-status   (see runnerbox serve --help)
 
 up: keeps runners waiting for jobs in the VM until stopped.
 vm render: writes the VM's cloud-init seed, firewall and a create.sh to run on the host.
@@ -33,6 +35,7 @@ host render: for an install whose jobs run on this Mac's own OS, writes a setup.
 summary: markdown from the local logs alone: the slowest jobs, what \`up\` did, and how close
   the machines came to running out. --redact hashes every name with a key kept on this host.
 report: copies job history from GitHub to a local log, then summarizes it.
+serve: answers the desktop app and agents with this host's history and runner state, read-only.
 
 Report options:
   --repo <owner/name>  Repository to report on
@@ -45,6 +48,12 @@ Report options:
   --help               Show this message`;
 
 async function main() {
+  // The server's commands take their own options, so they're handed over before parsing ours.
+  const args = process.argv.slice(2);
+  if (SERVER_COMMANDS.includes(args[0] ?? "")) {
+    const { runServerCommand } = await import("../apps/server/src/commands.ts");
+    return runServerCommand(args);
+  }
   const { values, positionals } = parseArgs({
     allowPositionals: true,
     options: {

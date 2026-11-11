@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { parseArgs } from "node:util";
 import { clerkEndpoints, deviceAuthorize, loopbackAuthorize } from "@runnerbox/connect/oauth";
@@ -14,15 +13,16 @@ import * as AuthStore from "./auth/AuthStore.ts";
 import * as CloudLink from "./cloud/CloudLink.ts";
 import * as ServerPaths from "./config/ServerPaths.ts";
 import * as EnvironmentIdentity from "./environment/EnvironmentIdentity.ts";
+import { SERVER_COMMANDS } from "./commandNames.ts";
 import { layerServer } from "./server.ts";
 
 const USAGE = `Usage:
-  runnerbox-server serve [--host <address>] [--port <n>] [--label <name>]
-  runnerbox-server pair [--scopes <list>] [--json]
-  runnerbox-server mcp-token [--label <name>]
-  runnerbox-server link --relay <url> [--device] [--tunnel-port <n>]
-  runnerbox-server unlink
-  runnerbox-server link-status
+  runnerbox serve [--host <address>] [--port <n>] [--label <name>]
+  runnerbox pair [--scopes <list>] [--json]
+  runnerbox mcp-token [--label <name>]
+  runnerbox link --relay <url> [--device] [--tunnel-port <n>]
+  runnerbox unlink
+  runnerbox link-status
 
 serve: answers the desktop app over HTTP and WebSocket. Binds 127.0.0.1:4517 by default; reach
   it from another machine over SSH rather than binding a public address.
@@ -41,8 +41,10 @@ Reads what \`report\` and \`up\` recorded under XDG_STATE_HOME/runnerbox, as the
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
 const decodeScopes = Schema.decodeUnknownSync(Schema.Array(AuthScope));
 
-function main() {
+// Runs one server command, given the arguments after `runnerbox`.
+export function runServerCommand(args: string[]) {
   const { values, positionals } = parseArgs({
+    args,
     allowPositionals: true,
     options: {
       host: { type: "string", default: "127.0.0.1" },
@@ -57,7 +59,7 @@ function main() {
     },
   });
   const [command, ...rest] = positionals;
-  if (values.help || rest.length > 0 || !["serve", "pair", "mcp-token", "link", "unlink", "link-status"].includes(command ?? "")) {
+  if (values.help || rest.length > 0 || !SERVER_COMMANDS.includes(command ?? "")) {
     console.log(USAGE);
     process.exitCode = values.help ? 0 : 2;
     return;
@@ -163,5 +165,3 @@ async function signIn(relayUrl: string, device: boolean) {
       });
   return tokens.accessToken;
 }
-
-main();

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { type } from "arktype";
 
 // What each slot of a running `up` is doing now, kept in `<install>/state.json` so a reader such as
-// runnerbox-server can show it live. Unlike the event log, it says what's happening, not what
+// `runnerbox serve` can show it live. Unlike the event log, it says what's happening, not what
 // finished. See docs/analytics.md.
 
 export const SLOT_PHASES = ["waiting", "minting", "registered", "busy", "backoff", "stopped"] as const;
