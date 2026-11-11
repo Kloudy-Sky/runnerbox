@@ -6,6 +6,10 @@ import { Ipv4 } from "../vm/vm-config.ts";
 // No whitespace, because SSH splits its known-hosts option on spaces.
 const AbsolutePath = type("/^\\/\\S*$/");
 const MemorySize = type("/^[0-9]+[bkmg]$/");
+// The only workflows whose jobs may run on a kind, matched against the job's workflow ref, such as
+// `owner/name/.github/workflows/release.yml@refs/tags/v1.2.3`. `*` matches any run of characters.
+// Any other job fails before its first step. Without this, every job that asks for the label runs.
+const AllowedWorkflows = type("/^[\\w.\\/@*-]+$/").array().atLeastLength(1);
 
 // One kind of runner: the label jobs ask for, and the container that serves them.
 const RunnerType = type({
@@ -38,6 +42,7 @@ const RunnerType = type({
   "docker?": "boolean",
   // The size of the VM each of this kind's jobs gets to itself. The container and its limits still
   // apply inside it. Needs the install's `jobVms`.
+  "allowedWorkflows?": AllowedWorkflows,
   "vm?": { "+": "reject", cpus: "1 <= number.integer <= 64", memoryMiB: "number.integer >= 1024" },
 });
 
@@ -90,10 +95,7 @@ const HostRunnerType = type({
   // The job user's home is wiped after each job, so it can serve only one job at a time.
   slots: "1",
   env: { "+": "reject", "[/^[A-Za-z_][A-Za-z0-9_]*$/]": "/^[^\\0\\n]*$/" },
-  // The only workflows whose jobs may run here, matched against the job's workflow ref, such as
-  // `owner/name/.github/workflows/release.yml@refs/tags/v1.2.3`. `*` matches any run of characters.
-  // Any other job fails before its first step. Without this, every job that asks for the label runs.
-  "allowedWorkflows?": type("/^[\\w.\\/@*-]+$/").array().atLeastLength(1),
+  "allowedWorkflows?": AllowedWorkflows,
 });
 
 export type HostRunnerType = typeof HostRunnerType.infer;

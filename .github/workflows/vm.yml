@@ -112,7 +112,8 @@ jobs:
             echo "ok: the gateway is blocked from inside the job'"'"'s containers"'
           EOF
 
-      # Job VMs are copies of the VM above. This stops it, copies its disk, and boots three of them.
+      # Job VMs are copies of the VM above. This stops it, copies its disk, and boots four of them.
+      # The last runs a job's container as `up` would, and checks its workflow hook.
       - name: A VM per job
         run: |
           dir="$RUNNER_TEMP/vm"

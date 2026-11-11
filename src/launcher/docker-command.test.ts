@@ -54,3 +54,28 @@ test("a docker kind runs under sysbox, never privileged, and other kinds are unc
   assert.doesNotMatch(command, /privileged|docker\.sock/);
   assert.doesNotMatch(dockerRunCommand(config.name, runner(config), 1, "runnerbox-base"), /sysbox/);
 });
+
+test("a kind with allowedWorkflows mounts a hook that fails any other workflow's job", async () => {
+  const config = await example();
+  const allowedWorkflows = ["owner/name/.github/workflows/*@refs/heads/main"];
+  // The kind's own env can't swap the hook, because the last -e wins.
+  const env = { ACTIONS_RUNNER_HOOK_JOB_STARTED: "/tmp/mine.sh" };
+  const command = dockerRunCommand(config.name, { ...runner(config), allowedWorkflows, env }, 1, "runnerbox-base");
+
+  // A stand-in docker runs the mounted hook the way the runner would, for a push and a pull request.
+  const home = execFileSync("mktemp", ["-d"], { encoding: "utf8" }).trim();
+  const docker = `docker() { [ "$1" = rm ] && return; for arg; do case "$arg" in "$HOME"/*:ro) hook="\${arg%%:*}";; ACTIONS_RUNNER_HOOK_JOB_STARTED=*) where="$arg";; esac; done
+    echo "$where"
+    GITHUB_WORKFLOW_REF=owner/name/.github/workflows/ci.yml@refs/heads/main bash "$hook" && echo push-runs
+    GITHUB_WORKFLOW_REF=owner/name/.github/workflows/ci.yml@refs/pull/7/merge bash "$hook" >/dev/null || echo pull-request-refused; }`;
+  const output = execFileSync("bash", ["-c", `cd "$HOME"; ${docker}; ${command.replace("exec docker", "docker")}`], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: home },
+  });
+  assert.deepEqual(output.trim().split("\n"), [
+    "ACTIONS_RUNNER_HOOK_JOB_STARTED=/runnerbox/job-started.sh",
+    "push-runs",
+    "pull-request-refused",
+  ]);
+  execFileSync("rm", ["-rf", home]);
+});

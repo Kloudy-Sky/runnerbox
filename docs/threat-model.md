@@ -22,6 +22,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | Other jobs, from a job that escapes its container | It reads a neighbour's secrets, or stays to read a later job's | With `jobVms`, each job runs in a VM of its own, booted from a copy of the builder's disk and destroyed with its disk when the job ends, whatever the job did to it. Each slot starts by destroying what it left behind. | Tested in CI |
 | The disk job VMs boot from | A job changes it, so later jobs start compromised | Jobs never run in the builder. Its disk is copied while it's shut down, and a job VM writes to its own thin layer over the copy. Only your image builds run in the builder. | Tested in CI |
 | Other job VMs | A job VM reaches or impersonates another | Every job VM's interface has the same filter as the builder's, pinned to that VM's own MAC and reserved address, so they can't reach each other, the builder or the host. | Tested in CI, except the spoofing rules, which are Coded |
+| Which jobs reach a VM install | A pull request, or another workflow, names the label | With `allowedWorkflows` on a kind, the job's container gets a read-only hook that fails any job whose workflow ref isn't listed, before its first step. The runner reads the ref from GitHub, not from the job. | Coded |
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |
 | The host and VM's memory | Overcommitted jobs push both into swap | `up` registers a runner only while the host's and VM's `MemAvailable` are above `memoryFloor`, and removes idle runners when memory drops. It can't take back a job a runner already has. | Coded |
 | The token `report` syncs with | A job or VM reads it and uses it on the repository | It lives only on the host, in an owner-only `~/.config/runnerbox/report.env` read by the report timer, and never reaches the VM. It needs only read access to Actions, so it can't mint runners or change code. | Coded |
@@ -91,13 +92,14 @@ Only an install with `jobVms` can set `allowPublicRepos`. A VM for each job take
 
 So if you serve a public repository:
 
-- Set the repository's Actions settings to require approval for all external contributors, and read a pull request's changes, workflow files included, before you approve. Approving it runs it.
+- Give every kind `allowedWorkflows` that name only protected branches and tags, such as `owner/name/.github/workflows/*@refs/heads/main`. No pull request's job then runs here, a stranger's or your own, and your workflow sends those to GitHub's runners. This is the setting to rely on.
+- If pull requests must run here, set the repository's Actions settings to require approval for all external contributors, and read a pull request's changes, workflow files included, before you approve. Approving it runs it.
 - Keep secrets out of jobs that pull requests trigger, and never use `pull_request_target` to run a pull request's code. That hands a stranger's code your secrets on any runner.
 - Give each job a `timeout-minutes`.
 - In an organization, a runner group serves public repositories only if you allow it. Allow it for the group these runners are in and no other, and limit that group to the repositories that need it.
 - Don't share the host with anything you can't afford to expose.
 
-An approval is one person's judgment each time. For job VMs there is no control yet that stops a job by its workflow, as `allowedWorkflows` does for host installs, and none that limits what a job may reach on the internet.
+An approval is one person's judgment each time, which is why `allowedWorkflows` comes first. Code that reaches a listed branch still runs, so protect those branches. There is no control yet that limits what a job may reach on the internet.
 
 **Forks of private repositories, and what changes after a check.** The check looks at the repository or runner group when a registration is minted, not at the job. If a private repository is set to run workflows from fork pull requests, those jobs still run here. A repository made public, or a runner group opened to public repositories, after a registration is minted can still send that registration its one job.
 
