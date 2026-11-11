@@ -65,3 +65,30 @@ test("the filter pins the VM to its reserved address and drops multicast and bro
   assert.ok(xml.includes("dstipaddr='224.0.0.0' dstipmask='4'"));
   assert.ok(xml.includes("dstipaddr='255.255.255.255' dstipmask='32'"));
 });
+
+test("create.sh's checks hold when virsh is still writing after the line they look for", async () => {
+  const { mkdtemp, writeFile, chmod, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const bin = await mkdtemp(join(tmpdir(), "runnerbox-bin-"));
+  // A virsh that keeps printing after the answer, as a real one can. A check that stops reading
+  // early kills it, and with pipefail that reads as the network being down.
+  const virsh = `#!/bin/bash
+case "$1" in
+  net-info) echo "Active:         yes"; sleep 0.2; for _ in $(seq 2000); do echo "Bridge:         virbr0"; done ;;
+  pool-info) echo "State:          inactive" ;;
+esac`;
+  for (const tool of ["virt-install", "qemu-img", "xorriso", "curl", "sha256sum", "ssh"]) {
+    await writeFile(join(bin, tool), "#!/bin/bash\n");
+    await chmod(join(bin, tool), 0o755);
+  }
+  await writeFile(join(bin, "virsh"), virsh);
+  await chmod(join(bin, "virsh"), 0o755);
+
+  // The network check passes, so the script stops at the next one, the pool this stub reports down.
+  assert.throws(
+    () => execFileSync("bash", ["-s"], { input: createScript(config), env: { PATH: `${bin}:/usr/bin:/bin` }, stdio: ["pipe", "pipe", "pipe"] }),
+    /Storage pool default isn't running/,
+  );
+  await rm(bin, { recursive: true });
+});

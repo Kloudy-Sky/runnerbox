@@ -40,10 +40,12 @@ for tool in virsh virt-install qemu-img xorriso curl sha256sum ssh; do
 done
 virsh uri >/dev/null || fail "Can't manage $LIBVIRT_DEFAULT_URI as $(id -un). Join the libvirt group or use sudo."
 
-# Check everything before changing anything, so a failure can't leave half a VM behind.
-virsh net-info "$NETWORK" | grep -Eq '^Active: +yes' \
+# Check everything before changing anything, so a failure can't leave half a VM behind. These read
+# all of virsh's output: grep -q stops at its first match, which kills a virsh still writing, and
+# with pipefail that turns a yes into a failure.
+virsh net-info "$NETWORK" | grep -E '^Active: +yes' >/dev/null \
   || fail "Network $NETWORK isn't running. Start it with virsh net-start and net-autostart."
-virsh pool-info "$POOL" | grep -Eq '^State: +running' \
+virsh pool-info "$POOL" | grep -E '^State: +running' >/dev/null \
   || fail "Storage pool $POOL isn't running. Start it with virsh pool-start and pool-autostart."
 # Without this, traffic between guests on the bridge skips the filter's IP rules.
 [ "$(sysctl -n net.bridge.bridge-nf-call-iptables 2>/dev/null)" = 1 ] \
@@ -54,7 +56,7 @@ virsh nwfilter-dumpxml "$FILTER" >/dev/null 2>&1 && leftovers+=("filter $FILTER"
 for volume in "$NAME.qcow2" "$NAME-seed.iso"; do
   virsh vol-info "$volume" --pool "$POOL" >/dev/null 2>&1 && leftovers+=("volume $volume")
 done
-virsh net-dumpxml "$NETWORK" | grep -Eq "mac='$MAC'|ip='$ADDRESS'" && leftovers+=("DHCP reservation for $ADDRESS")
+virsh net-dumpxml "$NETWORK" | grep -E "mac='$MAC'|ip='$ADDRESS'" >/dev/null && leftovers+=("DHCP reservation for $ADDRESS")
 [ \${#leftovers[@]} -eq 0 ] || fail "Already exists: $(IFS=,; echo "\${leftovers[*]}"). See the README's rebuilding steps."
 
 # The cache is named by checksum, so changing the configured image downloads the new one.
