@@ -68,6 +68,10 @@ function registerIpc() {
     fromApp(event);
     return catalog.remove(decodeId(environmentId));
   });
+  ipcMain.handle(CHANNELS.catalogCanSaveTokens, (event) => {
+    fromApp(event);
+    return cipher.available();
+  });
   ipcMain.handle(CHANNELS.connectStatus, (event) => {
     fromApp(event);
     return connect.status();

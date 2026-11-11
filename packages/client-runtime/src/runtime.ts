@@ -145,6 +145,9 @@ export function createClientRuntime(platform: ClientPlatform) {
         if (store.getState().environments.some((saved) => saved.environmentId === descriptor.environmentId)) {
           return yield* new ConnectionError({ reason: "already_paired" });
         }
+        // Checked before the code is spent, so a pairing that can't be saved leaves no session behind.
+        const canSave = yield* Effect.promise(() => platform.catalog.canSaveTokens?.() ?? Promise.resolve(true));
+        if (!canSave) return yield* new ConnectionError({ reason: "no_keychain" });
         const paired = yield* pairWithCode(baseUrl, code, label);
         // The session must be for the environment that answered, not another it names.
         if (paired.environmentId !== descriptor.environmentId) return yield* new ConnectionError({ reason: "wrong_environment" });

@@ -63,6 +63,8 @@ export interface ClientPlatform {
     readonly list: () => Promise<ReadonlyArray<SavedEnvironment>>;
     readonly save: (environment: SavedEnvironment) => Promise<void>;
     readonly remove: (environmentId: string) => Promise<void>;
+    // False when a token couldn't be kept safely (the desktop app with no keychain). Absent means yes.
+    readonly canSaveTokens?: () => Promise<boolean>;
   };
   // Runnerbox Connect, through the desktop app's main process, which holds the Clerk sign-in.
   readonly connect?: {

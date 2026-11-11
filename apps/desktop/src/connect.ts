@@ -39,9 +39,13 @@ export function createConnect(directory: string, cipher: TokenCipher, openBrowse
   }
 
   async function store(saved: Saved | null) {
-    cached = saved;
-    if (!saved) return rm(path, { force: true });
+    if (!saved) {
+      cached = null;
+      return rm(path, { force: true });
+    }
+    // Sealed first: a sign-in that can't be saved isn't held in memory either.
     const tokens = sealSecret(cipher, JSON.stringify(saved.tokens));
+    cached = saved;
     await writeFile(`${path}.tmp`, JSON.stringify({ relayUrl: saved.relayUrl, tokens, encrypted: true }), { mode: 0o600 });
     await rename(`${path}.tmp`, path);
   }

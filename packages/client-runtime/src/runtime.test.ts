@@ -113,3 +113,20 @@ test("pairing never replaces a saved environment, and refuses a session for anot
   assert.deepEqual(pairs, []);
   hostile.close();
 });
+
+test("pairing without a keychain is refused before the code is spent", async () => {
+  const pairs: string[] = [];
+  const server = createServer((request, response) => {
+    if (request.url === DESCRIPTOR_PATH) return void response.end(JSON.stringify({ environmentId: "env-a", label: "example", serverVersion: "0", protocolVersion: PROTOCOL_VERSION }));
+    pairs.push(request.url ?? "");
+    response.end(JSON.stringify({ environmentId: "env-a", token: "rbx_x", scopes: ["history:read"] }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const runtime = createClientRuntime({ catalog: { list: async () => [], save: async () => {}, remove: async () => {}, canSaveTokens: async () => false } });
+  await runtime.load();
+  const reason = await runtime.pairDirect(url, "AAAAA-BBBBB-CCCCC-DDDDD", "test").then(() => "paired", (error: { reason?: string }) => error.reason);
+  server.close();
+  assert.equal(reason, "no_keychain");
+  assert.deepEqual(pairs, []);
+});

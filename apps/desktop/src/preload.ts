@@ -17,6 +17,7 @@ const bridge: ClientPlatform = {
     list: () => invoke(CHANNELS.catalogList),
     save: (environment) => invoke(CHANNELS.catalogSave, environment),
     remove: (environmentId) => invoke(CHANNELS.catalogRemove, environmentId),
+    canSaveTokens: () => invoke(CHANNELS.catalogCanSaveTokens),
   },
   connect: {
     status: () => invoke(CHANNELS.connectStatus),

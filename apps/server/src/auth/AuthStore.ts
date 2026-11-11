@@ -324,7 +324,14 @@ const make = Effect.gen(function* () {
         watchers.set(sessionId, (watchers.get(sessionId) ?? new Set()).add(watcher));
         return watcher;
       }),
-      Deferred.await,
+      // A revoke that landed before the watcher was added finds no watcher, so check again after
+      // adding it. A file that can't be read counts as revoked: the socket closes.
+      (watcher) =>
+        readLive.pipe(
+          Effect.map((file) => file.sessions.some((session) => session.id === sessionId)),
+          Effect.orElseSucceed(() => false),
+          Effect.flatMap((live) => (live ? Deferred.await(watcher) : Effect.void)),
+        ),
       (watcher) => Effect.sync(() => void watchers.get(sessionId)?.delete(watcher)),
     );
 
