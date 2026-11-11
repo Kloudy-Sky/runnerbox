@@ -33,7 +33,8 @@ test("the state file holds the latest report for every slot, owner-only, and rea
       ],
     );
     assert.equal(read?.kinds[0]?.image, "app-ci:3f9a1c2b7d4e");
-    assert.equal((await stat(join(dir, "example", "state.json"))).mode & 0o777, 0o600);
+    // Windows has no mode bits: there the owner's profile is what keeps other accounts out.
+    if (process.platform !== "win32") assert.equal((await stat(join(dir, "example", "state.json"))).mode & 0o777, 0o600);
     assert.deepEqual(await readdir(join(dir, "example")), ["state.json"], "no temporary file is left behind");
   } finally {
     await rm(dir, { recursive: true, force: true });

@@ -16,7 +16,7 @@ async function fakeVirsh(script: string) {
   return path;
 }
 
-test("a definition reaches virsh as a file, which is gone afterwards", async () => {
+test("a definition reaches virsh as a file, which is gone afterwards", { skip: process.platform === "win32" && "the stand-in is a bash script" }, async () => {
   const binary = await fakeVirsh('file="${@: -1}"; echo "$3 $file"; cat "$file"');
   const [line = "", xml] = (await virsh(["create"], "<domain/>", binary)).split("\n");
   const [command, file = ""] = line.split(" ");
@@ -26,7 +26,7 @@ test("a definition reaches virsh as a file, which is gone afterwards", async () 
   await assert.rejects(writeFile(file, "", { flag: "r+" }), /ENOENT/);
 });
 
-test("a failure carries what virsh said, on one line", async () => {
+test("a failure carries what virsh said, on one line", { skip: process.platform === "win32" && "the stand-in is a bash script" }, async () => {
   const binary = await fakeVirsh('echo "error: failed to get domain" >&2; echo "more" >&2; exit 1');
   await assert.rejects(virsh(["domstate", "x"], undefined, binary), /^Error: virsh domstate failed: error: failed to get domain more$/);
 });

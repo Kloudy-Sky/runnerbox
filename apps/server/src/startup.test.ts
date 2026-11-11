@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 const freePort = () =>
   new Promise<number>((resolve) => {
@@ -17,7 +18,7 @@ const freePort = () =>
 test("serve under a service manager prints and stores no pairing code, so none lands in its log", async () => {
   const home = await mkdtemp(join(tmpdir(), "runnerbox-startup-"));
   // Piped stdout, as under systemd: not a terminal.
-  const child = spawn(process.execPath, [new URL("../../../src/cli.ts", import.meta.url).pathname, "serve", "--port", String(await freePort())], {
+  const child = spawn(process.execPath, [fileURLToPath(new URL("../../../src/cli.ts", import.meta.url)), "serve", "--port", String(await freePort())], {
     env: { ...process.env, XDG_STATE_HOME: home },
     stdio: ["ignore", "pipe", "pipe"],
   });
