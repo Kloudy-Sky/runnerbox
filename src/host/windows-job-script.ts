@@ -28,8 +28,9 @@ function Get-JobProcesses($sid) {
   }
 }
 
-function Test-OwnedBy($path, $sid) {
-  try { (Get-Acl -LiteralPath $path).GetOwner([Security.Principal.SecurityIdentifier]).Value -eq $sid } catch { $false }
+# Asks for the owner alone, which is many times faster than Get-Acl over a folder like ProgramData.
+function Test-OwnedBy($item, $sid) {
+  try { $item.GetAccessControl('Owner').GetOwner([Security.Principal.SecurityIdentifier]).Value -eq $sid } catch { $false }
 }
 
 function Clear-JobUser($sid) {
@@ -45,20 +46,19 @@ function Clear-JobUser($sid) {
   }
   if (@(Get-JobProcesses $sid).Count -gt 0) { throw "$jobUser still has processes running." }
   # The profile holds its files, its registry and its saved credentials.
-  $profile = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }
-  if ($profile) {
-    $profilePath = $profile.LocalPath
-    Remove-CimInstance -InputObject $profile
+  $userProfile = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }
+  if ($userProfile) {
+    $profilePath = $userProfile.LocalPath
+    Remove-CimInstance -InputObject $userProfile
     if ($profilePath -and (Test-Path -LiteralPath $profilePath)) { throw "couldn't remove $profilePath." }
   }
   foreach ($root in $shared) {
     Get-ChildItem -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue |
-      Where-Object { Test-OwnedBy $_.FullName $sid } |
-      Sort-Object { $_.FullName.Length } -Descending |
+      Where-Object { Test-OwnedBy $_ $sid } |
       Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
   }
   # Anyone signed in can also create a folder at the top of the system drive.
-  Get-ChildItem -LiteralPath 'C:\\' -Force -ErrorAction SilentlyContinue | Where-Object { Test-OwnedBy $_.FullName $sid } |
+  Get-ChildItem -LiteralPath 'C:\\' -Force -ErrorAction SilentlyContinue | Where-Object { Test-OwnedBy $_ $sid } |
     Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
   Get-ChildItem -LiteralPath $handoff -Force | Remove-Item -Force -Recurse
 }

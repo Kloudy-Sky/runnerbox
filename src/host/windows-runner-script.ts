@@ -26,8 +26,9 @@ try {
   $env:PATH = "C:\\Program Files\\Git\\bin;$env:PATH"
 ${Object.entries(env).map(([key, value]) => `  [Environment]::SetEnvironmentVariable(${psQuote(key)}, ${psQuote(value)})\n`).join("")}  Set-Location $work
   # The registration becomes an argument of the runner, which the job could read anyway, and it
-  # works for this one job only.
-  & "$work\\run.cmd" --jitconfig $registration *> "$handoff\\runner.log"
+  # works for this one job only. cmd does the redirect: PowerShell 5.1 would turn the runner's
+  # first line on stderr into an error that stops this script.
+  cmd /c "\`"$work\\run.cmd\`" --jitconfig $registration > \`"$handoff\\runner.log\`" 2>&1"
   $code = $LASTEXITCODE
 } catch {
   Add-Content -LiteralPath "$handoff\\runner.log" -Value "job.ps1: $_"
