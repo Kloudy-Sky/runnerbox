@@ -91,7 +91,7 @@ Stopping `up` (SIGTERM or Ctrl-C) drains it: no slot registers again, runners st
 
 By default every job shares one VM, so a job that escapes its container can read its neighbours and wait for later jobs. Add `jobVms` and that VM stops running jobs. It becomes the builder, which only builds images, and each job runs in its own copy of it, destroyed with its disk when the job ends. Start from [`runnerbox.jobvms.example.json`](runnerbox.jobvms.example.json).
 
-- `jobVms.builder` is the VM's libvirt name, `name` in the config `vm render` read. `pool`, `network` and `gateway` are that config's too.
+- `jobVms.builder` is the VM's libvirt name, `name` in the config `vm render` read. `pool`, `network` and `gateway` are that config's too. A VM you built another way works as a builder if its disk is a volume in `pool`.
 - `jobVms.addresses` lists one free address in that network for each slot, counted across all kinds. `up` reserves them and defines one more network filter, `<install>-job`, with the same rules as the VM's. It only adds what's missing, and stops if another machine has an address.
 - Every kind needs `vm`, the CPUs and memory each of its jobs' VMs gets. One install can't mix the two ways, because copying the builder shuts it down. The kind's `limits`, `image`, `env` and `docker` work as before, inside the job's VM.
 - `memoryFloor.vmMiB`, the install's and any kind's, must be `0`, since no job runs in the builder. Set `hostMiB` to at least one job VM's `memoryMiB`.

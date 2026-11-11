@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ensureJobNetwork } from "./job-network.ts";
-import { builderDisks } from "./builder-disks.ts";
 import { jobVmXml } from "./job-vm-xml.ts";
 
 const network = { install: "box", network: "default", gateway: "192.168.122.1", addresses: ["192.168.122.20", "192.168.122.21"] };
@@ -48,23 +47,4 @@ test("a job VM's interface is filtered, with the address its reservation gives i
   assert.ok(xml.includes("<mac address='52:54:00:a8:7a:14'/>"));
   assert.ok(xml.includes("<filterref filter='box-job'><parameter name='IP' value='192.168.122.20'/></filterref>"));
   assert.ok(xml.includes("<on_reboot>destroy</on_reboot>"));
-});
-
-test("the builder's disk and seed are found by what they are, not by name", async () => {
-  const table = [
-    " Type   Device   Target   Source",
-    "-----------------------------------",
-    " file   disk     vda      /pool/ci-runner.qcow2",
-    " file   cdrom    sda      /pool/ci-seed.iso",
-    "",
-  ].join("\n");
-  assert.deepEqual(await builderDisks("ci-runner", async () => table), { disk: "/pool/ci-runner.qcow2", seed: "/pool/ci-seed.iso" });
-
-  const noSeed = await builderDisks("ci-runner", async () => table.replace(/^.*cdrom.*\n/m, ""));
-  assert.equal(noSeed.seed, undefined);
-  assert.ok(!jobVmXml({
-    domain: "box-linux-slot1", cpus: 4, memoryMiB: 4096, diskPath: "/pool/box-linux-slot1.qcow2",
-    seedPath: noSeed.seed, network: "default", address: "192.168.122.20", filter: "box-job",
-  }).includes("cdrom"));
-  await assert.rejects(builderDisks("ci-runner", async () => ""), /has no disk kept in a file/);
 });

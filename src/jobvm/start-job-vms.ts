@@ -16,7 +16,7 @@ export async function startJobVms(config: VmInstall, jobVms: NonNullable<VmInsta
   const { name: install, vm: builder, runners } = config;
   const { pool, network, addresses } = jobVms;
   const filter = await ensureJobNetwork({ install, ...jobVms }, virsh);
-  const { disk: builderDisk, seed: seedPath } = await builderDisks(jobVms.builder, virsh);
+  const { disk: builderDisk, seed: seedPath } = await builderDisks(jobVms.builder, pool, virsh);
   const inBuilder = createTurns();
   const clock = { wait: async (ms: number) => void (await wait(ms)), now: Date.now, log: console.log };
   const golden = createGoldenDisk(
