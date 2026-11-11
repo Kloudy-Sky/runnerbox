@@ -40,7 +40,7 @@ export function ConnectPage() {
           </table>
         </>
       ) : (
-        <p className="pt-3">Pair with a runnerbox server. On the machine that runs it, start <code className="bg-surf px-1">runnerbox-server serve</code>, which prints a pairing code, or run <code className="bg-surf px-1">runnerbox-server pair</code> for a new one.</p>
+        <p className="pt-3">Pair with a runnerbox server. On the machine that runs it, start <code className="bg-surf px-1">runnerbox serve</code>, which prints a pairing code, or run <code className="bg-surf px-1">runnerbox pair</code> for a new one.</p>
       )}
       <PairForm onPaired={(id) => setActive(id)} />
       <ConnectSection />
@@ -55,7 +55,7 @@ function PairForm({ onPaired }: { onPaired: (environmentId: string) => void }) {
   const [host, setHost] = useState("");
   const [sshPort, setSshPort] = useState("");
   const [remotePort, setRemotePort] = useState("4517");
-  const [serverCommand, setServerCommand] = useState("runnerbox-server");
+  const [serverCommand, setServerCommand] = useState("node ~/runnerbox/runnerbox.js");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

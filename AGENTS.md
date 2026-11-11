@@ -17,7 +17,7 @@ A pnpm workspace. The root package is the core and the CLI, and new code goes be
 - `src/`: the core (`up`, `report`, `summary`, VM setup) and the CLI that releases ship as `runnerbox.js`. Changes here stay small, since other branches work in it.
 - `packages/contracts`: what crosses the wire between server and clients, in Effect Schema: the RPC group, each method's scopes, and the data it carries.
 - `packages/client-runtime`: what every client shares: saved environments, pairing, and the RPC connection.
-- `apps/server`: `runnerbox-server`, which serves one machine's state directory over WebSocket RPC and MCP. Its services wrap the core's functions and never reimplement them.
+- `apps/server`: the server behind `runnerbox serve` and its sibling commands, bundled into `runnerbox.js`. It serves one machine's state directory over WebSocket RPC and MCP. Its services wrap the core's functions and never reimplement them.
 - `apps/web`: the React UI. `apps/desktop`: the Electron shell around it, which adds SSH and Connect routes.
 - `packages/connect`: what Runnerbox Connect's relay, server and clients share: signed proofs, DPoP, OAuth sign-in and the relay client.
 - `infra/relay`: the Connect relay, a Cloudflare Worker. Never deployed from this repo; [docs/connect-setup.md](docs/connect-setup.md) has the manual steps.

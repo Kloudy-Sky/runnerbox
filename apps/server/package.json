@@ -3,12 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "runnerbox-server": "./dist/runnerbox-server.js"
-  },
   "scripts": {
-    "serve": "node src/bin.ts serve",
-    "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --target=node22 --outfile=dist/runnerbox-server.js --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\"",
+    "serve": "node ../../src/cli.ts serve",
     "typecheck": "tsc -p .",
     "test": "node --test \"src/**/*.test.ts\""
   },

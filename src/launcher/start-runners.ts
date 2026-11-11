@@ -52,7 +52,7 @@ export async function startRunners(configPath: string) {
   const record: RecordEvent = (event) => void events.append({ time: new Date().toISOString(), ...event });
   // Samples come from /proc on the host and the VM, so a host install has none.
   if ("vm" in config) startSampler(config);
-  // What each slot is doing now, for runnerbox-server to show live.
+  // What each slot is doing now, for `runnerbox serve` to show live.
   const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners);
   void slotState.flush();
   every(HEARTBEAT_MS, slotState.heartbeat);

@@ -111,18 +111,18 @@ Jobs use the tools already on the Mac, read-only: Xcode's command line tools and
 
 ## Desktop app
 
-A desktop app shows the same history, plus what CI needs from you, for one or more machines. Each machine runs `runnerbox-server`, which reads the logs above and answers over HTTP and WebSocket. It changes nothing.
+A desktop app shows the same history, plus what CI needs from you, for one or more machines. Each machine runs `runnerbox serve`, which reads the logs above and answers over HTTP and WebSocket. It changes nothing.
 
 ```bash
-node runnerbox-server.js serve    # on the machine with the logs: prints a pairing code
-node runnerbox-server.js pair     # a fresh code, valid once for 15 minutes
+node runnerbox.js serve    # on the machine with the logs: prints a pairing code in a terminal
+node runnerbox.js pair     # a fresh code, valid once for 15 minutes
 ```
 
-`serve` listens on 127.0.0.1:4517. In the app, pair by address with that code. For a server on another machine, pair over SSH instead: the app forwards that machine's port 4517 over SSH and, if you leave the code empty, runs the server's `pair --json` there to get one. It uses your `~/.ssh/config`, keys and agent, and never asks for a password or accepts an unknown host key. From a checkout, `pnpm server serve` runs it, and `pnpm --filter @runnerbox/web build && pnpm --filter @runnerbox/desktop build && pnpm --filter @runnerbox/desktop start` runs the app (after `pnpm --filter @runnerbox/desktop ensure:electron` once).
+`serve` listens on 127.0.0.1:4517. In the app, pair by address with that code. For a server on another machine, pair over SSH instead: the app forwards that machine's port 4517 over SSH and, if you leave the code empty, runs the server's `pair --json` there to get one. It uses your `~/.ssh/config`, keys and agent, and never asks for a password or accepts an unknown host key. To keep it running, enable the user unit in [`deploy/`](deploy): `systemctl --user enable --now runnerbox-serve`. From a checkout, `pnpm runnerbox serve` runs it, and `pnpm --filter @runnerbox/web build && pnpm --filter @runnerbox/desktop build && pnpm --filter @runnerbox/desktop start` runs the app (after `pnpm --filter @runnerbox/desktop ensure:electron` once).
 
 **Runnerbox Connect** reaches a machine through a managed Cloudflare tunnel after one sign-in, with nothing to open on its network. It needs a relay you deploy yourself; [docs/connect-setup.md](docs/connect-setup.md) has the steps and costs. A session made through Connect only reads.
 
-An agent you already run can read the same history and runner state over MCP. `runnerbox-server mcp-token` prints a token and the `claude mcp add` line that uses it. The token only reads, works only at `/mcp`, and can be revoked from the app.
+An agent you already run can read the same history and runner state over MCP. `runnerbox mcp-token` prints a token and the `claude mcp add` line that uses it. The token only reads, works only at `/mcp`, and can be revoked from the app.
 
 The **Inbox** lists what needs you, by rules over the logs: failures the machine caused (low memory, a container that died, lost SSH), jobs that keep passing only on retry, jobs that never got a runner, slots that keep failing, and jobs slower than their own history. Failures in a job's own code go under "no action", since the check already told its author.
 

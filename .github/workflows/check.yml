@@ -25,11 +25,12 @@ jobs:
       - run: pnpm build
       # Some distro Node builds can't strip types, so prove the release file doesn't need it.
       - run: node --no-experimental-strip-types dist/runnerbox.js --help
+      - run: node --no-experimental-strip-types dist/runnerbox.js serve --help
       # Template units can't be verified as templates, so each is checked as one instance.
       - name: systemd units are valid
         run: |
           dir=$(mktemp -d)
-          for unit in deploy/*@.*; do cp "$unit" "$dir/$(basename "$unit" | sed 's/@/@example__repo/')"; done
+          for unit in deploy/*.service deploy/*.timer; do cp "$unit" "$dir/$(basename "$unit" | sed 's/@\./@example__repo./')"; done
           systemd-analyze verify "$dir"/*
 
   image:

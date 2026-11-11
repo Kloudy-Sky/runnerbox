@@ -1,0 +1,18 @@
+# Serves this host's job history and runner state to the desktop app and agents, read-only:
+# systemctl --user enable --now runnerbox-serve
+# Expects a release's runnerbox.js at ~/runnerbox/runnerbox.js, as runnerbox@.service does.
+# Run `loginctl enable-linger` once so it starts at boot without a login.
+# `node` must be on the user service manager's PATH, which a version manager's shell setup doesn't reach.
+# It listens on 127.0.0.1:4517 only; reach it from another machine over SSH or Runnerbox Connect.
+# It prints no pairing code, so none lands in the journal: run `node ~/runnerbox/runnerbox.js pair` for one.
+[Unit]
+Description=runnerbox server for the desktop app
+
+[Service]
+WorkingDirectory=%h/runnerbox
+ExecStart=/usr/bin/env node runnerbox.js serve
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

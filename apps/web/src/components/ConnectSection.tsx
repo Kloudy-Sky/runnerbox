@@ -34,7 +34,7 @@ export function ConnectSection() {
             <span className="text-dim">Signed in at {status.data.relayUrl}</span>
             <button type="button" className="text-dim hover:text-fg" onClick={() => attempt(() => connect.signOut())}>Sign out</button>
           </div>
-          {linked.data?.length === 0 ? <p className="text-dim">No environments linked to this account. On a machine, run runnerbox-server link.</p> : null}
+          {linked.data?.length === 0 ? <p className="text-dim">No environments linked to this account. On a machine, run runnerbox link.</p> : null}
           <table className="border-collapse">
             <tbody>
               {(linked.data ?? []).map((environment) => {
