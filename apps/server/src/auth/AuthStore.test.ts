@@ -42,3 +42,23 @@ test("a Connect session expires and is pruned, while a paired app's session last
     await rm(stateDir, { recursive: true, force: true });
   }
 });
+
+test("a socket that starts watching after its session was revoked still hears of it", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "runnerbox-auth-"));
+  try {
+    const outcome = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* AuthStore.AuthStore;
+        const { code } = yield* store.createPairingCode(["history:read"]);
+        yield* store.pair({ code, label: "example" });
+        const [session] = yield* store.list("");
+        // The revoke lands between redeeming the ticket and the socket starting to watch.
+        yield* store.revoke(session!.id);
+        return yield* store.revoked(session!.id).pipe(Effect.as("closed"), Effect.timeoutOrElse({ duration: "2 seconds", orElse: () => Effect.succeed("left open") }));
+      }).pipe(Effect.provide(AuthStore.layer.pipe(Layer.provideMerge(ServerPaths.layer(stateDir)), Layer.provideMerge(NodeServices.layer)))),
+    );
+    assert.equal(outcome, "closed");
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});

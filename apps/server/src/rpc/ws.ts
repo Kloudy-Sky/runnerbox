@@ -12,7 +12,7 @@ import * as Handlers from "./handlers.ts";
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 // The RPC socket. Each connection redeems a ticket, then gets its own server whose middleware
-// checks every call against that session's scopes.
+// checks every call against that session's scopes. Revoking the session closes the socket.
 export const layer = (entry: AuthStore.Entry) => HttpRouter.add(
   "GET",
   "/ws",
@@ -28,6 +28,6 @@ export const layer = (entry: AuthStore.Entry) => HttpRouter.add(
       Effect.provide(Layer.merge(Handlers.layer(session), RpcAuthorization.layer(session.scopes))),
       Effect.forkScoped,
     );
-    return yield* httpEffect;
+    return yield* Effect.raceFirst(httpEffect, store.revoked(session.id).pipe(Effect.as(HttpServerResponse.empty({ status: 410 }))));
   }).pipe(Effect.provide(RpcSerialization.layerJson)),
 );

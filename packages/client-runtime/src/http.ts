@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 export class ConnectionError extends Schema.TaggedError<ConnectionError>()("ConnectionError", {
-  reason: Schema.Literals(["unreachable", "unauthorized", "wrong_environment", "incompatible", "pairing_rejected", "tunnel_failed", "relay_refused"]),
+  reason: Schema.Literals(["unreachable", "unauthorized", "wrong_environment", "incompatible", "pairing_rejected", "tunnel_failed", "relay_refused", "already_paired", "no_keychain"]),
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
@@ -20,6 +20,10 @@ export class ConnectionError extends Schema.TaggedError<ConnectionError>()("Conn
         return "That pairing code is wrong, used or expired.";
       case "tunnel_failed":
         return "The SSH forward couldn't be opened.";
+      case "already_paired":
+        return "This environment is already saved. Forget it first to pair it again.";
+      case "no_keychain":
+        return "The system keychain isn't available, so runnerbox can't keep a pairing safely. Set up a keychain (on Linux, GNOME Keyring or KWallet) and try again.";
       case "relay_refused":
         return "Runnerbox Connect couldn't reach this environment. Check you're signed in and it's online.";
     }

@@ -1,9 +1,11 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readSavedEnvironments, type SavedEnvironment } from "@runnerbox/client-runtime";
+import { sealSecret } from "./sealSecret.ts";
 
 // Saved environments on disk, in the app's own data directory. Tokens are encrypted with the OS
-// keychain when it's available, so the file alone doesn't let anyone reach a server.
+// keychain, and an environment with a token isn't saved without one, so the file alone doesn't let
+// anyone reach a server.
 
 export type TokenCipher = {
   readonly available: () => boolean;
@@ -44,8 +46,8 @@ export function createCatalog(directory: string, cipher: TokenCipher) {
       }));
     },
     async save(environment: SavedEnvironment) {
-      const encrypted = cipher.available() && environment.token !== null;
-      const entry = { ...environment, token: encrypted && environment.token !== null ? cipher.encrypt(environment.token) : environment.token, encrypted };
+      // A Connect-only environment has no token, so there's nothing to encrypt.
+      const entry = environment.token === null ? { ...environment, encrypted: false } : { ...environment, token: sealSecret(cipher, environment.token), encrypted: true };
       const others = (await readStored()).filter((stored) => stored.environmentId !== environment.environmentId);
       await writeStored([...others, entry]);
     },
