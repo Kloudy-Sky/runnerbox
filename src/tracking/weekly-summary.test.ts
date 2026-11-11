@@ -49,7 +49,7 @@ test("the machine row shows how low memory got, from VM samples only where the V
 test("a redacted summary names no repo, job, runner, install or kind, and hashes them the same each time", async () => {
   const key = await loadRedactionKey(dir);
   assert.equal(await loadRedactionKey(dir), key);
-  assert.equal((await stat(join(dir, "summary.key"))).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(join(dir, "summary.key"))).mode & 0o777, 0o600);
 
   const job: JobSummary = {
     workflow: "ci", job: "secret-job | x", runnerType: "rb-linux", ran: 1, failed: 0, passedOnRetry: 0, noRunner: 0,

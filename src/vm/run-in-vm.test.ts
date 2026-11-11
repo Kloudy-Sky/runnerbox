@@ -21,7 +21,7 @@ async function fakeSsh(exitCode: number) {
   return path;
 }
 
-test("the secret goes over stdin and never into arguments, and host keys are enforced", async () => {
+test("the secret goes over stdin and never into arguments, and host keys are enforced", { skip: process.platform === "win32" && "the stand-in is a bash script" }, async () => {
   const sshBinary = await fakeSsh(0);
   const code = await runInVm({ vm, command: "docker run x", secret: "top-secret", sshBinary });
   const args = await readFile(`${sshBinary}.args`, "utf8");
@@ -40,12 +40,12 @@ test("a job VM is checked against the builder's host key, since it has no entry 
   assert.ok(!sshArgs(vm, "true").some((arg) => arg.startsWith("HostKeyAlias")));
 });
 
-test("the exit code comes back, and a missing ssh is null, not a crash", async () => {
+test("the exit code comes back, and a missing ssh is null, not a crash", { skip: process.platform === "win32" && "the stand-in is a bash script" }, async () => {
   assert.equal(await runInVm({ vm, command: "x", secret: "s", sshBinary: await fakeSsh(3) }), 3);
   assert.equal(await runInVm({ vm, command: "x", secret: "s", sshBinary: join(dir, "missing") }), null);
 });
 
-test("readFromVm returns stdout, and a failing command rejects", async () => {
+test("readFromVm returns stdout, and a failing command rejects", { skip: process.platform === "win32" && "the stand-in is a bash script" }, async () => {
   const printer = join(dir, "ssh-print");
   await writeFile(printer, `#!/bin/bash\necho "MemAvailable: 1 kB"\n`);
   await chmod(printer, 0o755);

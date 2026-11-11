@@ -50,7 +50,7 @@ test("create.sh is valid bash", () => {
   execFileSync("bash", ["-n"], { input: createScript(config) });
 });
 
-test("render refuses a key file that isn't one public key", async () => {
+test("render refuses a key file that isn't one public key", { skip: process.platform === "win32" && "a VM install's paths are POSIX" }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "runnerbox-vm-"));
   const keyFile = `/${dir.slice(1)}/key.pub` as const;
   await writeFile(keyFile, "ssh-ed25519 AAAA one\nssh-ed25519 BBBB two\n");

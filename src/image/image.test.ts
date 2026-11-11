@@ -31,7 +31,8 @@ test("the context hash changes with any file's contents or mode, and only then",
 
   const c = await context("c", files);
   await chmod(join(c, "scripts/setup.sh"), 0o755);
-  assert.notEqual(await hashContext(a), await hashContext(c));
+  // Windows keeps no executable bit, and a context is only ever built from a Linux host.
+  if (process.platform !== "win32") assert.notEqual(await hashContext(a), await hashContext(c));
 });
 
 function keeper({ inVm = [] as string[], builds = true, short = null as string | null, removable = true } = {}) {
@@ -89,7 +90,7 @@ test("a changed context swaps the tag, and the old one is removed once Docker al
   assert.deepEqual(events.filter((event) => event.startsWith("remove")), ["remove app:aaaaaaaaaaaa", "remove app:aaaaaaaaaaaa"]);
 });
 
-test("the build streams the context to docker build in the VM", async () => {
+test("the build streams the context to docker build in the VM", { skip: process.platform === "win32" && "the stand-in is a bash script" }, async () => {
   const root = await context("streamed", { Dockerfile: "FROM runnerbox-base\n" });
   const ssh = join(dir, "ssh");
   await writeFile(ssh, `#!/bin/bash\nprintf '%s\\n' "$@" > "${ssh}.args"\ncat > "${ssh}.tar"\nexit "\${FAKE_EXIT:-0}"\n`);

@@ -78,7 +78,7 @@ test("guest time isn't counted twice, and steal isn't busy", () => {
   assert.deepEqual(parseCpuCounters("cpu 50 0 0 40 0 0 0 10 50 0"), { busy: 50, total: 100 });
 });
 
-test("the VM command keeps its sections when Docker times out", () => {
+test("the VM command keeps its sections when Docker times out", { skip: process.platform === "win32" && "the stand-in is a bash script" }, () => {
   const output = execFileSync("bash", ["-c", VM_SAMPLE_COMMAND], {
     encoding: "utf8",
     env: { PATH: `${fakeBin}:/usr/bin:/bin` },

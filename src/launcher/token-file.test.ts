@@ -15,5 +15,6 @@ test("reads an owner-only token, and refuses one others could read", async () =>
 
   const open = join(dir, "open");
   await writeFile(open, "token\n", { mode: 0o644 });
-  await assert.rejects(readTokenFile(open), /chmod 600/);
+  // Windows has no mode bits: there the owner's profile is what keeps other accounts out.
+  if (process.platform !== "win32") await assert.rejects(readTokenFile(open), /chmod 600/);
 });
