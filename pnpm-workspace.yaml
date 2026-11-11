@@ -9,6 +9,8 @@ minimumReleaseAge: 4320
 # its binary, which only the desktop app needs, so `pnpm --filter @runnerbox/desktop ensure:electron` does that.
 ignoredBuiltDependencies:
   - electron
+  # Windows installer tooling pulled in by electron-builder; no Windows target is built.
+  - electron-winstaller
   - esbuild
 # @effect/platform-node 4.0.5 accepts any 4.x of this, and newer ones need a newer effect.
 overrides:

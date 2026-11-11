@@ -121,7 +121,12 @@ node runnerbox.js pair     # a fresh code, valid once for 15 minutes
 
 `serve` listens on 127.0.0.1:4517. In the app, pair by address with that code. For a server on another machine, pair over SSH instead: the app forwards that machine's port 4517 over SSH and, if you leave the code empty, runs the server's `pair --json` there to get one. It uses your `~/.ssh/config`, keys and agent, and never asks for a password or accepts an unknown host key. To keep it running, enable the user unit in [`deploy/`](deploy): `systemctl --user enable --now runnerbox-serve`. From a checkout, `pnpm runnerbox serve` runs it, and `pnpm --filter @runnerbox/web build && pnpm --filter @runnerbox/desktop build && pnpm --filter @runnerbox/desktop start` runs the app (after `pnpm --filter @runnerbox/desktop ensure:electron` once).
 
-**Runnerbox Connect** reaches a machine through a managed Cloudflare tunnel after one sign-in, with nothing to open on its network. It needs a relay you deploy yourself; [docs/connect-setup.md](docs/connect-setup.md) has the steps and costs. A session made through Connect only reads.
+To install the app, build it from a checkout: `pnpm install`, `pnpm --filter @runnerbox/desktop ensure:electron` once, then `pnpm desktop:dist`. On a Mac that writes `apps/desktop/release/runnerbox-0.0.0-arm64.dmg` (Apple silicon); on Linux, `runnerbox-0.0.0.AppImage` (x64). `node apps/desktop/scripts/dist.ts --linux` builds the AppImage from a Mac too. The app carries the web client inside it, so it runs without the checkout.
+
+- **macOS:** open the dmg and drag runnerbox to Applications. The app isn't signed or notarized. One you built yourself opens normally. If you copied or downloaded it from elsewhere, macOS refuses the first open: try once, then go to System Settings, Privacy & Security, and choose Open Anyway beside runnerbox.
+- **Linux:** `chmod +x runnerbox-0.0.0.AppImage` and run it. AppImages need FUSE; on Ubuntu that's the `libfuse2` package.
+
+ through a managed Cloudflare tunnel after one sign-in, with nothing to open on its network. It needs a relay you deploy yourself; [docs/connect-setup.md](docs/connect-setup.md) has the steps and costs. A session made through Connect only reads.
 
 An agent you already run can read the same history and runner state over MCP. `runnerbox mcp-token` prints a token and the `claude mcp add` line that uses it. The token only reads, works only at `/mcp`, and can be revoked from the app.
 

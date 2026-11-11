@@ -2,3 +2,4 @@ node_modules/
 dist/
 infra/relay/wrangler.toml
 .wrangler/
+apps/desktop/release/
