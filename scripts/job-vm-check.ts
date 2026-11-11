@@ -1,9 +1,10 @@
 // Boots real job VMs from a builder that `vm render` made, and checks from inside them what the
 // threat model claims: each has its own address, can't reach the host, the builder or another job
-// VM, and starts without what an earlier job left behind. CI runs it as root, which libvirt needs:
+// VM, and starts without what an earlier job left behind. Then it starts a job's container the way
+// `up` does and checks the workflow hook Docker mounts in it. CI runs it as root, which libvirt needs:
 //   node scripts/job-vm-check.ts <ssh key file> <known_hosts file>
 import { startJobVms } from "../src/jobvm/start-job-vms.ts";
-import { shellQuote } from "../src/launcher/docker-command.ts";
+import { dockerRunCommand, shellQuote } from "../src/launcher/docker-command.ts";
 import { VmInstall } from "../src/launcher/launcher-config.ts";
 import { runInVm, type Vm } from "../src/vm/run-in-vm.ts";
 
@@ -27,6 +28,7 @@ const config = VmInstall.assert({
       image: "busybox",
       limits: { memory: "512m", memoryReservation: "256m", memorySwap: "1g", cpus: 1, pids: 512, shmSize: "64m" },
       env: {},
+      allowedWorkflows: ["owner/name/.github/workflows/*@refs/heads/main"],
       vm: { cpus: 1, memoryMiB: 1536 },
     },
   ],
@@ -70,6 +72,19 @@ const results = await Promise.all([
 ]);
 // The same slot again. The first job's marker went with its VM, or this fails.
 results.push(await jobVms.run(runner, 1, "busybox", (vm) => inVm(vm, first, second)));
+
+// The real command, with busybox in place of a runner. Its shell reads stdin, where the registration
+// would go, so this line runs inside the container and calls the hook as the runner would.
+const hookCheck =
+  'hook=$ACTIONS_RUNNER_HOOK_JOB_STARTED; ref=owner/name/.github/workflows/ci.yml; ' +
+  'GITHUB_WORKFLOW_REF=$ref@refs/heads/main sh "$hook" && echo "ok: the hook lets a listed workflow run" && ' +
+  '! GITHUB_WORKFLOW_REF=$ref@refs/pull/7/merge sh "$hook" >/dev/null && echo "ok: the hook fails a pull request" && ' +
+  '! touch "$hook" 2>/dev/null && echo "ok: the job can\'t change the hook"';
+results.push(
+  await jobVms.run(runner, 2, "busybox", (vm) =>
+    runInVm({ vm, command: dockerRunCommand(config.name, runner, 2, "busybox"), secret: hookCheck }),
+  ),
+);
 
 console.log(`job VM checks exited ${results.join(", ")}`);
 process.exit(results.every((code) => code === 0) ? 0 : 1);
