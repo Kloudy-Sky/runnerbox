@@ -11,4 +11,6 @@ export const CHANNELS = {
   connectSignOut: "runnerbox:connect:sign-out",
   connectEnvironments: "runnerbox:connect:environments",
   connectRequestCredential: "runnerbox:connect:request-credential",
+  connectCreateProofKey: "runnerbox:connect:create-proof-key",
+  connectProve: "runnerbox:connect:prove",
 } as const;

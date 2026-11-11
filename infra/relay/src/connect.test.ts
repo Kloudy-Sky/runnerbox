@@ -230,6 +230,7 @@ test("teardown claims the allocation first, so a stale cleanup never deletes a n
 
 test("a saved environment whose first route is down connects through Connect instead", async () => {
   const id = await environmentId();
+  const keys = new Map<string, ProofKey>();
   const runtime = createClientRuntime({
     catalog: { list: async () => [], save: async () => {}, remove: async () => {} },
     // What desktop main does with its Clerk sign-in, here with the fake one.
@@ -239,6 +240,12 @@ test("a saved environment whose first route is down connects through Connect ins
       signOut: async () => {},
       environments: () => client().environments("token-alice"),
       requestCredential: (environmentId, thumbprint) => client().connect("token-alice", environmentId, thumbprint),
+      createProofKey: async () => {
+        const key = await createProofKey();
+        keys.set(key.thumbprint, key);
+        return { keyId: key.thumbprint, thumbprint: key.thumbprint };
+      },
+      prove: (keyId, request) => createProof(keys.get(keyId)!, request),
     },
   });
   await runtime.addConnectRoute({ environmentId: id, label: "example" }, relayHttp.url);

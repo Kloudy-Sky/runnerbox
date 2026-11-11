@@ -1,5 +1,6 @@
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { createProof, createProofKey, type ProofKey } from "@runnerbox/connect/dpop";
 import { clerkEndpoints, loopbackAuthorize, refreshTokens, type Tokens } from "@runnerbox/connect/oauth";
 import { relayClient } from "@runnerbox/connect/relay";
 import * as Schema from "effect/Schema";
@@ -10,6 +11,10 @@ import type { TokenCipher } from "./catalog.ts";
 
 type Saved = { relayUrl: string; tokens: Tokens };
 
+// Each connection makes a key and needs it only while that connection lasts, so a few recent ones
+// are kept and older ones dropped, which also bounds a reconnect loop.
+const PROOF_KEYS_KEPT = 16;
+
 const StoredFile = Schema.fromJsonString(Schema.Struct({ relayUrl: Schema.String, tokens: Schema.String, encrypted: Schema.Boolean }));
 const StoredTokens = Schema.fromJsonString(Schema.Struct({ accessToken: Schema.String, refreshToken: Schema.NullOr(Schema.String), expiresAt: Schema.Number }));
 const decodeFile = Schema.decodeUnknownSync(StoredFile);
@@ -18,6 +23,7 @@ const decodeTokens = Schema.decodeUnknownSync(StoredTokens);
 export function createConnect(directory: string, cipher: TokenCipher, openBrowser: (url: string) => void) {
   const path = join(directory, "connect.json");
   let cached: Saved | null | undefined;
+  const proofKeys = new Map<string, ProofKey>();
 
   async function load() {
     if (cached !== undefined) return cached;
@@ -66,6 +72,19 @@ export function createConnect(directory: string, cipher: TokenCipher, openBrowse
     async environments() {
       const { relayUrl, token } = await accessToken();
       return relayClient(relayUrl).environments(token);
+    },
+    // Proof keys live here, in main: they can't be exported, and the renderer has no WebCrypto.
+    async createProofKey() {
+      const key = await createProofKey();
+      const keyId = crypto.randomUUID();
+      proofKeys.set(keyId, key);
+      for (const old of [...proofKeys.keys()].slice(0, Math.max(0, proofKeys.size - PROOF_KEYS_KEPT))) proofKeys.delete(old);
+      return { keyId, thumbprint: key.thumbprint };
+    },
+    prove(keyId: string, request: { method: string; url: string }) {
+      const key = proofKeys.get(keyId);
+      if (!key) throw new Error("That proof key is gone. Reconnect to make a new one.");
+      return createProof(key, request);
     },
     async requestCredential(environmentId: string, clientProofKeyThumbprint: string) {
       const { relayUrl, token } = await accessToken();

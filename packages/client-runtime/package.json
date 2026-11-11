@@ -13,7 +13,6 @@
   "dependencies": {
     "@runnerbox/contracts": "workspace:*",
     "effect": "4.0.5",
-    "zustand": "5.0.16",
-    "@runnerbox/connect": "workspace:*"
+    "zustand": "5.0.16"
   }
 }

@@ -45,6 +45,8 @@ const StoredSession = Schema.Struct({
   // Set for a session bought with a Connect credential: every use must carry a DPoP proof from
   // the key with this thumbprint.
   proofKeyThumbprint: Schema.optionalKey(Schema.String),
+  // Key-bound sessions expire; others last until revoked.
+  expiresAt: Schema.optionalKey(Schema.String),
 });
 const StoredCode = Schema.Struct({
   codeHash: Schema.String,
@@ -75,6 +77,10 @@ const CODE_TTL_MS = 15 * 60_000;
 const TICKET_TTL_MS = 30_000;
 // Recording every request would rewrite the file on each call, so last-seen is coarse.
 const SEEN_RESOLUTION_MS = 60_000;
+// A Connect session lasts long enough to open its socket and reconnect for a while. Each new
+// connection mints another, so a failing reconnect loop can't pile up sessions that last forever.
+const KEY_BOUND_SESSION_TTL_MS = 60 * 60_000;
+const unexpired = (now: number) => (session: { expiresAt?: string }) => session.expiresAt === undefined || Date.parse(session.expiresAt) > now;
 
 // Pairing codes, sessions and WebSocket tickets. The file is shared with `pair` and `mcp-token`
 // run as separate processes, so it's read again on every check rather than cached.
@@ -140,6 +146,13 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new AuthStoreError({ operation: "read", cause })),
   );
 
+  // The file as of now, without sessions that have expired but not yet been pruned.
+  const readLive = Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const file = yield* read;
+    return { ...file, sessions: file.sessions.filter(unexpired(now)) };
+  });
+
   const write = (file: AuthFile) =>
     fs.makeDirectory(serverDir, { recursive: true, mode: 0o700 }).pipe(
       Effect.andThen(writeFileAtomic(fs, path, `${JSON.stringify(file, null, 2)}\n`)),
@@ -156,6 +169,7 @@ const make = Effect.gen(function* () {
           ...current,
           codes: current.codes.filter((code) => Date.parse(code.expiresAt) > now),
           used: (current.used ?? []).filter((entry) => entry.expiresAt > now),
+          sessions: current.sessions.filter(unexpired(now)),
         };
         const [next, result] = yield* change(live, now);
         yield* write(next);
@@ -213,7 +227,9 @@ const make = Effect.gen(function* () {
           label: input.label || "client",
           audience: "client",
           scopes: grant.proofKeyThumbprint === undefined ? grant.scopes : grant.scopes.filter((scope) => PROOF_BOUND_SCOPES.includes(scope)),
-          ...(grant.proofKeyThumbprint === undefined ? {} : { proofKeyThumbprint: grant.proofKeyThumbprint }),
+          ...(grant.proofKeyThumbprint === undefined
+            ? {}
+            : { proofKeyThumbprint: grant.proofKeyThumbprint, expiresAt: new Date(now + KEY_BOUND_SESSION_TTL_MS).toISOString() }),
         }),
       );
     });
@@ -229,7 +245,7 @@ const make = Effect.gen(function* () {
     proofKeyThumbprint?: string | undefined,
   ) {
     const tokenHash = sha256(token);
-    const found = (yield* read).sessions.find((session) => session.tokenHash === tokenHash);
+    const found = (yield* readLive).sessions.find((session) => session.tokenHash === tokenHash);
     if (!found || found.audience !== audience) return undefined;
     if (found.proofKeyThumbprint !== undefined && found.proofKeyThumbprint !== proofKeyThumbprint) return undefined;
     const now = yield* Clock.currentTimeMillis;
@@ -268,12 +284,12 @@ const make = Effect.gen(function* () {
     tickets.delete(key);
     const now = yield* Clock.currentTimeMillis;
     if (!issued || issued.expiresAt <= now || issued.entry !== entry) return undefined;
-    const found = (yield* read).sessions.find((session) => session.id === issued.sessionId);
+    const found = (yield* readLive).sessions.find((session) => session.id === issued.sessionId);
     return found ? toSession(found) : undefined;
   });
 
   const list = Effect.fn("AuthStore.list")(function* (currentId: string) {
-    return (yield* read).sessions.map(({ id, label, audience, scopes, createdAt, lastSeenAt }) => ({
+    return (yield* readLive).sessions.map(({ id, label, audience, scopes, createdAt, lastSeenAt }) => ({
       id,
       label,
       audience,
