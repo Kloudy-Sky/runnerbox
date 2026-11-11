@@ -15,6 +15,7 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, multicast, broadcast and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Tested in CI, except IPv6, which CI's network can't show |
 | Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Tested in CI |
 | Other machines on the bridge | Root in the VM spoofs the gateway's or another guest's address | The filter only lets the VM send from its own MAC and reserved IP, in both IP and ARP. | Coded |
+| The machine | A stranger's pull request on a public repository runs their code | Before minting each registration, `up` refuses a public repository, or an org whose default runner group, the one its runners join, allows public repositories. It also refuses if GitHub doesn't answer within 30 seconds or doesn't say. A refused slot starts no runner and tries again a minute later. Setting `allowPublicRepos` turns this off. | Coded |
 | Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Tested |
 | The VM's Docker daemon | A job takes it over | Containers never get the VM's Docker socket. | Tested |
 | The VM, from a job with its own Docker | A job uses its Docker daemon to escape to the VM | Runner kinds with `"docker": true` run under the sysbox runtime, never `--privileged`. Each job's daemon lives inside its own container, whose root maps to an unprivileged user on the VM, and goes with the container. Containers the job starts stay behind the VM's network filter. A kernel or sysbox bug still breaks this, as it would any container. | Tested in CI |
@@ -75,7 +76,9 @@ What a host install doesn't protect, on top of the list below:
 
 **The registration inside the VM.** The entrypoint passes it to the runner as an argument, so every step of the job, and root in the VM, can read it with `ps`. Passing it in an environment variable wouldn't help, because jobs run as the same user with sudo and could read it from `/proc`. It works for one job, the one already running, which limits what it's worth.
 
-**Public repositories.** Anyone can open a pull request on one, and that can run their code on your machine. Use private repositories only, and restrict the runner group to the repositories that need it.
+**Public repositories, if you allow them.** Anyone can open a pull request on one, and that can run their code on your machine. `up` refuses them by default, so leave `allowPublicRepos` off, and restrict the runner group to the repositories that need it.
+
+**Forks of private repositories, and what changes after a check.** The check looks at the repository or runner group when a registration is minted, not at the job. If a private repository is set to run workflows from fork pull requests, those jobs still run here. A repository made public, or a runner group opened to public repositories, after a registration is minted can still send that registration its one job.
 
 **The image.** Parts of the base image come from package registries at build time. A compromised package gets into every job until you rebuild.
 

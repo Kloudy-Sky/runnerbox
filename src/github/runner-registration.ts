@@ -3,6 +3,9 @@ import { GITHUB_API, githubHeaders } from "./github-client.ts";
 
 const Registration = type({ encoded_jit_config: "string", runner: { id: "number" } });
 
+// Every org and repo has this group, and it's the one runners are minted into.
+export const DEFAULT_RUNNER_GROUP_ID = 1;
+
 export type RunnerScope = { org: string } | { repo: string };
 
 type RegistrationRequest = {
@@ -22,7 +25,7 @@ export async function mintRegistration({ scope, token, runnerName, label }: Regi
     headers: githubHeaders(token),
     body: JSON.stringify({
       name: runnerName,
-      runner_group_id: 1,
+      runner_group_id: DEFAULT_RUNNER_GROUP_ID,
       labels: ["self-hosted", label],
       work_folder: "_work",
     }),

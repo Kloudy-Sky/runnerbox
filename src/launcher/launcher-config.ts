@@ -45,6 +45,8 @@ const Install = {
   scope: type({ "+": "reject", org: "/^[A-Za-z0-9-]+$/" }).or({ "+": "reject", repo: type(REPO_NAME) }),
   // Must be readable only by its owner. It's read again for each job, so it can be rotated in place.
   tokenFile: AbsolutePath,
+  // Off by default, so `up` refuses a scope that a public repository's jobs could reach.
+  allowPublicRepos: "boolean = false",
 } as const;
 
 // An install whose jobs run in containers inside a VM. Unknown keys are errors, so a typo in a
