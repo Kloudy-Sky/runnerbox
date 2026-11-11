@@ -132,9 +132,11 @@ export function runServerCommand(args: string[]) {
   const announce = Effect.gen(function* () {
     const store = yield* AuthStore.AuthStore;
     const { descriptor } = yield* EnvironmentIdentity.EnvironmentIdentity;
-    const code = yield* store.createPairingCode(ALL_SCOPES);
     console.log(`runnerbox server for ${descriptor.label} (${descriptor.environmentId})`);
     console.log(`Listening on http://${values.host}:${port}, reading ${dir}`);
+    // Only to a terminal: under a service the line lands in a log that other accounts may read.
+    if (!process.stdout.isTTY) return console.log("Run `runnerbox pair` for a pairing code.");
+    const code = yield* store.createPairingCode(ALL_SCOPES);
     console.log(`Pairing code: ${code.code} (expires ${code.expiresAt})`);
   });
   const server = layerServer({ host: values.host, port, stateDir: dir, ...(values.label ? { label: values.label } : {}) });

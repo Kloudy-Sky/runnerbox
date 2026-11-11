@@ -83,7 +83,7 @@ On each machine running `runnerbox serve`:
 2. `node runnerbox.js link --relay https://relay.example.com` opens a browser to sign in. Over SSH, add `--device` and approve the code from any browser.
 3. Restart `serve`. It opens a second loopback listener for the tunnel alone (by default on its own port plus one; `link --tunnel-port` chooses another), and starts `cloudflared`, pointed only at that listener. Through the tunnel, only Connect works: CLI pairing codes, app sessions and MCP tokens are refused there, and keep working on loopback and over SSH.
 
-`runnerbox link-status` shows the link, and `runnerbox unlink` removes it and its tunnel. Unlinking needs no sign-in.
+`node runnerbox.js link-status` shows the link, and `node runnerbox.js unlink` removes it and its tunnel. Unlinking needs no sign-in.
 
 ## 8. Connect from the desktop app
 
