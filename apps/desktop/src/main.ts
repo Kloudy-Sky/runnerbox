@@ -26,7 +26,9 @@ if (process.env.RUNNERBOX_DESKTOP_USER_DATA) app.setPath("userData", process.env
 protocol.registerSchemesAsPrivileged([{ scheme: SCHEME, privileges: { standard: true, supportFetchAPI: true } }]);
 
 const cipher: TokenCipher = {
-  available: () => safeStorage.isEncryptionAvailable(),
+  // On Linux with no keyring, Electron falls back to a fixed key ("basic_text"), which is plaintext
+  // in all but name, so that counts as unavailable.
+  available: () => safeStorage.isEncryptionAvailable() && !(process.platform === "linux" && safeStorage.getSelectedStorageBackend() === "basic_text"),
   encrypt: (text) => safeStorage.encryptString(text).toString("base64"),
   decrypt: (text) => safeStorage.decryptString(Buffer.from(text, "base64")),
 };

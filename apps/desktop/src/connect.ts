@@ -5,6 +5,7 @@ import { clerkEndpoints, loopbackAuthorize, refreshTokens, type Tokens } from "@
 import { relayClient } from "@runnerbox/connect/relay";
 import * as Schema from "effect/Schema";
 import type { TokenCipher } from "./catalog.ts";
+import { sealSecret } from "./sealSecret.ts";
 
 // The desktop app's Runnerbox Connect sign-in. Main holds the Clerk tokens, encrypted at rest, and
 // makes every relay call; the renderer only ever gets a one-time credential bound to its own key.
@@ -40,9 +41,8 @@ export function createConnect(directory: string, cipher: TokenCipher, openBrowse
   async function store(saved: Saved | null) {
     cached = saved;
     if (!saved) return rm(path, { force: true });
-    const encrypted = cipher.available();
-    const tokens = JSON.stringify(saved.tokens);
-    await writeFile(`${path}.tmp`, JSON.stringify({ relayUrl: saved.relayUrl, tokens: encrypted ? cipher.encrypt(tokens) : tokens, encrypted }), { mode: 0o600 });
+    const tokens = sealSecret(cipher, JSON.stringify(saved.tokens));
+    await writeFile(`${path}.tmp`, JSON.stringify({ relayUrl: saved.relayUrl, tokens, encrypted: true }), { mode: 0o600 });
     await rename(`${path}.tmp`, path);
   }
 

@@ -9,6 +9,7 @@ import {
 } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -117,6 +118,8 @@ export class AuthStore extends Context.Service<
     readonly redeemTicket: (ticket: string, entry: Entry) => Effect.Effect<Session | undefined, AuthStoreError>;
     readonly list: (currentId: string) => Effect.Effect<ReadonlyArray<SessionSummary>, AuthStoreError>;
     readonly revoke: (id: string) => Effect.Effect<void, AuthStoreError | AccessError>;
+    // Completes when this server revokes the session, so whatever it opened can be closed.
+    readonly revoked: (sessionId: string) => Effect.Effect<void>;
   }
 >()("runnerbox/server/AuthStore") {}
 
@@ -135,6 +138,8 @@ const make = Effect.gen(function* () {
   const lock = yield* Semaphore.make(1);
   // Tickets are short and single-use, and die with the process, so they never touch disk.
   const tickets = new Map<string, { sessionId: string; expiresAt: number; entry: Entry }>();
+  // Sockets waiting to hear their session was revoked, by session ID.
+  const watchers = new Map<string, Set<Deferred.Deferred<void>>>();
 
   const read = fs.readFileString(path).pipe(
     Effect.catchTag("PlatformError", (error) =>
@@ -206,6 +211,8 @@ const make = Effect.gen(function* () {
     scopes: ReadonlyArray<AuthScope>,
   ) {
     if (!scopes.every((scope) => session.scopes.includes(scope))) return yield* new AccessError({ reason: "scope_not_held" });
+    // A socket keeps the session it opened with, so check it hasn't been revoked since.
+    if (!(yield* readLive).sessions.some((stored) => stored.id === session.id)) return yield* new AccessError({ reason: "unknown_session" });
     return yield* createPairingCode(scopes);
   });
 
@@ -306,9 +313,22 @@ const make = Effect.gen(function* () {
         ? Effect.succeed([{ ...file, sessions: file.sessions.filter((session) => session.id !== id) }, undefined] as const)
         : Effect.fail(new AccessError({ reason: "unknown_session" })),
     );
+    for (const watcher of watchers.get(id) ?? []) yield* Deferred.succeed(watcher, undefined);
+    watchers.delete(id);
   });
 
-  return AuthStore.of({ createPairingCode, delegatePairingCode, pair, mintMcpToken, authenticate, consumeOnce, issueTicket, redeemTicket, list, revoke });
+  const revoked = (sessionId: string) =>
+    Effect.acquireUseRelease(
+      Effect.gen(function* () {
+        const watcher = yield* Deferred.make<void>();
+        watchers.set(sessionId, (watchers.get(sessionId) ?? new Set()).add(watcher));
+        return watcher;
+      }),
+      Deferred.await,
+      (watcher) => Effect.sync(() => void watchers.get(sessionId)?.delete(watcher)),
+    );
+
+  return AuthStore.of({ createPairingCode, delegatePairingCode, pair, mintMcpToken, authenticate, consumeOnce, issueTicket, redeemTicket, list, revoke, revoked });
 });
 
 export const layer = Layer.effect(AuthStore, make);

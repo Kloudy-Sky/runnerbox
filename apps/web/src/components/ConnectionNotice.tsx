@@ -18,7 +18,7 @@ export function ConnectionNotice() {
       <span className="flex-1" />
       {connection.reason === "unauthorized" ? (
         <Link to="/connect" search={(previous: RootSearch) => previous} className="text-fg">
-          Pair again
+          Forget it and pair again
         </Link>
       ) : (
         <button type="button" className="text-fg" onClick={() => runtime.reconnect(environment.environmentId)}>

@@ -117,3 +117,26 @@ test("runner state streams from the file up keeps, and an install that stopped u
   );
   assert.equal(byInstall.quiet?.stale, true);
 });
+
+test("revoking a session closes its open socket, and a revoked session can't delegate a pairing code", async () => {
+  const admin = await pairAs(["history:read", "access:write"], "admin");
+  const other = await pairAs(["history:read", "access:write"], "revoked admin");
+  const outcome = await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { client, closed } = yield* openSession(server.baseUrl, other.token);
+        assert.ok((yield* client["history.repos"]()).length > 0, "the socket works before the revoke");
+        const sessions = yield* Effect.scoped(Effect.flatMap(openSession(server.baseUrl, admin.token), ({ client: adminClient }) => adminClient["access.sessions"]()));
+        const victim = sessions.find((session) => session.label === "revoked admin")!;
+        yield* Effect.scoped(Effect.flatMap(openSession(server.baseUrl, admin.token), ({ client: adminClient }) => adminClient["access.revokeSession"]({ id: victim.id })));
+        const closedInTime = yield* closed.pipe(Effect.as(true), Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.succeed(false) }));
+        return { victim, closedInTime };
+      }),
+    ),
+  );
+  assert.equal(outcome.closedInTime, true, "the revoked session's socket closed");
+  const delegated = await Effect.runPromise(
+    Effect.flip(server.auth.delegatePairingCode({ id: outcome.victim.id, label: "revoked admin", audience: "client", scopes: ["history:read", "access:write"] }, ["history:read"])),
+  );
+  assert.equal(delegated._tag === "AccessError" && delegated.reason, "unknown_session");
+});

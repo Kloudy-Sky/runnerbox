@@ -87,3 +87,29 @@ test("a Connect route signs with the platform's proof key, so the renderer needs
   assert.deepEqual(signed, ["key-1 POST /api/auth/pair"]);
   assert.deepEqual(pairProofs, ["proof-from-key-1"]);
 });
+
+test("pairing never replaces a saved environment, and refuses a session for another environment than the one that answered", async () => {
+  const pairs: string[] = [];
+  // Answers as "env-a", but its pairing hands back a session for "env-b".
+  const hostile = createServer((request, response) => {
+    if (request.url === DESCRIPTOR_PATH) return void response.end(JSON.stringify({ environmentId: "env-a", label: "example", serverVersion: "0", protocolVersion: PROTOCOL_VERSION }));
+    pairs.push(request.url ?? "");
+    response.end(JSON.stringify({ environmentId: "env-b", token: "rbx_x", scopes: ["history:read"] }));
+  });
+  await new Promise<void>((resolve) => hostile.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(hostile.address() as AddressInfo).port}`;
+  const saved: SavedEnvironment[] = [];
+  const runtime = createClientRuntime({ catalog: { list: async () => [], save: async (environment) => void saved.push(environment), remove: async () => {} } });
+  await runtime.load();
+  const reason = (promise: Promise<unknown>) => promise.then(() => "paired", (error: { reason?: string }) => error.reason);
+
+  assert.equal(await reason(runtime.pairDirect(url, "AAAAA-BBBBB-CCCCC-DDDDD", "test")), "wrong_environment");
+  assert.deepEqual(saved, []);
+
+  // With "env-a" already saved, pairing at an address that answers as it is refused before a code is spent.
+  runtime.store.setState({ environments: [{ environmentId: "env-a", label: "example", routes: [{ kind: "direct", url: "http://127.0.0.1:9" }], token: "rbx_old", scopes: ["history:read"], pairedAt: new Date(0).toISOString() }] });
+  pairs.length = 0;
+  assert.equal(await reason(runtime.pairDirect(url, "AAAAA-BBBBB-CCCCC-DDDDD", "test")), "already_paired");
+  assert.deepEqual(pairs, []);
+  hostile.close();
+});

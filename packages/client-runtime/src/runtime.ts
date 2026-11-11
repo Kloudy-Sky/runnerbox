@@ -140,7 +140,14 @@ export function createClientRuntime(platform: ClientPlatform) {
       Effect.gen(function* () {
         const baseUrl = yield* baseUrlFor(route);
         const descriptor = yield* fetchDescriptor(baseUrl);
+        // A server can name any environment ID, so pairing never replaces a saved one: forgetting it
+        // first is the way to pair it again.
+        if (store.getState().environments.some((saved) => saved.environmentId === descriptor.environmentId)) {
+          return yield* new ConnectionError({ reason: "already_paired" });
+        }
         const paired = yield* pairWithCode(baseUrl, code, label);
+        // The session must be for the environment that answered, not another it names.
+        if (paired.environmentId !== descriptor.environmentId) return yield* new ConnectionError({ reason: "wrong_environment" });
         return {
           environmentId: paired.environmentId,
           label: descriptor.label,
