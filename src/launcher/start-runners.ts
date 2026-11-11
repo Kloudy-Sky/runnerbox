@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
+import { refusePublicScope } from "../github/public-scope.ts";
 import { mintRegistration, removeRunner } from "../github/runner-registration.ts";
 import { installPaths } from "../host/install-paths.ts";
 import { buildInVm } from "../image/build-in-vm.ts";
@@ -106,13 +107,12 @@ export async function startRunners(configPath: string) {
       `${config.name}-${runner.name}`,
       runner.slots,
       {
-        mint: async (runnerName) =>
-          mintRegistration({
-            scope: config.scope,
-            token: await readTokenFile(config.tokenFile),
-            runnerName,
-            label: runner.label,
-          }),
+        // Checked before every registration, because a repository can be made public while this runs.
+        mint: async (runnerName) => {
+          const token = await readTokenFile(config.tokenFile);
+          if (!config.allowPublicRepos) await refusePublicScope(config.scope, token);
+          return mintRegistration({ scope: config.scope, token, runnerName, label: runner.label });
+        },
         runContainer: job.run,
         image: job.image,
         roomForJob,

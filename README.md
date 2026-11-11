@@ -68,6 +68,7 @@ Copy [`runnerbox.example.json`](runnerbox.example.json) to start. To run it as a
 
 - `name` prefixes this install's containers and runners, so give each install on a VM its own.
 - `scope` is `{ "org": "name" }` or `{ "repo": "owner/name" }`. Prefer the narrowest one that works.
+- `allowPublicRepos` is `false` unless you set it. While it's off, `up` checks GitHub before every registration and starts no runner for a public repository, or for an org whose default runner group allows public repositories. If GitHub doesn't answer, no runner starts either. The check uses the same token: repository metadata for a repo scope, and the runner group's settings for an org.
 - `tokenFile` must have `600` permissions. Use a fine-grained token that can only do this: "Self-hosted runners: Read and write" on the organization, or "Administration: Read and write" on one repository. The repository permission can do far more than mint runners, so an org token is safer when you have an org. There's no fallback to your `gh` login.
 - `vm.knownHostsFile` must already hold the VM's host key. SSH refuses to connect otherwise.
 - `memoryFloor` is the memory, in MiB, that the host and the VM must each have available before a slot registers a runner. While either is below its floor, slots wait, and a runner still waiting for a job is removed. A runner that's already running a job keeps it. Runners that registered while memory was fine can still take jobs that arrive at the same moment, so set the VM's floor to at least one job's `memoryReservation`. `0` turns a check off.
@@ -155,7 +156,7 @@ Use tagged releases only.
 
 ## Security
 
-Read the [threat model](docs/threat-model.md) before you run this. Never use these runners with a public repository.
+Read the [threat model](docs/threat-model.md) before you run this. Never use these runners with a public repository. `up` refuses one unless you set `allowPublicRepos`.
 
 ## License
 

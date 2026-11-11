@@ -25,6 +25,10 @@ test("the example config is valid", async () => {
   assert.equal((await example()).name, "example");
 });
 
+test("public repositories are refused unless the config says otherwise", async () => {
+  assert.equal((await example()).allowPublicRepos, false);
+});
+
 test("a typo in a limit is rejected, not ignored", async () => {
   const [runner] = (await example()).runners;
   assert.ok(LauncherConfig(await withRunner({ limits: { ...runner?.limits, memmory: "1g" } })) instanceof type.errors);
