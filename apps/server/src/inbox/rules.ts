@@ -155,7 +155,7 @@ const VERDICT_TITLE: Record<Verdict, string> = {
   infra: "failed on the machine",
   flaky: "is flaky",
   code: "fails in its code",
-  unconfirmed: "failed",
+  unconfirmed: "failed once",
 };
 
 function failureItems(input: InboxInput): InboxItem[] {
@@ -236,7 +236,7 @@ function noRunnerItems(input: InboxInput): InboxItem[] {
       verdict: null,
       repo: latest.repo,
       install: null,
-      title: `${group.length} ${group.length === 1 ? "job" : "jobs"} on ${label} waited over ${STARVED_AFTER_MS / 60_000}m and never got a runner`,
+      title: `${group.length} ${group.length === 1 ? "job" : "jobs"} on ${label} waited at least ${STARVED_AFTER_MS / 60_000}m and never got a runner`,
       detail: !ours
         ? "This machine doesn't serve that label."
         : reasons.length > 0
