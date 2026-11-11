@@ -106,12 +106,18 @@ const make = Effect.gen(function* () {
     return summary({ header, items: [] });
   });
 
+  // Uninterruptible, so a Stop can't land between logging an item, publishing it and updating
+  // the turn: what the user saw stream is either logged here or kept by `endTurn`.
   const record = (id: string, turn: Running, make: (seq: number, at: string) => ThreadItem) =>
     lock.withPermits(1)(
-      Effect.gen(function* () {
-        yield* appendUnlocked(id, make(turn.nextSeq, yield* nowIso));
-        turn.nextSeq += 1;
-      }),
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          const item = make(turn.nextSeq, yield* nowIso);
+          yield* appendUnlocked(id, item);
+          turn.nextSeq += 1;
+          if (item._tag === "AgentText") turn.partial = "";
+        }),
+      ),
     );
 
   const onEvent = (id: string, turn: Running) => (event: ProviderEvent) => {
@@ -125,7 +131,6 @@ const make = Effect.gen(function* () {
           }),
         );
       case "Text":
-        turn.partial = "";
         return event.text.trim() === "" ? Effect.void : record(id, turn, (seq, at) => ({ _tag: "AgentText", seq, turnId, text: event.text, at }));
       case "ToolCall":
         return record(id, turn, (seq, at) => ({ _tag: "ToolCall", seq, turnId, name: event.name, input: JSON.stringify(event.input ?? {}).slice(0, MAX_TOOL_INPUT), at }));

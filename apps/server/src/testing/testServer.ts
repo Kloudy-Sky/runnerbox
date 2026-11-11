@@ -12,10 +12,10 @@ import * as AuthStore from "../auth/AuthStore.ts";
 import * as CloudLink from "../cloud/CloudLink.ts";
 import { layerApp } from "../server.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
+import { writeFixtures } from "./fixtures.ts";
 
 // Tests never reach a real provider: a server without a scripted one has none available.
 const makeFakeProviderUnavailable = () => makeFakeProvider({ turns: [], available: false });
-import { writeFixtures } from "./fixtures.ts";
 
 const freePort = () =>
   new Promise<number>((resolve) => {
