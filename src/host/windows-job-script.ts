@@ -1,13 +1,38 @@
 import type { HostInstall } from "../launcher/launcher-config.ts";
 import { psQuote, windowsPaths } from "./windows-paths.ts";
 
-// The folders a standard user can write outside its profile.
-const SHARED = ["C:\\Users\\Public", "C:\\Windows\\Temp", "C:\\ProgramData"];
+// Folders on the system drive where a standard user can write only in the few places listed in
+// OPEN, so cleanup doesn't walk the rest of them.
+const CLOSED = ["C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)", "C:\\Users"];
+
+// The places inside those folders that Windows leaves writable to every user.
+const OPEN = [
+  "C:\\Users\\Public",
+  "C:\\Windows\\Temp",
+  "C:\\Windows\\Tasks",
+  "C:\\Windows\\tracing",
+  "C:\\Windows\\debug\\WIA",
+  "C:\\Windows\\Registration\\CRMLog",
+  "C:\\Windows\\System32\\Tasks",
+  "C:\\Windows\\System32\\FxsTmp",
+  "C:\\Windows\\System32\\com\\dmp",
+  "C:\\Windows\\System32\\Microsoft\\Crypto\\RSA\\MachineKeys",
+  "C:\\Windows\\System32\\spool\\PRINTERS",
+  "C:\\Windows\\System32\\spool\\SERVERS",
+  "C:\\Windows\\System32\\spool\\drivers\\color",
+  "C:\\Windows\\SysWOW64\\Tasks",
+  "C:\\Windows\\SysWOW64\\FxsTmp",
+  "C:\\Windows\\SysWOW64\\com\\dmp",
+];
 
 // The script that runs one job on Windows, as SYSTEM, when the owner starts its scheduled task. It
 // takes the single-use registration from a folder only the owner and SYSTEM can open, and wipes the
 // job user before and after the job: a job that leaves a process, a task or a file behind could
 // otherwise read the next job's secrets. It always writes a result, which is what `up` waits for.
+//
+// The file cleanup removes what the job user owns: everywhere on the system drive outside CLOSED,
+// in each OPEN folder, and at the top of C:\Users and of every other fixed drive. It doesn't look
+// deeper on other drives, or anywhere else inside CLOSED.
 export function windowsJobScript(config: HostInstall) {
   const paths = windowsPaths(config);
   const q = psQuote;
@@ -19,48 +44,80 @@ $jobTask = ${q(paths.jobTask)}
 $spool = ${q(paths.spool)}
 $handoff = ${q(paths.handoff)}
 $firewallGroup = ${q(paths.firewallGroup)}
-$shared = @(${SHARED.map(q).join(", ")})
+$closed = @(${CLOSED.map(q).join(", ")})
+$open = @(${OPEN.map(q).join(", ")})
 
-function Get-JobProcesses($sid) {
-  Get-CimInstance Win32_Process | Where-Object {
-    $owner = Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid -ErrorAction SilentlyContinue
-    $owner -and $owner.Sid -eq $sid
+# One call for the whole process list. Asking each process for its owner took minutes.
+function Get-JobProcesses($account) {
+  Get-Process -IncludeUserName | Where-Object { $_.UserName -eq $account }
+}
+
+# A standard user can register tasks of its own, which would run again at the next job. Whatever
+# they're called and whoever they run as, they name its SID as their owner or in their permissions.
+function Remove-JobTasks($folder, $sid, $account) {
+  foreach ($task in @($folder.GetTasks(1))) {
+    if ($task.Path -eq "\\$jobTask") { continue }
+    $runsAs = try { $task.Definition.Principal.UserId } catch { '' }
+    if ($runsAs -in $sid, $account, $jobUser -or $task.GetSecurityDescriptor(5) -match "$sid(\\D|$)") { $folder.DeleteTask($task.Name, 0) }
+  }
+  foreach ($child in @($folder.GetFolders(0))) {
+    Remove-JobTasks $child $sid $account
+    if ($child.GetSecurityDescriptor(5) -match "$sid(\\D|$)") { $folder.DeleteFolder($child.Name, 0) }
   }
 }
 
-# Asks for the owner alone, which is many times faster than Get-Acl over a folder like ProgramData.
-function Test-OwnedBy($item, $sid) {
-  try { $item.GetAccessControl('Owner').GetOwner([Security.Principal.SecurityIdentifier]).Value -eq $sid } catch { $false }
+function Test-Link($entry) { [bool]($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) }
+function Test-Folder($entry) { ($entry.Attributes -band [IO.FileAttributes]::Directory) -and -not (Test-Link $entry) }
+
+# Links are deleted, never followed: a job could point one at the owner's files.
+function Remove-Tree($entry) {
+  if (Test-Folder $entry) { foreach ($child in @($entry.EnumerateFileSystemInfos())) { Remove-Tree $child } }
+  if (-not (Test-Link $entry)) { $entry.Attributes = $entry.Attributes -band -bnot [IO.FileAttributes]::ReadOnly }
+  $entry.Delete()
+}
+
+# Removes what the job user owns in a folder, and below it unless told to stay at the top.
+function Remove-Owned($folder, $sid, [switch]$TopOnly) {
+  # A folder SYSTEM can't list is one the job user couldn't have written in either.
+  $entries = try { @($folder.EnumerateFileSystemInfos()) } catch { @() }
+  foreach ($entry in $entries) {
+    # Asking for the owner alone is many times faster than Get-Acl.
+    $owner = try { $entry.GetAccessControl('Owner').GetOwner([Security.Principal.SecurityIdentifier]).Value } catch { '' }
+    if ($owner -eq $sid) { Remove-Tree $entry }
+    elseif (-not $TopOnly -and (Test-Folder $entry) -and $entry.FullName.Substring(4) -notin $closed) { Remove-Owned $entry $sid }
+  }
 }
 
 function Clear-JobUser($sid) {
+  $account = (New-Object Security.Principal.SecurityIdentifier($sid)).Translate([Security.Principal.NTAccount]).Value
   Stop-ScheduledTask -TaskName $jobTask -ErrorAction SilentlyContinue
-  # A standard user can register tasks of its own, which would run again at the next job.
-  Get-ScheduledTask | Where-Object { $_.TaskName -ne $jobTask -and $_.Principal.UserId -match "(^|\\\\)$([regex]::Escape($jobUser))$" } |
-    Unregister-ScheduledTask -Confirm:$false -ErrorAction SilentlyContinue
+  $service = New-Object -ComObject Schedule.Service
+  $service.Connect()
+  Remove-JobTasks $service.GetFolder('\\') $sid $account
   foreach ($attempt in 1..5) {
-    $left = @(Get-JobProcesses $sid)
+    $left = @(Get-JobProcesses $account)
     if ($left.Count -eq 0) { break }
-    $left | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    $left | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
   }
-  if (@(Get-JobProcesses $sid).Count -gt 0) { throw "$jobUser still has processes running." }
-  # The profile holds its files, its registry and its saved credentials.
-  $userProfile = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }
-  if ($userProfile) {
+  if (@(Get-JobProcesses $account).Count -gt 0) { throw "$jobUser still has processes running." }
+  # The profile holds its files, its registry and its saved credentials. Windows keeps it loaded
+  # for a moment after the last process ends.
+  foreach ($attempt in 1..10) {
+    $userProfile = Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $sid }
+    if (-not $userProfile) { break }
     $profilePath = $userProfile.LocalPath
-    Remove-CimInstance -InputObject $userProfile
-    if ($profilePath -and (Test-Path -LiteralPath $profilePath)) { throw "couldn't remove $profilePath." }
+    try { Remove-CimInstance -InputObject $userProfile } catch { if ($attempt -eq 10) { throw }; Start-Sleep -Seconds 2 }
   }
-  foreach ($root in $shared) {
-    Get-ChildItem -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue |
-      Where-Object { Test-OwnedBy $_ $sid } |
-      Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
+  if ($profilePath -and (Test-Path -LiteralPath $profilePath)) { throw "couldn't remove $profilePath." }
+  # The \\\\?\\ form reaches paths longer than 260 characters, where a job could otherwise hide files.
+  Remove-Owned ([IO.DirectoryInfo]'\\\\?\\C:\\') $sid
+  Remove-Owned ([IO.DirectoryInfo]'\\\\?\\C:\\Users') $sid -TopOnly
+  foreach ($path in $open) { if (Test-Path -LiteralPath $path) { Remove-Owned ([IO.DirectoryInfo]"\\\\?\\$path") $sid } }
+  foreach ($drive in [IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType -eq 'Fixed' -and $_.IsReady -and $_.Name -ne 'C:\\' }) {
+    Remove-Owned ([IO.DirectoryInfo]"\\\\?\\$($drive.Name)") $sid -TopOnly
   }
-  # Anyone signed in can also create a folder at the top of the system drive.
-  Get-ChildItem -LiteralPath 'C:\\' -Force -ErrorAction SilentlyContinue | Where-Object { Test-OwnedBy $_ $sid } |
-    Remove-Item -Force -Recurse -ErrorAction SilentlyContinue
-  Get-ChildItem -LiteralPath $handoff -Force | Remove-Item -Force -Recurse
+  foreach ($entry in @(([IO.DirectoryInfo]"\\\\?\\$handoff").EnumerateFileSystemInfos())) { Remove-Tree $entry }
 }
 
 $code = 1
@@ -86,7 +143,10 @@ try {
   Start-ScheduledTask -TaskName $jobTask
   Start-Sleep -Seconds 5
   while ((Get-ScheduledTask -TaskName $jobTask).State -eq 'Running') { Start-Sleep -Seconds 2 }
-  if (Test-Path -LiteralPath "$handoff\\exit") { $code = [int](Get-Content -Raw -LiteralPath "$handoff\\exit").Trim() }
+  if (-not (Test-Path -LiteralPath "$handoff\\exit")) {
+    throw ("$jobTask didn't run job.ps1 (last result 0x{0:x}). Run setup.ps1 again." -f (Get-ScheduledTaskInfo -TaskName $jobTask).LastTaskResult)
+  }
+  $code = [int](Get-Content -Raw -LiteralPath "$handoff\\exit").Trim()
   if (Test-Path -LiteralPath "$handoff\\runner.log") { Copy-Item -LiteralPath "$handoff\\runner.log" -Destination "$spool\\runner.log" -Force }
 } catch {
   Set-Content -LiteralPath "$spool\\error.log" -Value "$(Get-Date -Format o) run-job: $_"

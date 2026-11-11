@@ -58,6 +58,30 @@ if ($account) {
 $jobSid = $account.SID.Value
 if ($jobSid -eq $ownerSid) { throw "The job user can't be your own account." }
 if (Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object { $_.SID.Value -eq $jobSid }) { throw "$jobUser is an administrator. Pick another name." }
+# A task that runs with a stored password needs the "Log on as a batch job" right. Standard users
+# don't have it and Register-ScheduledTask doesn't give it; without it the job task never starts.
+# Windows has no command for this, so it's the LSA call itself. Adding a right twice is harmless.
+Add-Type -Namespace Runnerbox -Name Lsa -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)] public struct Text { public ushort Length; public ushort MaximumLength; [MarshalAs(UnmanagedType.LPWStr)] public string Buffer; }
+[DllImport("advapi32.dll")] public static extern uint LsaOpenPolicy(IntPtr system, byte[] attributes, uint access, out IntPtr policy);
+[DllImport("advapi32.dll")] public static extern uint LsaAddAccountRights(IntPtr policy, byte[] sid, Text[] rights, uint count);
+[DllImport("advapi32.dll")] public static extern uint LsaClose(IntPtr policy);
+[DllImport("advapi32.dll")] public static extern int LsaNtStatusToWinError(uint status);
+'@
+$right = New-Object Runnerbox.Lsa+Text
+$right.Buffer = 'SeBatchLogonRight'
+$right.Length = 2 * $right.Buffer.Length
+$right.MaximumLength = $right.Length + 2
+$sidBytes = New-Object byte[] $account.SID.BinaryLength
+$account.SID.GetBinaryForm($sidBytes, 0)
+$policy = [IntPtr]::Zero
+# The attributes are unused and must be zero. The access asked for is: create account, look up names.
+$status = [Runnerbox.Lsa]::LsaOpenPolicy([IntPtr]::Zero, (New-Object byte[] 48), 0x810, [ref]$policy)
+if ($status -eq 0) {
+  $status = [Runnerbox.Lsa]::LsaAddAccountRights($policy, $sidBytes, @($right), 1)
+  [void][Runnerbox.Lsa]::LsaClose($policy)
+}
+if ($status -ne 0) { throw "couldn't let $jobUser log on as a batch job (error $([Runnerbox.Lsa]::LsaNtStatusToWinError($status)))." }
 $hidden = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\SpecialAccounts\\UserList'
 # -Force on a key that exists would empty it, and with it anyone else's hidden accounts.
 if (-not (Test-Path -LiteralPath $hidden)) { New-Item -Path $hidden -Force | Out-Null }
