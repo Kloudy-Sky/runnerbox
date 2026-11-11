@@ -40,9 +40,9 @@ const RunnerType = type({
   // Jobs get their own Docker daemon: the container runs under sysbox, and its image starts the
   // daemon, as runnerbox-base-docker does. The VM needs sysbox installed.
   "docker?": "boolean",
+  "allowedWorkflows?": AllowedWorkflows,
   // The size of the VM each of this kind's jobs gets to itself. The container and its limits still
   // apply inside it. Needs the install's `jobVms`.
-  "allowedWorkflows?": AllowedWorkflows,
   "vm?": { "+": "reject", cpus: "1 <= number.integer <= 64", memoryMiB: "number.integer >= 1024" },
 });
 

@@ -23,7 +23,7 @@ export function dockerRunCommand(installName: string, runner: RunnerType, slot: 
   // Written in the VM user's home and mounted read-only. If it can't be written, no container starts.
   const hook = `.runnerbox/${containerName(installName, name, slot)}.job-started.sh`;
   const writeHook = allowedWorkflows
-    ? `mkdir -p .runnerbox && printf %s ${shellQuote(jobStartedHook(allowedWorkflows))} > ${hook} && `
+    ? `mkdir -p .runnerbox && printf %s ${shellQuote(jobStartedHook(allowedWorkflows))} > ${shellQuote(hook)} && `
     : "";
   return [
     `docker rm -f ${container} >/dev/null 2>&1; ${writeHook}exec docker run --rm -i --name ${container}`,
