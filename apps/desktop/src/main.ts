@@ -15,7 +15,9 @@ const SCHEME = "runnerbox";
 const ORIGIN = `${SCHEME}://app`;
 // Set by `pnpm dev:desktop` to load the UI from Vite instead of the built files.
 const DEV_URL = process.env.RUNNERBOX_DESKTOP_DEV_URL;
-const WEB_DIST = resolve(__dirname, "../../web/dist");
+// The built web client: inside the app when packaged (scripts/dist.ts puts it there), or the
+// workspace's own build when run from a checkout.
+const WEB_DIST = app.isPackaged ? join(__dirname, "web") : resolve(__dirname, "../../web/dist");
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
 
 // A separate profile directory, for running the app without touching the usual one.
