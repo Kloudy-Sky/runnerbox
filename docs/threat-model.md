@@ -15,10 +15,13 @@ Anything that runs in a job may be hostile, including a compromised dependency. 
 | The host, LAN and tailnet | A job or VM reaches them | A libvirt network filter on the VM's interface drops traffic to private ranges, link-local and CGNAT addresses, multicast, broadcast and all IPv6. The VM may reach the host's DNS. Only the host may SSH in. | Tested in CI, except IPv6, which CI's network can't show |
 | Link-local cloud metadata | A job reads instance credentials | The same filter drops 169.254.0.0/16. | Tested in CI |
 | Other machines on the bridge | Root in the VM spoofs the gateway's or another guest's address | The filter only lets the VM send from its own MAC and reserved IP, in both IP and ARP. | Coded |
-| The machine | A stranger's pull request on a public repository runs their code | Before minting each registration, `up` refuses a public repository, or an org whose default runner group, the one its runners join, allows public repositories. It also refuses if GitHub doesn't answer within 30 seconds or doesn't say. A refused slot starts no runner and tries again a minute later. Setting `allowPublicRepos` turns this off. | Coded |
+| The machine | A stranger's pull request on a public repository runs their code | Before minting each registration, `up` refuses a public repository, or an org whose default runner group, the one its runners join, allows public repositories. It also refuses if GitHub doesn't answer within 30 seconds or doesn't say. A refused slot starts no runner and tries again a minute later. Setting `allowPublicRepos` turns this off, and an install whose jobs share a VM can't set it. | Coded |
 | Later jobs | Files left behind by an earlier job | Each job gets a fresh container, removed at the end. | Tested |
 | The VM's Docker daemon | A job takes it over | Containers never get the VM's Docker socket. | Tested |
 | The VM, from a job with its own Docker | A job uses its Docker daemon to escape to the VM | Runner kinds with `"docker": true` run under the sysbox runtime, never `--privileged`. Each job's daemon lives inside its own container, whose root maps to an unprivileged user on the VM, and goes with the container. Containers the job starts stay behind the VM's network filter. A kernel or sysbox bug still breaks this, as it would any container. | Tested in CI |
+| Other jobs, from a job that escapes its container | It reads a neighbour's secrets, or stays to read a later job's | With `jobVms`, each job runs in a VM of its own, booted from a copy of the builder's disk and destroyed with its disk when the job ends, whatever the job did to it. Each slot starts by destroying what it left behind. | Tested in CI |
+| The disk job VMs boot from | A job changes it, so later jobs start compromised | Jobs never run in the builder. Its disk is copied while it's shut down, and a job VM writes to its own thin layer over the copy. Only your image builds run in the builder. | Tested in CI |
+| Other job VMs | A job VM reaches or impersonates another | Every job VM's interface has the same filter as the builder's, pinned to that VM's own MAC and reserved address, so they can't reach each other, the builder or the host. | Tested in CI, except the spoofing rules, which are Coded |
 | Other jobs' CPU, memory and processes | One job starves the rest | Each container has CPU, memory and process limits. These limit the damage but don't stop it, because memory can be overcommitted. | Tested |
 | The host and VM's memory | Overcommitted jobs push both into swap | `up` registers a runner only while the host's and VM's `MemAvailable` are above `memoryFloor`, and removes idle runners when memory drops. It can't take back a job a runner already has. | Coded |
 | The token `report` syncs with | A job or VM reads it and uses it on the repository | It lives only on the host, in an owner-only `~/.config/runnerbox/report.env` read by the report timer, and never reaches the VM. It needs only read access to Actions, so it can't mint runners or change code. | Coded |
@@ -63,9 +66,9 @@ What a host install doesn't protect, on top of the list below:
 
 ## What isn't protected
 
-**Container escape.** This is the risk to think about first. Only the container is thrown away. The VM persists between jobs, concurrent jobs share its kernel and Docker daemon, and jobs have passwordless sudo inside their container. A kernel or container runtime bug would let a job read a neighbouring job's secrets and stay in the VM to read later ones. It doesn't need to break out of the VM to do this.
+**Container escape, when jobs share a VM.** This is the risk to think about first, and `jobVms` is the answer to it. Without `jobVms`, only the container is thrown away. The VM persists between jobs, concurrent jobs share its kernel and Docker daemon, and jobs have passwordless sudo inside their container. A kernel or container runtime bug would let a job read a neighbouring job's secrets and stay in the VM to read later ones. It doesn't need to break out of the VM to do this.
 
-**VM escape.** A hypervisor bug gives a job the host, including the token that mints runners, plus everything else on that machine.
+**VM escape.** A hypervisor bug gives a job the host, including the token that mints runners, plus everything else on that machine. A VM for each job doesn't change this. With `jobVms`, `up` itself manages libvirt, so the user it runs as can do anything root can on the host. That user already holds the token, so keep it for runnerbox alone.
 
 **The internet.** Jobs can reach any public address, and the VM's DNS can carry data out too. A job can send out anything it can read, including its own secrets.
 
@@ -75,9 +78,26 @@ What a host install doesn't protect, on top of the list below:
 
 **Secrets given to a job.** Everything in the job can read them, including every dependency it installs.
 
-**The registration inside the VM.** The entrypoint passes it to the runner as an argument, so every step of the job, and root in the VM, can read it with `ps`. Passing it in an environment variable wouldn't help, because jobs run as the same user with sudo and could read it from `/proc`. It works for one job, the one already running, which limits what it's worth.
+**The registration inside the VM.** The entrypoint passes it to the runner as an argument, so every step of the job, and root in the VM, can read it with `ps`. In a job's own VM, that's only the job itself. Passing it in an environment variable wouldn't help, because jobs run as the same user with sudo and could read it from `/proc`. It works for one job, the one already running, which limits what it's worth.
 
-**Public repositories, if you allow them.** Anyone can open a pull request on one, and that can run their code on your machine. `up` refuses them by default, so leave `allowPublicRepos` off, and restrict the runner group to the repositories that need it.
+**Public repositories, if you allow them.** Anyone can open a pull request on one, and that can run their code on your machine. A pull request can also change the workflow, so it can ask for your label whatever your workflow says. `up` refuses them by default, so leave `allowPublicRepos` off unless you mean to serve one, and restrict the runner group to the repositories that need it.
+
+Only an install with `jobVms` can set `allowPublicRepos`. A VM for each job takes away what a stranger's job could do to your other jobs, and nothing else. A job you let run can still:
+
+- use the machine for as long as its timeout allows, and fill its own disk;
+- reach anything on the public internet from your address, so scanning, spam or mining is traced to you;
+- reach public addresses of your own machines;
+- take the host with a hypervisor bug.
+
+So if you serve a public repository:
+
+- Set the repository's Actions settings to require approval for all external contributors, and read a pull request's changes, workflow files included, before you approve. Approving it runs it.
+- Keep secrets out of jobs that pull requests trigger, and never use `pull_request_target` to run a pull request's code. That hands a stranger's code your secrets on any runner.
+- Give each job a `timeout-minutes`.
+- In an organization, a runner group serves public repositories only if you allow it. Allow it for the group these runners are in and no other, and limit that group to the repositories that need it.
+- Don't share the host with anything you can't afford to expose.
+
+An approval is one person's judgment each time. For job VMs there is no control yet that stops a job by its workflow, as `allowedWorkflows` does for host installs, and none that limits what a job may reach on the internet.
 
 **Forks of private repositories, and what changes after a check.** The check looks at the repository or runner group when a registration is minted, not at the job. If a private repository is set to run workflows from fork pull requests, those jobs still run here. A repository made public, or a runner group opened to public repositories, after a registration is minted can still send that registration its one job.
 
@@ -89,7 +109,7 @@ What a host install doesn't protect, on top of the list below:
 
 **A shell on the server's machine.** Anyone who can run commands as the server's user can mint a pairing code and read every log directly, so the server adds no boundary against them.
 
-**Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed. `memoryFloor` keeps new runners from registering while the host or VM is short, but it can't take a job back once a runner has it.
+**Availability.** A job can use its full share of the machine for as long as its timeout allows, and heavy jobs running together can swap or be killed. `memoryFloor` keeps new runners from registering while the host or VM is short, but it can't take a job back once a runner has it. A job VM's disk can grow to the builder's full size, so a pool without that much room for every slot can be filled by one job, which pauses the others.
 
 ## What we recommend
 
@@ -97,6 +117,7 @@ What a host install doesn't protect, on top of the list below:
 - Don't share the host with anything you can't afford to expose.
 - Give the host a token that can only manage runners, not an admin login. A repository-scoped token needs the Administration permission, which can do much more, so prefer an org-scoped one.
 - Give a host install `allowedWorkflows`, and keep it to workflows that only run from protected branches and tags. Signing keys a job is given sit on that machine for the length of the job.
+- Use `jobVms` for anything you wouldn't run next to a stranger's code.
 - Give each install on a VM its own `name`. Installs sharing a name remove each other's containers, and installs sharing a VM still share everything in the container escape risk above.
 
 ## Runnerbox Connect

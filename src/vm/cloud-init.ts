@@ -35,9 +35,12 @@ export function userData({ name, swapGiB }: VmConfig, sshPublicKey: string) {
 
 export const metaData = ({ name }: VmConfig) => `instance-id: ${yaml(name)}\nlocal-hostname: ${yaml(name)}\n`;
 
+// The DHCP identity is the MAC, not the machine id, because job VMs are copies of this VM and
+// share its machine id. With the default, the network would take them all for one machine.
 export const NETWORK_CONFIG = `version: 2
 ethernets:
   id0:
     match: {name: "en*"}
     dhcp4: true
+    dhcp-identifier: mac
 `;

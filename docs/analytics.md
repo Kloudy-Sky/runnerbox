@@ -22,6 +22,8 @@ Everything runnerbox records stays on the host, in `~/.local/state/runnerbox/` (
 
 `containers` lists every container in the VM, from `docker stats`. Each has a `name`, its `cpuPercent` and its `memMiB`. Another launcher's containers are included, so the two can be compared. It's absent when Docker didn't answer within 10 seconds, and empty when no containers were running.
 
+With `jobVms`, `vm` is the builder and `containers` are its image builds. Job VMs aren't sampled yet.
+
 A field that couldn't be read is absent, never `0`. A missing `host` means `/proc` wasn't readable; a missing `vm` means SSH failed. A sampler's first sample has no `cpuBusyPercent`.
 
 ## Events

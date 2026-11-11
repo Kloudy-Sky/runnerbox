@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
-import type { VmInstall } from "../launcher/launcher-config.ts";
 import { runWithSecret } from "../launcher/run-with-secret.ts";
 
-type Vm = VmInstall["vm"];
+// The VM from the config, or a job VM at another address with the same login. A job VM is a copy
+// of the builder, so it has the builder's host key, which known_hosts lists under `hostKeyAlias`.
+export type Vm = { host: string; keyFile: string; knownHostsFile: string; hostKeyAlias?: string };
 
 type VmCommand = {
   vm: Vm;
@@ -19,6 +20,7 @@ export function sshArgs(vm: Vm, command: string) {
     "-o", "BatchMode=yes",
     "-o", "StrictHostKeyChecking=yes",
     "-o", `UserKnownHostsFile=${vm.knownHostsFile}`,
+    ...(vm.hostKeyAlias ? ["-o", `HostKeyAlias=${vm.hostKeyAlias}`] : []),
     "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=4",
     vm.host,
