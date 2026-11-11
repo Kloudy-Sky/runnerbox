@@ -18,7 +18,7 @@ import { stateDir } from "../tracking/state-dir.ts";
 import { readFromVm, runInVm } from "../vm/run-in-vm.ts";
 import { dockerRunCommand, shellQuote } from "./docker-command.ts";
 import { every } from "./every.ts";
-import { loadLauncherConfig, type RunnerType, type VmInstall } from "./launcher-config.ts";
+import { loadLauncherConfig, type MemoryFloor, type RunnerType, type VmInstall } from "./launcher-config.ts";
 import { checkMemoryFloor, memAvailableMiB, vmStatAvailableMiB } from "./memory-floor.ts";
 import { createMemoryLine } from "./memory-line.ts";
 import { runSlots } from "./run-slots.ts";
@@ -59,15 +59,17 @@ export async function startRunners(configPath: string) {
   const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners);
   void slotState.flush();
   every(HEARTBEAT_MS, slotState.heartbeat);
-  // One floor for every runner type, so together they can't overload the machines.
-  const roomForJob = () =>
+  // Every runner type checks the install's floor unless it sets its own, so together they can't
+  // overload the machines. A host install has no VM, so its VM floor is 0, which skips that check.
+  const installFloor: MemoryFloor = { vmMiB: 0, ...config.memoryFloor };
+  const roomForJob = (floor: MemoryFloor) =>
     checkMemoryFloor([
-      { name: "host", floorMiB: config.memoryFloor.hostMiB, availableMiB: hostAvailableMiB },
+      { name: "host", floorMiB: floor.hostMiB, availableMiB: hostAvailableMiB },
       ...("vm" in config
         ? [
             {
               name: "VM",
-              floorMiB: config.memoryFloor.vmMiB,
+              floorMiB: floor.vmMiB,
               availableMiB: async () => memAvailableMiB(await readFromVm({ vm: config.vm, command: "cat /proc/meminfo" })),
             },
           ]
@@ -104,8 +106,13 @@ export async function startRunners(configPath: string) {
     });
   }
 
-  const startSlots = (runner: { name: string; label: string; slots: number }, index: number, job: Job) =>
-    runSlots(
+  const startSlots = (
+    runner: { name: string; label: string; slots: number; memoryFloor?: MemoryFloor },
+    index: number,
+    job: Job,
+  ) => {
+    const floor = runner.memoryFloor ?? installFloor;
+    return runSlots(
       `${config.name}-${runner.name}`,
       runner.slots,
       {
@@ -117,8 +124,8 @@ export async function startRunners(configPath: string) {
         },
         runContainer: job.run,
         image: job.image,
-        roomForJob,
-        joinLine,
+        roomForJob: () => roomForJob(floor),
+        joinLine: () => joinLine(floor),
         release: (runnerId) => remove(runnerId).then(() => true, () => false),
         every,
         wait: async (ms) => void (await wait(ms)),
@@ -130,6 +137,7 @@ export async function startRunners(configPath: string) {
       },
       registered[index],
     );
+  };
 
   if ("vm" in config) {
     // With job VMs, the VM in the config only builds images, and it does one thing at a time.
@@ -139,7 +147,7 @@ export async function startRunners(configPath: string) {
       config.runners.map(async (runner, index) => {
         const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
         const onImage = (current: string | null, building: string | null) => slotState.image(runner.name, current, building);
-        const image = await keepImage(config, runner, roomForJob, recordForType, () => stopping, onImage, inBuilder);
+        const image = await keepImage(config, runner, () => roomForJob(installFloor), recordForType, () => stopping, onImage, inBuilder);
         // Draining before this kind's image was ever ready, so it has no slots to wait for.
         if (!image) return;
         await startSlots(runner, index, {

@@ -11,6 +11,11 @@ const MemorySize = type("/^[0-9]+[bkmg]$/");
 // Any other job fails before its first step. Without this, every job that asks for the label runs.
 const AllowedWorkflows = type("/^[\\w.\\/@*-]+$/").array().atLeastLength(1);
 
+// MemAvailable each machine must have before a slot registers a runner. 0 turns a check off.
+const MemoryFloor = type({ "+": "reject", hostMiB: "number.integer >= 0", vmMiB: "number.integer >= 0" });
+
+export type MemoryFloor = typeof MemoryFloor.infer;
+
 // One kind of runner: the label jobs ask for, and the container that serves them.
 const RunnerType = type({
   "+": "reject",
@@ -44,6 +49,8 @@ const RunnerType = type({
   // The size of the VM each of this kind's jobs gets to itself. The container and its limits still
   // apply inside it. Needs the install's `jobVms`.
   "vm?": { "+": "reject", cpus: "1 <= number.integer <= 64", memoryMiB: "number.integer >= 1024" },
+  // Replaces the install's floor for this kind, so a kind of small jobs can start while bigger ones wait.
+  "memoryFloor?": MemoryFloor,
 });
 
 export type RunnerType = typeof RunnerType.infer;
@@ -69,9 +76,8 @@ export const VmInstall = type({
     keyFile: AbsolutePath,
     knownHostsFile: AbsolutePath,
   },
-  // MemAvailable each machine must have before any slot registers a runner. Every runner type
-  // checks the same floor, so together they share the machine. 0 turns a check off.
-  memoryFloor: { "+": "reject", hostMiB: "number.integer >= 0", vmMiB: "number.integer >= 0" },
+  // Every runner type checks this floor unless it sets its own, so together they share the machine.
+  memoryFloor: MemoryFloor,
   // Runs every job in its own VM, a copy of the VM above, which then only builds images. `builder`
   // is that VM's libvirt domain, and each slot needs one of `addresses`, free in `network`.
   "jobVms?": {
@@ -110,7 +116,7 @@ const HostInstall = type({
     // A standard OS user that exists only to run jobs. `host render` writes the script that creates it.
     user: "/^[a-z_][a-z0-9_]{0,19}$/",
   },
-  memoryFloor: { "+": "reject", hostMiB: "number.integer >= 0" },
+  memoryFloor: MemoryFloor.omit("vmMiB"),
   // One kind, because every job runs as the same user and cleanup removes all that user's work.
   runners: HostRunnerType.array().exactlyLength(1),
 });
@@ -147,7 +153,9 @@ function checkJobVms(config: VmInstall, fail: (problem: string) => Error) {
   // One install can't mix the two, because copying the builder's disk shuts it down, and that would
   // kill a job running in it.
   if (!runners.every((runner) => runner.vm)) throw fail("with `jobVms`, every runner needs `vm`.");
-  if (config.memoryFloor.vmMiB !== 0) throw fail("with `jobVms`, set memoryFloor.vmMiB to 0. Jobs don't run in that VM.");
+  if ([config, ...runners].some(({ memoryFloor }) => memoryFloor && memoryFloor.vmMiB !== 0)) {
+    throw fail("with `jobVms`, set every memoryFloor.vmMiB to 0. Jobs don't run in that VM.");
+  }
   const { addresses, gateway } = jobVms;
   if (new Set([...addresses, gateway]).size !== addresses.length + 1) {
     throw fail("jobVms.addresses must differ from each other and from the gateway.");

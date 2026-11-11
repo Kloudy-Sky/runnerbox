@@ -1,6 +1,6 @@
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
 import type { SlotPhase } from "./slot-state.ts";
-import type { JoinMemoryLine } from "./memory-line.ts";
+import type { MemoryTurn } from "./memory-line.ts";
 
 const MINT_RETRY_MS = 60_000;
 const NEXT_RUNNER_MS = 5_000;
@@ -17,7 +17,7 @@ type SlotActions = {
   // Why there's no room for another job right now, or null when there is.
   roomForJob: () => Promise<string | null>;
   // The same check, taken in turn with every other slot. A slot registers only when this says so.
-  joinLine: JoinMemoryLine;
+  joinLine: () => MemoryTurn;
   // Removes a runner that hasn't taken a job. False when GitHub refuses, as it does mid-job.
   release: (runnerId: number) => Promise<boolean>;
   // Calls `check` every `ms` until the returned function is called.
