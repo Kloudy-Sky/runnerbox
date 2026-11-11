@@ -59,7 +59,8 @@ $jobSid = $account.SID.Value
 if ($jobSid -eq $ownerSid) { throw "The job user can't be your own account." }
 if (Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object { $_.SID.Value -eq $jobSid }) { throw "$jobUser is an administrator. Pick another name." }
 $hidden = 'HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\SpecialAccounts\\UserList'
-New-Item -Path $hidden -Force | Out-Null
+# -Force on a key that exists would empty it, and with it anyone else's hidden accounts.
+if (-not (Test-Path -LiteralPath $hidden)) { New-Item -Path $hidden -Force | Out-Null }
 New-ItemProperty -Path $hidden -Name $jobUser -Value 0 -PropertyType DWord -Force | Out-Null
 
 # Program Files lets everyone read and only administrators write, which suits the scripts. The
@@ -90,6 +91,8 @@ $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoi
 $powershell = "$env:SystemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
 $run = New-ScheduledTaskAction -Execute $powershell -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \`"$dir\\run-job.ps1\`""
 Register-ScheduledTask -TaskName $runTask -Action $run -Settings $settings -User 'SYSTEM' -RunLevel Highest -Force | Out-Null
+# The job's limit is the shorter one, so that the task above is still there to clean up after it.
+$settings.ExecutionTimeLimit = 'PT11H'
 $job = New-ScheduledTaskAction -Execute $powershell -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \`"$dir\\job.ps1\`""
 Register-ScheduledTask -TaskName $jobTask -Action $job -Settings $settings -User $jobUser -Password $plain -Force | Out-Null
 
@@ -97,7 +100,9 @@ Register-ScheduledTask -TaskName $jobTask -Action $job -Settings $settings -User
 $service = New-Object -ComObject Schedule.Service
 $service.Connect()
 $task = $service.GetFolder('\\').GetTask($runTask)
-$task.SetSecurityDescriptor($task.GetSecurityDescriptor(4) + "(A;;GRGX;;;$ownerSid)", 0)
+# Registering again keeps the old descriptor, so the owner's earlier entries come out first.
+$dacl = $task.GetSecurityDescriptor(4) -replace "\\(A;;[^;()]*;;;$ownerSid\\)", ''
+$task.SetSecurityDescriptor($dacl + "(A;;GRGX;;;$ownerSid)", 0)
 
 Write-Output "Ready. Jobs run as $jobUser. Start runners with: node runnerbox.js up --config <this install's config>"
 `;
