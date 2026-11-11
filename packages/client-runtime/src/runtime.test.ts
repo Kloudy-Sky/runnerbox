@@ -1,17 +1,44 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import { DESCRIPTOR_PATH, PROTOCOL_VERSION } from "@runnerbox/contracts";
+import { DESCRIPTOR_PATH, PROTOCOL_VERSION, serverProofMessage } from "@runnerbox/contracts";
 import type { SavedEnvironment } from "./environments.ts";
 import { createClientRuntime } from "./runtime.ts";
 
+// A stub server's identity: its own Ed25519 key, and the descriptor it answers with, signing
+// whatever nonce the client sends.
+const stubIdentity = (environmentId: string) => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519", { publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+  const describe = (request: IncomingMessage) => {
+    const url = new URL(request.url ?? "/", "http://stub");
+    if (url.pathname !== DESCRIPTOR_PATH) return null;
+    const nonce = url.searchParams.get("nonce") ?? "";
+    const proof = sign(null, Buffer.from(serverProofMessage(environmentId, nonce)), privateKey).toString("base64url");
+    return JSON.stringify({ environmentId, label: "example", serverVersion: "0", protocolVersion: PROTOCOL_VERSION, publicKey, proof });
+  };
+  return { publicKey, describe };
+};
+
+const disconnected = (runtime: ReturnType<typeof createClientRuntime>, environmentId: string) =>
+  new Promise<{ reason: string }>((resolve) => {
+    const unsubscribe = runtime.store.subscribe((current) => {
+      const connection = current.connections[environmentId];
+      if (connection?.status !== "disconnected") return;
+      unsubscribe();
+      resolve(connection);
+    });
+  });
+
 test("an address that answers as another environment never receives the saved token", async () => {
   const seen: string[] = [];
+  const other = stubIdentity("someone-else");
   const impostor = createServer((request, response) => {
-    seen.push(`${request.method} ${request.url} ${request.headers.authorization ?? ""}`);
-    if (request.url === DESCRIPTOR_PATH) {
-      response.end(JSON.stringify({ environmentId: "someone-else", label: "example", serverVersion: "0", protocolVersion: PROTOCOL_VERSION }));
+    seen.push(`${request.method} ${new URL(request.url ?? "/", "http://stub").pathname} ${request.headers.authorization ?? ""}`);
+    const descriptor = other.describe(request);
+    if (descriptor) {
+      response.end(descriptor);
     } else {
       response.statusCode = 404;
       response.end();
@@ -29,23 +56,45 @@ test("an address that answers as another environment never receives the saved to
   };
   const runtime = createClientRuntime({ catalog: { list: async () => [saved], save: async () => {}, remove: async () => {} } });
   await runtime.load();
-  const state = await new Promise((resolve) => {
-    const unsubscribe = runtime.store.subscribe((current) => {
-      const connection = current.connections["paired-one"];
-      if (connection?.status === "disconnected") {
-        unsubscribe();
-        resolve(connection);
-      }
-    });
-  });
+  const state = await disconnected(runtime, "paired-one");
   impostor.close();
-  assert.equal((state as { reason: string }).reason, "wrong_environment");
+  assert.equal(state.reason, "wrong_environment");
+  assert.deepEqual(seen, [`GET ${DESCRIPTOR_PATH} `]);
+});
+
+test("an address that names the saved environment but can't sign with its pinned key never receives the token", async () => {
+  const seen: string[] = [];
+  const real = stubIdentity("paired-one");
+  // Knows the environment's ID and public key, both public, but holds a key of its own.
+  const impostor = stubIdentity("paired-one");
+  const server = createServer((request, response) => {
+    seen.push(`${request.method} ${new URL(request.url ?? "/", "http://stub").pathname} ${request.headers.authorization ?? ""}`);
+    response.end(impostor.describe(request) ?? "{}");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const saved: SavedEnvironment = {
+    environmentId: "paired-one",
+    label: "example",
+    routes: [{ kind: "direct", url: `http://127.0.0.1:${(server.address() as AddressInfo).port}` }],
+    token: "rbx_secret",
+    scopes: ["history:read"],
+    pairedAt: new Date(0).toISOString(),
+    serverPublicKey: real.publicKey,
+  };
+  const runtime = createClientRuntime({ catalog: { list: async () => [saved], save: async () => {}, remove: async () => {} } });
+  await runtime.load();
+  const state = await disconnected(runtime, "paired-one");
+  server.close();
+  assert.equal(state.reason, "server_unproven");
   assert.deepEqual(seen, [`GET ${DESCRIPTOR_PATH} `]);
 });
 
 test("a Connect route signs with the platform's proof key, so the renderer needs no WebCrypto of its own", async () => {
   const pairProofs: string[] = [];
+  const identity = stubIdentity("env-1");
   const environment = createServer((request, response) => {
+    const descriptor = identity.describe(request);
+    if (descriptor) return void response.end(descriptor);
     if (request.url === "/api/auth/pair") pairProofs.push(String(request.headers.dpop ?? ""));
     // Refusing ends the attempt; what matters is what was sent.
     response.statusCode = 401;
@@ -74,13 +123,7 @@ test("a Connect route signs with the platform's proof key, so the renderer needs
     },
   });
   await runtime.addConnectRoute({ environmentId: "env-1", label: "example" }, "https://relay.example.com");
-  await new Promise<void>((resolve) => {
-    const unsubscribe = runtime.store.subscribe((state) => {
-      if (state.connections["env-1"]?.status !== "disconnected") return;
-      unsubscribe();
-      resolve();
-    });
-  });
+  await disconnected(runtime, "env-1");
   await runtime.remove("env-1");
   environment.close();
   assert.deepEqual(asked, ["thumbprint-from-platform"]);
@@ -90,9 +133,11 @@ test("a Connect route signs with the platform's proof key, so the renderer needs
 
 test("pairing never replaces a saved environment, and refuses a session for another environment than the one that answered", async () => {
   const pairs: string[] = [];
+  const identity = stubIdentity("env-a");
   // Answers as "env-a", but its pairing hands back a session for "env-b".
   const hostile = createServer((request, response) => {
-    if (request.url === DESCRIPTOR_PATH) return void response.end(JSON.stringify({ environmentId: "env-a", label: "example", serverVersion: "0", protocolVersion: PROTOCOL_VERSION }));
+    const descriptor = identity.describe(request);
+    if (descriptor) return void response.end(descriptor);
     pairs.push(request.url ?? "");
     response.end(JSON.stringify({ environmentId: "env-b", token: "rbx_x", scopes: ["history:read"] }));
   });
@@ -116,8 +161,10 @@ test("pairing never replaces a saved environment, and refuses a session for anot
 
 test("pairing without a keychain is refused before the code is spent", async () => {
   const pairs: string[] = [];
+  const identity = stubIdentity("env-a");
   const server = createServer((request, response) => {
-    if (request.url === DESCRIPTOR_PATH) return void response.end(JSON.stringify({ environmentId: "env-a", label: "example", serverVersion: "0", protocolVersion: PROTOCOL_VERSION }));
+    const descriptor = identity.describe(request);
+    if (descriptor) return void response.end(descriptor);
     pairs.push(request.url ?? "");
     response.end(JSON.stringify({ environmentId: "env-a", token: "rbx_x", scopes: ["history:read"] }));
   });

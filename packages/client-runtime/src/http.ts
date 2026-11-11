@@ -1,9 +1,10 @@
 import { DESCRIPTOR_PATH, DPOP_HEADER, EnvironmentDescriptor, PairResponse, PROTOCOL_VERSION, WsTicketResponse } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { newServerNonce, verifyServerProof } from "./serverProof.ts";
 
 export class ConnectionError extends Schema.TaggedError<ConnectionError>()("ConnectionError", {
-  reason: Schema.Literals(["unreachable", "unauthorized", "wrong_environment", "incompatible", "pairing_rejected", "tunnel_failed", "relay_refused", "already_paired", "no_keychain"]),
+  reason: Schema.Literals(["unreachable", "unauthorized", "wrong_environment", "incompatible", "pairing_rejected", "tunnel_failed", "relay_refused", "already_paired", "no_keychain", "server_unproven"]),
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
@@ -22,6 +23,8 @@ export class ConnectionError extends Schema.TaggedError<ConnectionError>()("Conn
         return "The SSH forward couldn't be opened.";
       case "already_paired":
         return "This environment is already saved. Forget it first to pair it again.";
+      case "server_unproven":
+        return "The server at this address can't prove it's the machine you paired with. If you reinstalled it, forget the environment and pair again.";
       case "no_keychain":
         return "The system keychain isn't available, so runnerbox can't keep a pairing safely. Set up a keychain (on Linux, GNOME Keyring or KWallet) and try again.";
       case "relay_refused":
@@ -56,14 +59,23 @@ const decode = <S extends Schema.Top & { readonly DecodingServices: never }>(sch
     Schema.decodeUnknownEffect(schema)(body).pipe(Effect.mapError((cause) => new ConnectionError({ reason: "incompatible", cause }))),
   );
 
-export const fetchDescriptor = (baseUrl: string) =>
-  request(new URL(DESCRIPTOR_PATH, baseUrl).href, {}).pipe(
-    decode(EnvironmentDescriptor),
-    Effect.filterOrFail(
-      (descriptor) => descriptor.protocolVersion === PROTOCOL_VERSION,
-      () => new ConnectionError({ reason: "incompatible" }),
-    ),
-  );
+// The descriptor, once the server has signed a fresh nonce with the key it names. With an
+// `expected` environment, that must be its ID and, once pinned, its key. Nothing that carries a
+// credential goes to a server before this passes.
+export const fetchProvenDescriptor = (baseUrl: string, expected?: { readonly environmentId: string; readonly serverPublicKey?: string | undefined }) =>
+  Effect.gen(function* () {
+    const nonce = newServerNonce();
+    const url = new URL(DESCRIPTOR_PATH, baseUrl);
+    url.searchParams.set("nonce", nonce);
+    const descriptor = yield* request(url.href, {}).pipe(decode(EnvironmentDescriptor));
+    const { publicKey, proof } = descriptor;
+    // A server from before keys were pinned has neither, and is too old for this client.
+    if (descriptor.protocolVersion !== PROTOCOL_VERSION || publicKey === undefined || proof === undefined) return yield* new ConnectionError({ reason: "incompatible" });
+    if (expected && descriptor.environmentId !== expected.environmentId) return yield* new ConnectionError({ reason: "wrong_environment" });
+    if (expected?.serverPublicKey !== undefined && publicKey !== expected.serverPublicKey) return yield* new ConnectionError({ reason: "server_unproven" });
+    if (!verifyServerProof({ publicKey, environmentId: descriptor.environmentId, nonce, proof })) return yield* new ConnectionError({ reason: "server_unproven" });
+    return { ...descriptor, publicKey };
+  });
 
 export const pairWithCode = (baseUrl: string, code: string, label: string, prove?: ProveRequest) =>
   request(
