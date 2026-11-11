@@ -12,6 +12,8 @@ export const CONNECT_TYP = {
   mintResponse: "rbx-env-mint+jwt",
   healthRequest: "rbx-relay-health+jwt",
   healthResponse: "rbx-env-health+jwt",
+  recovery: "rbx-env-recovery+jwt",
+  replace: "rbx-env-replace+jwt",
 } as const;
 
 // A DPoP proof of the client's key, sent when redeeming a Connect credential and with every
@@ -102,12 +104,26 @@ export const LinkResponse = Schema.Struct({
   environmentId: Schema.String,
   cloudUserId: Schema.String,
   httpBaseUrl: Schema.String,
+  tunnelId: Schema.String,
   // For `cloudflared` on the environment. Only the environment ever receives it.
   connectorToken: Schema.String,
   relayIssuer: Schema.String,
   relayPublicKey: Schema.String,
 });
 export type LinkResponse = typeof LinkResponse.Type;
+
+// Signed by the environment's key. `recovery` registers that the host can replace its tunnel if
+// the relay reclaims it while idle, and reports what it runs; `replace` asks for that replacement.
+export const RecoveryProofPayload = Schema.Struct({
+  ...Registered,
+  environmentId: Schema.String,
+  cloudUserId: Schema.String,
+  tunnelId: Schema.NullOr(Schema.String),
+  origin: TunnelOrigin,
+});
+export type RecoveryProofPayload = typeof RecoveryProofPayload.Type;
+export const RecoveryResponse = Schema.Struct({ tunnelReleased: Schema.Boolean });
+export const ReplaceResponse = Schema.Struct({ tunnelId: Schema.String, connectorToken: Schema.String });
 
 export const LinkedEnvironment = Schema.Struct({
   environmentId: Schema.String,

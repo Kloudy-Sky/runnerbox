@@ -1,4 +1,5 @@
 import { clerkIdentity } from "./identity.ts";
+import type { CleanupMode } from "./reaper.ts";
 import { createRelay } from "./relay.ts";
 import { createStore, type D1Like } from "./store.ts";
 import { cloudflareTunnels } from "./tunnels.ts";
@@ -17,15 +18,18 @@ export type Env = {
   CLOUDFLARE_ZONE_ID: string;
   CLOUDFLARE_API_TOKEN: string;
   TUNNEL_BASE_DOMAIN: string;
+  // off (default), dry-run or enabled. See docs/connect-setup.md.
+  RELAY_TUNNEL_CLEANUP_MODE?: string;
 };
 
 // Wrangler stores PEM secrets with escaped newlines.
 const pem = (value: string) => value.replace(/\\n/g, "\n");
 
-export default {
-  fetch(request: Request, env: Env) {
-    const now = () => Date.now();
-    const relay = createRelay({
+const cleanupMode = (value: string | undefined): CleanupMode => (value === "dry-run" || value === "enabled" ? value : "off");
+
+function relayFor(env: Env) {
+  const now = () => Date.now();
+  return createRelay({
       config: {
         issuer: env.RELAY_ISSUER,
         signingPrivateKey: pem(env.RELAY_SIGNING_PRIVATE_KEY),
@@ -35,6 +39,7 @@ export default {
         desktopClientId: env.CLERK_DESKTOP_CLIENT_ID,
         tunnelBaseDomain: env.TUNNEL_BASE_DOMAIN,
         requireHttps: true,
+        cleanupMode: cleanupMode(env.RELAY_TUNNEL_CLEANUP_MODE),
       },
       store: createStore(env.DB, now),
       identity: clerkIdentity({ frontendApi: env.CLERK_FRONTEND_API }),
@@ -42,6 +47,12 @@ export default {
       now,
       fetch: (input, init) => fetch(input, init),
     });
-    return relay.fetch(request);
+}
+
+export default {
+  fetch: (request: Request, env: Env) => relayFor(env).fetch(request),
+  // The cron trigger in wrangler.toml runs the idle-tunnel sweep; its counts go to the Worker's logs.
+  async scheduled(_controller: unknown, env: Env) {
+    console.log(JSON.stringify({ sweep: await relayFor(env).sweep() }));
   },
 };

@@ -5,6 +5,7 @@ import { createProof, createProofKey, type ProofKey } from "@runnerbox/connect/d
 import { generateSigningKeyPair, signJwt } from "@runnerbox/connect/jwt";
 import { RelayError, relayClient } from "@runnerbox/connect/relay";
 import { CONNECT_TYP, environmentAudience } from "@runnerbox/contracts";
+import { ensureTunnel } from "@runnerbox/server/src/cloud/connector.ts";
 import { startTestServer } from "@runnerbox/server/src/testing/testServer.ts";
 import * as Effect from "effect/Effect";
 import { createRelay } from "./relay.ts";
@@ -22,6 +23,7 @@ let relayHttp: Awaited<ReturnType<typeof serveFetch>>;
 let relay: ReturnType<typeof createRelay>;
 let store: ReturnType<typeof createStore>;
 let tunnels: ReturnType<typeof fakeTunnels>;
+let relayConfig: Parameters<typeof createRelay>[0]["config"];
 // Every request the relay sends to an environment goes through here, so a test can watch or
 // replace what the environment says.
 let toEnvironment: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> = (input, init) => fetch(input, init);
@@ -33,8 +35,7 @@ before(async () => {
   store = createStore(sqliteD1(), Date.now);
   // The fake tunnel delivers to the server's tunnel-facing listener, as cloudflared will.
   tunnels = fakeTunnels(() => server.tunnelBaseUrl);
-  relay = createRelay({
-    config: {
+  relayConfig = {
       issuer: "https://relay.example.com",
       signingPrivateKey: keys.privateKey,
       signingPublicKey: keys.publicKey,
@@ -43,7 +44,10 @@ before(async () => {
       desktopClientId: "desktop",
       tunnelBaseDomain: "connect.example.com",
       requireHttps: false,
-    },
+      cleanupMode: "off",
+  };
+  relay = createRelay({
+    config: relayConfig,
     store,
     identity: fakeIdentity({ "token-alice": "user_alice", "token-bob": "user_bob" }),
     tunnels: tunnels.provider,
@@ -254,11 +258,87 @@ test("a saved environment whose first route is down connects through Connect ins
   await runtime.remove(id);
 });
 
+test("the sweep is off by default, and a dry run only counts, never reclaiming a host without recovery or an orphan", async () => {
+  const id = await environmentId();
+  const allocation = (await store.allocation({ userId: "user_alice", environmentId: id }))!;
+  tunnels.goDown(allocation.tunnel_id!, 10);
+  // Cloudflare also lists a tunnel no allocation owns, and one that only just went down.
+  tunnels.tunnels.set("orphan", { id: "orphan", name: "rbx-aaaaaaaaaaaaaaaa", status: "down", createdAt: new Date(0).toISOString(), connsInactiveAt: new Date(Date.now() - 60 * 60_000).toISOString() });
+  tunnels.tunnels.set("recent", { id: "recent", name: "rbx-bbbbbbbbbbbbbbbb", status: "down", createdAt: new Date(0).toISOString(), connsInactiveAt: new Date(Date.now() - 60_000).toISOString() });
+  try {
+    assert.equal((await relay.sweep()).listRequests, 0, "off lists nothing");
+    relayConfig.cleanupMode = "dry-run";
+    const dryRun = await relay.sweep();
+    assert.deepEqual([dryRun.candidates, dryRun.wouldDelete, dryRun.skippedNoRecovery, dryRun.skippedOrphan, dryRun.deleted], [2, 0, 1, 1, 0]);
+    await Effect.runPromise(server.cloudLink.registerRecovery);
+    const registered = await relay.sweep();
+    assert.deepEqual([registered.wouldDelete, registered.deleted], [1, 0]);
+    assert.ok(tunnels.tunnels.has(allocation.tunnel_id!), "a dry run deletes nothing");
+  } finally {
+    relayConfig.cleanupMode = "off";
+    tunnels.tunnels.delete("orphan");
+    tunnels.tunnels.delete("recent");
+  }
+});
+
+test("a host that registers mid-sweep keeps its tunnel, and a rate limit stops the sweep", async () => {
+  const id = await environmentId();
+  const tunnelId = (await store.allocation({ userId: "user_alice", environmentId: id }))!.tunnel_id!;
+  tunnels.goDown(tunnelId, 10);
+  relayConfig.cleanupMode = "enabled";
+  try {
+    // The host comes back between the sweep's listing and its delete.
+    tunnels.hooks.beforeGet = async () => {
+      tunnels.hooks.beforeGet = undefined;
+      await Effect.runPromise(server.cloudLink.registerRecovery);
+    };
+    const raced = await relay.sweep();
+    assert.deepEqual([raced.attempted, raced.deleted, raced.skippedReconnected], [1, 0, 1]);
+    assert.ok(tunnels.tunnels.has(tunnelId));
+    tunnels.hooks.rateLimitLists = true;
+    const limited = await relay.sweep();
+    assert.deepEqual([limited.truncated, limited.deleted], [true, 0]);
+  } finally {
+    tunnels.hooks.rateLimitLists = false;
+    relayConfig.cleanupMode = "off";
+  }
+});
+
+test("an enabled sweep reclaims an idle tunnel, and the host gets a new one under the same hostname", async () => {
+  const id = await environmentId();
+  const key = { userId: "user_alice", environmentId: id };
+  const before = (await store.allocation(key))!;
+  tunnels.goDown(before.tunnel_id!, 10);
+  relayConfig.cleanupMode = "enabled";
+  try {
+    assert.equal((await relay.sweep()).deleted, 1);
+  } finally {
+    relayConfig.cleanupMode = "off";
+  }
+  const reclaimed = (await store.allocation(key))!;
+  assert.deepEqual([reclaimed.tunnel_id, reclaimed.dns_record_id, reclaimed.hostname], [null, before.dns_record_id, before.hostname], "only the tunnel goes");
+  assert.equal(tunnels.calls.at(-1), `release ${before.tunnel_id}`);
+  const key2 = await createProofKey();
+  assert.equal(await refusal(client().connect("token-alice", id, key2.thumbprint)), "tunnel_released");
+  assert.equal((await client().status("token-alice", id)).status, "offline");
+
+  // What `serve` does when it starts or its connector keeps exiting.
+  const state = await Effect.runPromise(ensureTunnel(server.cloudLink));
+  const after = (await store.allocation(key))!;
+  assert.ok(state?.tunnelId && state.tunnelId !== before.tunnel_id && state.tunnelId === after.tunnel_id);
+  assert.equal(state?.connectorToken, `connector-token-for-${after.tunnel_id}`);
+  assert.equal(after.hostname, before.hostname);
+  assert.ok(tunnels.calls.some((call) => call.startsWith(`provision ${after.tunnel_id}`) && call.endsWith("(dns repointed)")));
+  const granted = await client().connect("token-alice", id, key2.thumbprint);
+  assert.equal(granted.httpBaseUrl, server.tunnelBaseUrl, "clients keep the same address");
+});
+
 test("unlinking with the environment's key removes the link and its tunnel", async () => {
   const id = await environmentId();
+  const tunnelId = (await store.allocation({ userId: "user_alice", environmentId: id }))!.tunnel_id;
   await Effect.runPromise(server.cloudLink.unlink);
   assert.ok(!(await client().environments("token-alice")).some((environment) => environment.environmentId === id));
-  assert.ok(tunnels.calls.at(-1)?.startsWith("release tunnel-1"));
+  assert.ok(tunnels.calls.at(-1)?.startsWith(`release ${tunnelId} and dns-`), "the tunnel and its DNS record both go");
   const key = await createProofKey();
   assert.equal(await refusal(client().connect("token-alice", id, key.thumbprint)), "environment_link_not_found");
   assert.equal(await Effect.runPromise(server.cloudLink.state), null);

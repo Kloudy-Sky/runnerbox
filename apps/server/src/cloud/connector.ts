@@ -40,21 +40,36 @@ export const resolveCloudflared = (binary = process.env.RUNNERBOX_CLOUDFLARED_PA
   );
 
 const BACKOFF_MS = [2_000, 5_000, 15_000, 60_000];
+// How often a failing connector may ask the relay whether its tunnel was reclaimed.
+const RECOVERY_INTERVAL_MS = 2 * 60_000;
+
+// Registers that this host can replace its tunnel, and replaces it if the relay reclaimed it while
+// the host was away. If the relay can't be reached, the stored connector config is used as it is.
+export const ensureTunnel = Effect.fn("connector.ensureTunnel")(function* (link: CloudLink.CloudLink["Service"]) {
+  const registered = yield* link.registerRecovery.pipe(Effect.timeout("10 seconds"), Effect.option);
+  if (registered._tag === "Some" && registered.value.tunnelReleased) {
+    yield* Effect.logInfo("Runnerbox Connect: the relay reclaimed this idle tunnel; asking for a replacement.");
+    yield* link.replaceTunnel.pipe(Effect.timeout("30 seconds"), Effect.ignore);
+  }
+  return yield* link.state;
+});
 
 // Keeps the connector running while the server does, if this environment is linked.
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const link = yield* CloudLink.CloudLink;
-    const state = yield* link.state.pipe(Effect.orElseSucceed(() => null));
-    if (!state) return;
+    const linked = yield* link.state.pipe(Effect.orElseSucceed(() => null));
+    if (!linked) return;
     const resolved = yield* Effect.tryPromise(() => resolveCloudflared()).pipe(
       Effect.tapError((error) => Effect.logWarning(`Runnerbox Connect is linked but the connector can't start: ${error.cause instanceof Error ? error.cause.message : "unknown"}`)),
       Effect.option,
     );
     if (resolved._tag === "None") return;
     if (resolved.value.version !== CLOUDFLARED_VERSION) yield* Effect.logWarning(`cloudflared ${resolved.value.version} differs from the tested ${CLOUDFLARED_VERSION}.`);
-    const { args, env } = connectorCommand(state.connectorToken);
+    let state = (yield* ensureTunnel(link).pipe(Effect.orElseSucceed(() => null))) ?? linked;
+    let checkedAt = Date.now();
     const runOnce = Effect.callback<number | null>((resume) => {
+      const { args, env } = connectorCommand(state.connectorToken);
       const child = spawn(resolved.value.binary, args, { env: { ...process.env, ...env }, stdio: ["ignore", "ignore", "inherit"] });
       child.once("exit", (code) => resume(Effect.succeed(code)));
       child.once("error", () => resume(Effect.succeed(null)));
@@ -66,6 +81,11 @@ export const layer = Layer.effectDiscard(
         const delay = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)]!;
         yield* Effect.logWarning(`cloudflared exited (${code ?? "failed to start"}); restarting in ${delay / 1000}s.`);
         yield* Effect.sleep(delay);
+        // An exit may mean the relay reclaimed the tunnel; check, but not on every crash.
+        if (Date.now() - checkedAt >= RECOVERY_INTERVAL_MS) {
+          checkedAt = Date.now();
+          state = (yield* ensureTunnel(link).pipe(Effect.orElseSucceed(() => null))) ?? state;
+        }
       }
     }).pipe(Effect.forkScoped);
     yield* Effect.logInfo(`Runnerbox Connect: serving ${state.httpBaseUrl} through cloudflared ${resolved.value.version}.`);

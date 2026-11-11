@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cloudflareTunnels } from "./tunnels.ts";
+import { cloudflareTunnels, RateLimited } from "./tunnels.ts";
 
 test("provisioning routes only the hostname, only to the loopback origin, and records the tunnel before DNS", async () => {
   const calls: { method: string; path: string; body: unknown }[] = [];
@@ -30,4 +30,21 @@ test("provisioning routes only the hostname, only to the loopback origin, and re
   assert.deepEqual(calls[1]?.body, {
     config: { ingress: [{ hostname: "rbx-0123456789abcdef.connect.example.com", service: "http://127.0.0.1:4517" }, { service: "http_status:404" }] },
   });
+});
+
+test("a replacement tunnel repoints the hostname's existing record, and a 429 is reported as a rate limit", async () => {
+  const calls: string[] = [];
+  let limited = false;
+  const fakeFetch: typeof fetch = async (input, init) => {
+    const path = new URL(String(input)).pathname.replace("/client/v4", "");
+    calls.push(`${init?.method ?? "GET"} ${path}`);
+    if (limited) return Response.json({ success: false }, { status: 429 });
+    return Response.json({ success: true, result: path.endsWith("/token") ? "token-2" : { id: "tunnel-2" } });
+  };
+  const provider = cloudflareTunnels({ accountId: "account", zoneId: "zone", apiToken: "token", fetch: fakeFetch });
+  await provider.provision({ name: "rbx-0123456789abcdef", hostname: "rbx-0123456789abcdef.example.com", origin: { host: "127.0.0.1", port: 4518 }, existing: { tunnelId: null, dnsRecordId: "dns-1" }, onTunnel: async () => {} });
+  assert.ok(calls.includes("PATCH /zones/zone/dns_records/dns-1"));
+  assert.ok(!calls.includes("POST /zones/zone/dns_records"));
+  limited = true;
+  await assert.rejects(provider.list({ status: "down", namePrefix: "rbx-", page: 1, perPage: 100 }), RateLimited);
 });

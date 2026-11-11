@@ -1,4 +1,4 @@
-import { ConnectResponse, LinkChallengeResponse, LinkedEnvironment, LinkResponse, RelayConfig, StatusResponse } from "@runnerbox/contracts";
+import { ConnectResponse, LinkChallengeResponse, LinkedEnvironment, LinkResponse, RecoveryResponse, RelayConfig, ReplaceResponse, StatusResponse } from "@runnerbox/contracts";
 import * as Schema from "effect/Schema";
 
 // Calls a Runnerbox Connect relay. Every call that acts for a user carries their Clerk token;
@@ -43,6 +43,8 @@ export const relayClient = (relayUrl: string) => ({
   config: () => call(relayUrl, "/v1/config", RelayConfig),
   linkChallenge: (token: string) => call(relayUrl, "/v1/link/challenge", LinkChallengeResponse, { method: "POST", token }),
   link: (token: string, proof: string) => call(relayUrl, "/v1/link", LinkResponse, { method: "POST", token, body: { proof } }),
+  registerRecovery: (proof: string) => call(relayUrl, "/v1/recovery/register", RecoveryResponse, { method: "POST", body: { proof } }),
+  replaceTunnel: (proof: string) => call(relayUrl, "/v1/recovery/replace", ReplaceResponse, { method: "POST", body: { proof } }),
   unlink: (proof: string) => call(relayUrl, "/v1/unlink", Schema.Struct({ ok: Schema.Boolean }), { method: "POST", body: { proof } }),
   environments: (token: string) => call(relayUrl, "/v1/environments", Schema.Array(LinkedEnvironment), { token }),
   connect: (token: string, environmentId: string, clientProofKeyThumbprint: string) =>

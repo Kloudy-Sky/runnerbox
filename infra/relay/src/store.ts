@@ -31,6 +31,8 @@ export type Allocation = {
   state: "provisioning" | "ready" | "deleting";
   generation: number;
   updated_at: string;
+  recovery_registered_at: string | null;
+  tunnel_released_at: string | null;
 };
 
 type Key = { userId: string; environmentId: string };
@@ -82,10 +84,39 @@ export function createStore(db: D1Like, now: () => number) {
       db
         .prepare(
           `UPDATE allocations SET tunnel_id = COALESCE(?, tunnel_id), dns_record_id = COALESCE(?, dns_record_id),
-             state = CASE WHEN ? THEN 'ready' ELSE state END, updated_at = ?
+             state = CASE WHEN ? THEN 'ready' ELSE state END,
+             tunnel_released_at = CASE WHEN ? THEN NULL ELSE tunnel_released_at END, updated_at = ?
            WHERE user_id = ? AND environment_id = ? AND generation = ?`,
         )
-        .bind(fields.tunnelId ?? null, fields.dnsRecordId ?? null, fields.ready ? 1 : 0, iso(), key.userId, key.environmentId, generation)
+        .bind(fields.tunnelId ?? null, fields.dnsRecordId ?? null, fields.ready ? 1 : 0, fields.ready ? 1 : 0, iso(), key.userId, key.environmentId, generation)
+        .run(),
+    allocationByTunnel: (tunnelId: string) => db.prepare("SELECT * FROM allocations WHERE tunnel_id = ?").bind(tunnelId).first<Allocation>(),
+    allocationByHostname: (hostname: string) => db.prepare("SELECT * FROM allocations WHERE hostname = ?").bind(hostname).first<Allocation>(),
+    // The host can replace its tunnel. Bumps the generation, so a reclaim that read the allocation
+    // before this can't go on to delete the tunnel the host just showed it's using.
+    registerRecovery: (key: Key, generation: number) =>
+      db
+        .prepare("UPDATE allocations SET recovery_registered_at = ?, generation = generation + 1, updated_at = ? WHERE user_id = ? AND environment_id = ? AND generation = ?")
+        .bind(iso(), iso(), key.userId, key.environmentId, generation)
+        .run()
+        .then(({ meta }) => meta.changes === 1),
+    // Claims the allocation's tunnel for reclaim at the generation and tunnel the sweep read. The
+    // tunnel ID is cleared before deleting it, so nothing hands out an address for a tunnel going away.
+    async claimTunnelRelease(key: Key, generation: number, tunnelId: string) {
+      const { meta } = await db
+        .prepare(
+          `UPDATE allocations SET tunnel_id = NULL, tunnel_released_at = ?, generation = generation + 1, updated_at = ?
+           WHERE user_id = ? AND environment_id = ? AND generation = ? AND tunnel_id = ? AND state = 'ready'`,
+        )
+        .bind(iso(), iso(), key.userId, key.environmentId, generation, tunnelId)
+        .run();
+      return meta.changes === 1;
+    },
+    // Undoes a claim whose delete failed, unless something changed the allocation since.
+    restoreTunnel: (key: Key, claimedGeneration: number, tunnelId: string) =>
+      db
+        .prepare("UPDATE allocations SET tunnel_id = ?, tunnel_released_at = NULL, updated_at = ? WHERE user_id = ? AND environment_id = ? AND generation = ? AND tunnel_id IS NULL")
+        .bind(tunnelId, iso(), key.userId, key.environmentId, claimedGeneration)
         .run(),
     // Claims the allocation for teardown at the generation the caller read. False when anything
     // changed since, in which case the caller must not touch the tunnel.

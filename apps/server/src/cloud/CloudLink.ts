@@ -49,6 +49,8 @@ export const LinkState = Schema.Struct({
   relayPublicKey: Schema.String,
   cloudUserId: Schema.String,
   httpBaseUrl: Schema.String,
+  // Optional so links made before recovery existed still read; they register once they have it.
+  tunnelId: Schema.optionalKey(Schema.String),
   connectorToken: Schema.String,
   // The loopback port `cloudflared` sends tunnel traffic to: a listener of its own that serves
   // only Connect, separate from the one apps and agents use on this machine.
@@ -72,6 +74,10 @@ export class CloudLink extends Context.Service<
     readonly state: Effect.Effect<LinkState | null, CloudLinkError>;
     readonly link: (input: { readonly relayUrl: string; readonly accessToken: string; readonly tunnelPort: number }) => Effect.Effect<LinkState, CloudLinkError>;
     readonly unlink: Effect.Effect<void, CloudLinkError | NotLinked>;
+    // Tells the relay this host can replace its tunnel, and whether the relay reclaimed it.
+    readonly registerRecovery: Effect.Effect<{ readonly tunnelReleased: boolean }, CloudLinkError | NotLinked>;
+    // Asks for a replacement under the same hostname, and stores its connector token.
+    readonly replaceTunnel: Effect.Effect<LinkState, CloudLinkError | NotLinked>;
     readonly mint: (proof: string) => Effect.Effect<{ credential: string; expiresAt: string; proof: string }, CloudLinkError | NotLinked | ConnectProofRejected | ConnectProofReplayed>;
     readonly health: (proof: string) => Effect.Effect<{ checkedAt: string; descriptor: EnvironmentIdentity.EnvironmentIdentity["Service"]["descriptor"]; proof: string }, CloudLinkError | NotLinked | ConnectProofRejected | ConnectProofReplayed>;
   }
@@ -166,6 +172,44 @@ const make = Effect.gen(function* () {
     yield* fs.remove(statePath).pipe(Effect.mapError((cause) => new CloudLinkError({ operation: "write", cause })));
   }).pipe(Effect.withSpan("CloudLink.unlink"));
 
+  const signRecovery = Effect.fnUntraced(function* (typ: string, current: LinkState) {
+    const { privateKey } = yield* key;
+    const now = yield* seconds;
+    return yield* promise("key", () =>
+      signJwt({
+        privateKey,
+        typ,
+        payload: {
+          iss: audience,
+          aud: current.relayIssuer,
+          sub: descriptor.environmentId,
+          jti: crypto.randomUUID(),
+          iat: now,
+          exp: now + LINK_PROOF_SECONDS,
+          environmentId: descriptor.environmentId,
+          cloudUserId: current.cloudUserId,
+          tunnelId: current.tunnelId ?? null,
+          origin: { localHttpHost: "127.0.0.1", localHttpPort: current.tunnelPort },
+        },
+      }),
+    );
+  });
+
+  const registerRecovery = Effect.gen(function* () {
+    const current = yield* linked;
+    const proof = yield* signRecovery(CONNECT_TYP.recovery, current);
+    return yield* promise("relay", () => relayClient(current.relayUrl).registerRecovery(proof));
+  }).pipe(Effect.withSpan("CloudLink.registerRecovery"));
+
+  const replaceTunnel = Effect.gen(function* () {
+    const current = yield* linked;
+    const proof = yield* signRecovery(CONNECT_TYP.replace, current);
+    const replaced = yield* promise("relay", () => relayClient(current.relayUrl).replaceTunnel(proof));
+    const next = { ...current, tunnelId: replaced.tunnelId, connectorToken: replaced.connectorToken };
+    yield* writeFileAtomic(fs, statePath, JSON.stringify(next, null, 2)).pipe(Effect.mapError((cause) => new CloudLinkError({ operation: "write", cause })));
+    return next;
+  }).pipe(Effect.withSpan("CloudLink.replaceTunnel"));
+
   // Checks a relay request: signed by the relay this environment linked to, for this environment
   // and its linked user, current, short-lived, and never seen before.
   const verifyRelayRequest = Effect.fnUntraced(function* <A extends { sub: string; jti: string; iat: number; exp: number; environmentId: string; nonce: string }>(
@@ -239,7 +283,7 @@ const make = Effect.gen(function* () {
     return { checkedAt, descriptor, proof: signed };
   });
 
-  return CloudLink.of({ state, link, unlink, mint, health });
+  return CloudLink.of({ state, link, unlink, registerRecovery, replaceTunnel, mint, health });
 });
 
 export const layer = Layer.effect(CloudLink, make);

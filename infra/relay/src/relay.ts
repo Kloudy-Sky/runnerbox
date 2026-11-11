@@ -6,6 +6,7 @@ import {
   HealthResponse,
   HealthResponsePayload,
   LinkProofPayload,
+  RecoveryProofPayload,
   MintResponse,
   MintResponsePayload,
   SignedRequest,
@@ -14,6 +15,7 @@ import {
 import * as Schema from "effect/Schema";
 import { decodeJwt } from "jose";
 import type { IdentityVerifier } from "./identity.ts";
+import { type CleanupMode, sweepIdleTunnels } from "./reaper.ts";
 import type { Link, RelayStore } from "./store.ts";
 import type { TunnelProvider } from "./tunnels.ts";
 
@@ -32,6 +34,8 @@ export type RelayConfig = {
   tunnelBaseDomain: string;
   // Off only in tests, where the fake tunnel answers on plain HTTP.
   requireHttps: boolean;
+  // Idle-tunnel reclaim. See reaper.ts.
+  cleanupMode: CleanupMode;
 };
 
 export type RelayDeps = {
@@ -61,6 +65,7 @@ const json = (body: unknown, status = 200) =>
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
 const decodeLinkProof = Schema.decodeUnknownSync(LinkProofPayload);
 const decodeUnlinkProof = Schema.decodeUnknownSync(UnlinkProofPayload);
+const decodeRecoveryProof = Schema.decodeUnknownSync(RecoveryProofPayload);
 const decodeSigned = Schema.decodeUnknownSync(SignedRequest);
 const decodeConnect = Schema.decodeUnknownSync(ConnectRequest);
 const decodeMintResponse = Schema.decodeUnknownSync(MintResponse);
@@ -122,6 +127,8 @@ export function createRelay(deps: RelayDeps) {
     if (!link) throw new Refusal(403, "environment_link_not_found");
     const allocation = await store.allocation({ userId, environmentId });
     if (!allocation || allocation.state !== "ready" || allocation.http_base_url !== link.http_base_url) throw new Refusal(409, "managed_endpoint_not_ready");
+    // Reclaimed while idle; the host gets a replacement when it comes back.
+    if (allocation.tunnel_id === null) throw new Refusal(409, "tunnel_released");
     return link;
   }
 
@@ -202,6 +209,7 @@ export function createRelay(deps: RelayDeps) {
         environmentId: candidate.environmentId,
         cloudUserId: userId,
         httpBaseUrl,
+        tunnelId: provisioned.tunnelId,
         connectorToken: provisioned.connectorToken,
         relayIssuer: issuer,
         relayPublicKey: config.signingPublicKey,
@@ -232,6 +240,28 @@ export function createRelay(deps: RelayDeps) {
       }
       if (removed === 0) throw new Refusal(403, "unlink_proof_invalid");
       return json({ ok: true });
+    },
+
+    // The host can replace its tunnel, so a sweep may reclaim it while idle. Bumps the allocation's
+    // generation, so a sweep that read it before this stands down: a host that's back wins.
+    "POST /v1/recovery/register": async (request) => {
+      const { link, allocation, key, payload } = await recoveryRequest(request, CONNECT_TYP.recovery);
+      if (!(await store.registerRecovery(key, allocation.generation))) throw new Refusal(409, "allocation_changed");
+      const tunnelReleased = allocation.tunnel_id === null || allocation.tunnel_id !== payload.tunnelId;
+      // A host whose loopback port changed gets its tunnel's ingress pointed at the new one.
+      if (!tunnelReleased && (allocation.origin_host !== payload.origin.localHttpHost || allocation.origin_port !== payload.origin.localHttpPort)) {
+        await reprovision(link, key, payload.origin, { tunnelId: allocation.tunnel_id, dnsRecordId: allocation.dns_record_id });
+      }
+      return json({ tunnelReleased });
+    },
+
+    // A new tunnel under the same allocation, after a sweep reclaimed the old one. The hostname and
+    // DNS record stay, so clients keep reaching the environment at the same address.
+    "POST /v1/recovery/replace": async (request) => {
+      const { link, allocation, key, payload } = await recoveryRequest(request, CONNECT_TYP.replace);
+      if (allocation.tunnel_id !== null) throw new Refusal(409, "tunnel_not_released");
+      const provisioned = await reprovision(link, key, payload.origin, { tunnelId: null, dnsRecordId: allocation.dns_record_id });
+      return json({ tunnelId: provisioned.tunnelId, connectorToken: provisioned.connectorToken });
     },
 
     "GET /v1/environments": async (request) => {
@@ -282,7 +312,11 @@ export function createRelay(deps: RelayDeps) {
     "GET /v1/environments/([^/]+)/status": async (request, match) => {
       const userId = await userOf(request);
       const environmentId = decodeURIComponent(match[1]!);
-      const link = await readyLink(userId, environmentId);
+      const link = await readyLink(userId, environmentId).catch((error: unknown) => {
+        if (error instanceof Refusal && error.message === "tunnel_released") return null;
+        throw error;
+      });
+      if (!link) return json({ environmentId, status: "offline", checkedAt: null });
       const nonce = crypto.randomUUID();
       const proof = await sign(CONNECT_TYP.healthRequest, {
         iss: issuer,
@@ -306,6 +340,49 @@ export function createRelay(deps: RelayDeps) {
     },
   };
 
+  // Checks a recovery or replace request: signed by the environment's pinned key for its linked
+  // user, short-lived, used once, for a loopback origin, with an allocation to act on.
+  async function recoveryRequest(request: Request, typ: string) {
+    const { proof } = decodeSigned(await body(request));
+    let claimed: typeof RecoveryProofPayload.Type;
+    try {
+      claimed = decodeRecoveryProof(decodeJwt(proof));
+    } catch {
+      throw new Refusal(400, "recovery_proof_invalid");
+    }
+    const key = { userId: claimed.cloudUserId, environmentId: claimed.environmentId };
+    const link = await store.link(key);
+    const verified = link
+      ? await verifyJwt({ publicKey: link.environment_public_key, token: proof, typ, issuer: environmentAudience(claimed.environmentId), audience: issuer, now: now() }).catch(() => null)
+      : null;
+    if (!link || !verified || claimed.sub !== claimed.environmentId || !boundedLifetime(claimed, now())) throw new Refusal(403, "recovery_proof_invalid");
+    if (!(await store.consumeOnce(`recovery:${claimed.environmentId}:${claimed.jti}`, claimed.exp * 1000))) throw new Refusal(400, "replayed");
+    const { localHttpHost, localHttpPort } = claimed.origin;
+    if (!LOOPBACK.has(localHttpHost.toLowerCase()) || !Number.isInteger(localHttpPort) || localHttpPort < 1 || localHttpPort > 65535) throw new Refusal(400, "origin_not_allowed");
+    const allocation = await store.allocation(key);
+    if (!allocation || allocation.state !== "ready") throw new Refusal(409, "managed_endpoint_not_ready");
+    return { link, allocation, key, payload: claimed };
+  }
+
+  // Provisions again under the same allocation and hostname, at a new generation.
+  async function reprovision(link: Link, key: { userId: string; environmentId: string }, origin: { localHttpHost: string; localHttpPort: number }, existing: { tunnelId: string | null; dnsRecordId: string | null }) {
+    const current = (await store.allocation(key))!;
+    const allocation = await store.beginAllocation(key, { hostname: current.hostname, httpBaseUrl: link.http_base_url, originHost: origin.localHttpHost, originPort: origin.localHttpPort });
+    const provisioned = await tunnels
+      .provision({
+        name: current.hostname.split(".")[0]!,
+        hostname: current.hostname,
+        origin: { host: origin.localHttpHost, port: origin.localHttpPort },
+        existing,
+        onTunnel: async (tunnelId) => void (await store.checkpoint(key, allocation.generation, { tunnelId })),
+      })
+      .catch(() => {
+        throw new Refusal(502, "tunnel_provisioning_failed");
+      });
+    await store.checkpoint(key, allocation.generation, { tunnelId: provisioned.tunnelId, dnsRecordId: provisioned.dnsRecordId, ready: true });
+    return provisioned;
+  }
+
   // Tears down an allocation's tunnel only after claiming its current generation.
   async function releaseAllocation(key: { userId: string; environmentId: string }) {
     const allocation = await store.allocation(key);
@@ -317,6 +394,7 @@ export function createRelay(deps: RelayDeps) {
 
   return {
     releaseAllocation,
+    sweep: () => sweepIdleTunnels({ store, tunnels, mode: config.cleanupMode, tunnelBaseDomain: config.tunnelBaseDomain, now }),
     async fetch(request: Request) {
       const { pathname } = new URL(request.url);
       for (const [route, handle] of Object.entries(routes)) {

@@ -100,9 +100,23 @@ Per linked environment the relay makes one Cloudflare Tunnel, one proxied DNS re
 - **Clerk**: free up to its monthly active user allowance.
 - **Advanced Certificate Manager**: a monthly fee, only if your tunnel hostnames are more than one level deep (step 1).
 
-**Idle tunnels are not reclaimed.** Unlike T3 Code, the relay doesn't delete tunnels whose connector stopped. A machine that's off keeps its tunnel and DNS record until you run `unlink`, or delete them in the Cloudflare dashboard (Zero Trust, Networks, Tunnels, names starting `rbx-`).
+## Reclaiming idle tunnels
+
+A machine that sleeps or shuts down leaves its tunnel behind. If your plan bills tunnels whether or not a connector is attached, that's a charge for nothing. The relay can reclaim them, every five minutes, from the cron trigger in `wrangler.example.toml`. `RELAY_TUNNEL_CLEANUP_MODE` sets what a sweep does:
+
+- `off`, the default: nothing.
+- `dry-run`: counts what it would delete and logs the counts, deleting nothing. Run it for a while first and read the Worker's logs (`wrangler tail`).
+- `enabled`: deletes them.
+
+The mode is read when the Worker is deployed, so change it in `wrangler.toml` and run `wrangler deploy` again.
+
+A sweep deletes a tunnel only when Cloudflare has reported it down for five minutes, or never connected and at least an hour old, and only when its machine registered that it can replace it, which `serve` does on every start. It deletes the tunnel alone: the hostname, its DNS record and the link stay, so when the machine comes back, `serve` asks for a new tunnel under the same hostname, and your apps reconnect at the same address within a minute or two. A tunnel the relay has no record of is never deleted; clear those in the dashboard (Zero Trust, Networks, Tunnels, names starting `rbx-`). Each sweep makes at most 10 list requests and 100 deletions, stops early on a Cloudflare rate limit, and stops after 90 seconds.
+
+What it saves is one tunnel's charge for every machine that's off, for as long as it's off. On a plan where tunnels are free, it saves nothing but clutter, and you can leave it `off`.
 
 ## Verify after deploying
+
+- With reclaim at `dry-run`, a machine that's been off for five minutes shows up in the logged counts under `wouldDelete`; at `enabled`, its tunnel goes and comes back when `serve` restarts.
 
 The local tests fake Clerk and Cloudflare, so these only show once deployed:
 

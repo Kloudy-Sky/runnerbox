@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import type { D1Like, D1Statement } from "../store.ts";
 
@@ -6,7 +6,8 @@ import type { D1Like, D1Statement } from "../store.ts";
 // tests run the same SQL the deployed Worker does.
 export function sqliteD1(): D1Like {
   const db = new DatabaseSync(":memory:");
-  db.exec(readFileSync(new URL("../../migrations/0001_init.sql", import.meta.url), "utf8"));
+  const migrations = new URL("../../migrations/", import.meta.url);
+  for (const file of readdirSync(migrations).filter((name) => name.endsWith(".sql")).toSorted()) db.exec(readFileSync(new URL(file, migrations), "utf8"));
   const statement = (sql: string, values: unknown[]): D1Statement => ({
     bind: (...next) => statement(sql, next),
     first: async <T>() => (db.prepare(sql).get(...(values as never[])) as T | undefined) ?? null,

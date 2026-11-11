@@ -114,6 +114,8 @@ Connect gives an environment a public hostname through a Cloudflare tunnel, on a
 | What a Connect session can do | It changes something, or hands out more access | A key-bound credential only ever buys `history:read` and `runners:read`, whatever was asked, so it can't reach access management or mint pairing codes. | Tested locally |
 | The connector token | It shows up where other users can read it | It's stored owner-only in `.server/connect.json` and passed to `cloudflared` in its environment, never on its command line. | Tested locally, with a stand-in `cloudflared` |
 | Tunnel teardown | A delayed cleanup deletes a tunnel a newer link just set up | Teardown first claims the allocation at the generation it read, and every change bumps it. Unlink revokes the link before tearing down, so a failed teardown leaves nothing usable. | Tested locally |
+| Idle-tunnel reclaim | A sweep deletes a tunnel a machine is using, or one the relay doesn't own | A sweep deletes only tunnels Cloudflare reports down for 5 minutes (or never connected for an hour), owned by an allocation whose host registered recovery. It looks at the tunnel once more, then claims the allocation at the generation it read; a host that registers in between bumps it and keeps its tunnel. Tunnels with no allocation are never deleted. Off unless configured. | Tested locally, with Cloudflare faked |
+| Recovery and replacement requests | Someone re-routes a tunnel or gets a new connector token | Both are signed by the environment's pinned key for its linked user, live at most 5 minutes, are used once, and name only a loopback origin. A replacement is refused while the allocation still has a tunnel, and keeps its hostname and DNS record. | Tested locally |
 | Leaving Connect | A machine can't leave without its owner signing in again | Unlink is signed by the environment's key, so it works from a headless machine. | Tested locally |
 | Clerk tokens on the desktop | Another program reads them | Main holds them, encrypted with the OS keychain, and makes every relay call; the renderer only ever gets a credential bound to its own key. | Coded |
 
@@ -125,7 +127,9 @@ Connect gives an environment a public hostname through a Cloudflare tunnel, on a
 
 **Cloudflare and Clerk.** TLS ends at Cloudflare's edge, so Cloudflare can see job history in transit. Whoever takes over the Clerk account can read every environment it linked.
 
-**Idle tunnels.** The relay doesn't reclaim tunnels whose connector has stopped. See [connect-setup.md](connect-setup.md) for cost.
+**Idle tunnels, while reclaim is off.** By default the relay keeps tunnels whose connector has stopped. See [connect-setup.md](connect-setup.md) for turning reclaim on and what it costs.
+
+**A connector that comes back without telling the relay.** `cloudflared` reconnects to Cloudflare directly. If it does so in the moment between a sweep's last look and its delete, that tunnel is deleted, and the host gets a replacement the next time it checks, within about two minutes of the connector failing.
 
 ## This repository's own CI
 
