@@ -10,7 +10,7 @@ Every release is a GitHub release in this repository, tagged `v<version>`, built
 
 ## Versions
 
-A nightly's `X.Y.Z` is the stable it previews: one patch past the newest stable, or the version an earlier prerelease tag such as `v0.2.0-rc.3` was heading for, whichever is higher. A stable release promotes a nightly: it builds that nightly's commit again under the plain `X.Y.Z`. By default it promotes the latest nightly; the `nightly` input picks another. It refuses a version that's already released or isn't newer than the latest stable.
+A nightly's `X.Y.Z` is the stable it previews: one patch past the newest stable, or the version an earlier prerelease tag such as `v0.2.0-rc.3` was heading for, whichever is higher. A stable release promotes a nightly: it builds that nightly's commit again under the plain `X.Y.Z`. By default it promotes the latest nightly; the `nightly` input picks another. Only a nightly this workflow published, from a commit on `main`, counts: a tag someone pushed that merely looks like one is ignored. It refuses a version that's already released or isn't newer than the latest stable.
 
 In semver, which the updater compares with, each nightly sorts above the stable before it and below the stable it previews. Later nightlies sort above earlier ones, by date and then by run number. So someone on nightly moves to the next stable when it ships, and the next nightly passes that stable. The workflow stamps the version into every `package.json` in its checkout, so `runnerbox.js`, `runnerbox serve` and the app all report it. Nothing is committed back.
 
@@ -48,7 +48,7 @@ Without all five, the workflow still succeeds. Linux gets its feed. macOS builds
 In the repository's Settings:
 
 1. Environments, New environment, named `release`.
-2. Deployment branches and tags: Selected branches and tags. Add the branch rule `main` and the tag rule `v*`.
+2. Deployment branches and tags: Selected branches and tags. Add the branch rule `main` and nothing else. Nightly and stable runs are on `main`. A pushed tag runs the workflow from the tag's own commit, which can be on any branch, so no tag rule: a tag could otherwise read the secrets without review.
 3. Add the five secrets above as environment secrets, not repository secrets.
 4. Optionally, add yourself as a required reviewer, so each release waits for your approval before it can sign.
 

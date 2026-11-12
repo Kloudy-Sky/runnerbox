@@ -44,6 +44,7 @@ const input = (overrides: Partial<PlanInput>): PlanInput => ({
   promote: "",
   tags: ["v0.2.0", "v0.2.1-nightly.20261112.41", "v0.2.1-nightly.20261113.42"],
   commitOf: (tag) => (tag === "v0.2.1-nightly.20261113.42" ? "b".repeat(40) : "a".repeat(40)),
+  shippedNightly: () => true,
   ...overrides,
 });
 
@@ -60,6 +61,15 @@ test("a stable release ships the commit of a nightly, and never one that isn't n
   assert.throws(() => planRelease(input({ event: "workflow_dispatch", tags: [...input({}).tags, "v0.2.1"] })), /already released/);
   assert.throws(() => planRelease(input({ event: "workflow_dispatch", tags: ["v0.3.0", "v0.2.1-nightly.20261113.42"] })), /isn't newer/);
   assert.throws(() => planRelease(input({ event: "workflow_dispatch", promote: "v0.2.1" })), /isn't a tag|isn't a nightly/);
+});
+
+test("a tag someone pushed that only looks like a nightly is never promoted or counted", () => {
+  // The workflow's own nightly is .41; .42 was pushed by hand, or isn't on main.
+  const shippedNightly = (tag: string) => tag === "v0.2.1-nightly.20261112.41";
+  assert.deepEqual(planRelease(input({ event: "workflow_dispatch", shippedNightly })), { mode: "stable", tag: "v0.2.1", version: "0.2.1", sha: "a".repeat(40) });
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", promote: "v0.2.1-nightly.20261113.42", shippedNightly })), /isn't a nightly this workflow published/);
+  // Main matching the planted tag's commit doesn't skip a nightly.
+  assert.equal(planRelease(input({ sha: "b".repeat(40), shippedNightly })).mode, "nightly");
 });
 
 test("a pushed tag still releases runnerbox.js on its own", () => {

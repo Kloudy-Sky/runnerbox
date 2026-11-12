@@ -22,8 +22,10 @@ on:
 permissions:
   contents: read
 
+# Nightly and stable read and create tags, so they run one at a time. A pushed tag's run is its
+# own group, so a queued one is never cancelled by a newer run.
 concurrency:
-  group: release
+  group: ${{ github.event_name == 'push' && format('release-{0}', github.ref) || 'release' }}
   cancel-in-progress: false
 
 jobs:
@@ -45,11 +47,14 @@ jobs:
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
       # The input reaches the script as data, never as part of a command line.
+      # It asks GitHub when this run started, so a re-run keeps the version, and which releases
+      # this workflow published, since only those count as nightlies.
       - id: plan
         env:
+          GH_TOKEN: ${{ github.token }}
           PROMOTE: ${{ inputs.nightly }}
         run: |
-          RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" node scripts/release-plan.ts
+          RUN_STARTED_AT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)" node scripts/release-plan.ts
       - if: steps.plan.outputs.mode == 'skip'
         env:
           REASON: ${{ steps.plan.outputs.reason }}
@@ -113,8 +118,8 @@ jobs:
             apps/desktop/release/*-linux.yml
           if-no-files-found: error
 
-  # The only job that can read the signing secrets: the `release` environment holds them, and
-  # only main and release tags may use it. No workflow a pull request starts names it.
+  # The only job that can read the signing secrets: the `release` environment holds them, and only
+  # main may use it, so a pushed tag can't. No workflow a pull request starts names it.
   mac:
     needs: plan
     if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'

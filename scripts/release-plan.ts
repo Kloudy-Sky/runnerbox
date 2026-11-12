@@ -2,10 +2,10 @@
 //   node scripts/release-plan.ts
 // It reads the event from the environment GitHub sets, and tags and commits from the checkout,
 // which needs every tag fetched.
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import semver from "semver";
-import { latestNightlyTag, latestStable, nextStable, nightlyVersion, stableOf } from "./release-version.ts";
+import { latestStable, nextStable, nightlyTagsNewestFirst, nightlyVersion, stableOf } from "./release-version.ts";
 
 export type Plan =
   // `cli` is a pushed `v*` tag: `runnerbox.js` only, as before nightly and stable existed.
@@ -22,24 +22,30 @@ export type PlanInput = {
   readonly promote: string;
   readonly tags: ReadonlyArray<string>;
   readonly commitOf: (tag: string) => string;
+  // Whether this workflow published the tag's nightly, from a commit on `main`. Anyone who can
+  // push a tag can make one that looks like a nightly; only these count.
+  readonly shippedNightly: (tag: string) => boolean;
 };
+
+const latestShipped = (input: PlanInput) => nightlyTagsNewestFirst(input.tags).find(input.shippedNightly) ?? null;
 
 export function planRelease(input: PlanInput): Plan {
   switch (input.event) {
     case "push":
       return { mode: "cli", tag: input.refName, version: input.refName.replace(/^v/, ""), sha: input.sha };
     case "schedule": {
-      const last = latestNightlyTag(input.tags);
+      const last = latestShipped(input);
       if (last && input.commitOf(last) === input.sha) return { mode: "skip", reason: `main hasn't changed since ${last}.` };
       const version = nightlyVersion(nextStable(input.tags), input.runStartedAt, input.runNumber);
       return { mode: "nightly", tag: `v${version}`, version, sha: input.sha };
     }
     case "workflow_dispatch": {
       if (input.refName !== "main") throw new Error(`Stable releases are dispatched from main, not ${input.refName}.`);
-      const nightly = input.promote === "" ? latestNightlyTag(input.tags) : input.promote;
+      const nightly = input.promote === "" ? latestShipped(input) : input.promote;
       if (!nightly) throw new Error("There's no nightly to promote yet. A stable release ships a commit a nightly already shipped.");
       if (!input.tags.includes(nightly)) throw new Error(`${nightly} isn't a tag in this repository.`);
       const version = stableOf(nightly);
+      if (!input.shippedNightly(nightly)) throw new Error(`${nightly} isn't a nightly this workflow published from main, so it can't become stable.`);
       if (input.tags.includes(`v${version}`)) throw new Error(`v${version} is already released.`);
       const stable = latestStable(input.tags);
       if (stable && !semver.gt(version, stable)) throw new Error(`${nightly} previews ${version}, which isn't newer than the latest stable, ${stable}.`);
@@ -52,6 +58,11 @@ export function planRelease(input: PlanInput): Plan {
 
 if (import.meta.main) {
   const git = (...args: string[]) => execFileSync("git", args, { encoding: "utf8" }).trim();
+  const succeeds = (command: string, args: string[]) => spawnSync(command, args, { stdio: "ignore" }).status === 0;
+  const onMain = (sha: string) => succeeds("git", ["merge-base", "--is-ancestor", sha, "HEAD"]);
+  // A published release this workflow's GITHUB_TOKEN made, not a draft or someone's own.
+  const publishedByWorkflow = (tag: string) =>
+    spawnSync("gh", ["release", "view", tag, "--repo", process.env.GITHUB_REPOSITORY ?? "", "--json", "isDraft,author", "--jq", '(.isDraft | not) and .author.login == "github-actions[bot]"'], { encoding: "utf8" }).stdout.trim() === "true";
   const env = (name: string) => process.env[name] ?? "";
   const plan = planRelease({
     event: env("GITHUB_EVENT_NAME"),
@@ -62,6 +73,8 @@ if (import.meta.main) {
     promote: env("PROMOTE"),
     tags: git("tag", "--list", "v*").split("\n").filter(Boolean),
     commitOf: (tag) => git("rev-list", "-n", "1", tag),
+    // Scheduled and stable runs check out main, so HEAD is main.
+    shippedNightly: (tag) => onMain(git("rev-list", "-n", "1", tag)) && publishedByWorkflow(tag),
   });
   const lines = Object.entries(plan).map(([key, value]) => `${key}=${value}`);
   console.log(lines.join("\n"));

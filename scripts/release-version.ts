@@ -28,15 +28,16 @@ export function nextStable(tags: ReadonlyArray<string>): string {
   return candidates.toSorted(semver.compare).at(-1) ?? "0.1.0";
 }
 
-// `startedAt` is when the run started, so rerunning a run's jobs keeps its version.
+// `startedAt` is when the workflow run started, so re-running the run keeps its version.
 export function nightlyVersion(stable: string, startedAt: Date, runNumber: number): string {
   return `${stable}-nightly.${startedAt.toISOString().slice(0, 10).replaceAll("-", "")}.${runNumber}`;
 }
 
-export const latestNightlyTag = (tags: ReadonlyArray<string>): string | null => {
-  const latest = versionsOf(tags).filter((version) => NIGHTLY.test(version)).toSorted(semver.compare).at(-1);
-  return latest ? `v${latest}` : null;
-};
+export const nightlyTagsNewestFirst = (tags: ReadonlyArray<string>): ReadonlyArray<string> =>
+  versionsOf(tags)
+    .filter((version) => NIGHTLY.test(version))
+    .toSorted(semver.rcompare)
+    .map((version) => `v${version}`);
 
 export const latestStable = (tags: ReadonlyArray<string>): string | null =>
   versionsOf(tags).filter((version) => semver.prerelease(version) === null).toSorted(semver.compare).at(-1) ?? null;
