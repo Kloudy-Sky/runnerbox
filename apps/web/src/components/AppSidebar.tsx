@@ -25,8 +25,8 @@ import {
 
 const keep = (previous: RootSearch) => previous;
 
-// What needs the owner, what's worth watching, and the views to browse, like T3 Code's list of
-// threads: each item shows its state without opening it.
+// The views to browse first, then what needs the owner and what's worth watching, like T3 Code's
+// list of threads: each item shows its state without opening it.
 export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
   const inbox = useInbox().data;
   const path = useRouterState({ select: (state) => state.location.pathname });
@@ -50,6 +50,20 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
         <EnvironmentMenu />
       </SidebarHeader>
       <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Browse</SidebarGroupLabel>
+          <SidebarMenu>
+            {browse.map(({ to, label, icon: Icon, ...rest }) => (
+              <SidebarMenuItem key={to}>
+                <SidebarMenuButton isActive={path === to || path.startsWith(`${to}/`)} render={<Link to={to} search={keep} />}>
+                  <Icon />
+                  <span>{label}</span>
+                </SidebarMenuButton>
+                {"badge" in rest && rest.badge ? <SidebarMenuBadge>{rest.badge}</SidebarMenuBadge> : null}
+              </SidebarMenuItem>
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
         <SidebarGroup>
           <SidebarGroupLabel>
             <Link to="/" search={keep} className="hover:text-foreground">
@@ -102,20 +116,6 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
             </SidebarMenu>
           </SidebarGroup>
         ) : null}
-        <SidebarGroup>
-          <SidebarGroupLabel>Browse</SidebarGroupLabel>
-          <SidebarMenu>
-            {browse.map(({ to, label, icon: Icon, ...rest }) => (
-              <SidebarMenuItem key={to}>
-                <SidebarMenuButton isActive={path === to || path.startsWith(`${to}/`)} render={<Link to={to} search={keep} />}>
-                  <Icon />
-                  <span>{label}</span>
-                </SidebarMenuButton>
-                {"badge" in rest && rest.badge ? <SidebarMenuBadge>{rest.badge}</SidebarMenuBadge> : null}
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <div className="flex items-center justify-between">
