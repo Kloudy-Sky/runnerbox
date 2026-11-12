@@ -1,5 +1,6 @@
 import { AuthScope, type ConnectResponse, type LinkedEnvironment } from "@runnerbox/contracts";
 import * as Schema from "effect/Schema";
+import type { UpdateChannel, UpdateState } from "./updates.ts";
 
 // How to reach an environment. A direct route is a URL the client can open. An SSH route asks the
 // desktop app to forward the server's loopback port from another machine first.
@@ -89,5 +90,15 @@ export interface ClientPlatform {
     readonly closeTunnel: (route: SshRoute) => Promise<void>;
     // Runs `<serverCommand> pair --json` over SSH, so pairing needs no code typed by hand.
     readonly fetchPairingCode: (route: SshRoute) => Promise<{ readonly code: string; readonly environmentId: string }>;
+  };
+  // The desktop app updating itself. Absent in a browser, which the server's own release updates.
+  readonly updates?: {
+    readonly state: () => Promise<UpdateState>;
+    // Calls `listener` on every change until the returned function is called.
+    readonly subscribe: (listener: (state: UpdateState) => void) => () => void;
+    readonly setChannel: (channel: UpdateChannel) => Promise<void>;
+    readonly check: () => Promise<void>;
+    // Quits and installs the downloaded update, then opens the app again.
+    readonly install: () => Promise<void>;
   };
 }

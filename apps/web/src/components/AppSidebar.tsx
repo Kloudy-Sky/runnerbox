@@ -2,6 +2,7 @@ import type { InboxItem } from "@runnerbox/contracts";
 import { Button } from "./ui/button.tsx";
 import { Link, useParams, useRouterState } from "@tanstack/react-router";
 import { ChevronRight, Gauge, ListTree, Server, Settings } from "lucide-react";
+import { useDesktopUpdates } from "../hooks/useDesktopUpdates.ts";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRunnerState } from "../hooks/useRunnerState.ts";
 import { formatAge } from "../lib/format.ts";
@@ -29,6 +30,7 @@ const keep = (previous: RootSearch) => previous;
 // list of threads: each item shows its state without opening it.
 export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
   const inbox = useInbox().data;
+  const updates = useDesktopUpdates();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const installs = useRunnerState();
   const slots = installs?.filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots)) ?? [];
@@ -118,6 +120,11 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
         ) : null}
       </SidebarContent>
       <SidebarFooter>
+        {updates?.state.status === "ready" ? (
+          <Button variant="ghost" size="xs" className="justify-start" title={`runnerbox ${updates.state.pending ?? ""} is downloaded`} onClick={() => void updates.actions.install()}>
+            Restart to update
+          </Button>
+        ) : null}
         <div className="flex items-center justify-between">
           <RangePicker />
           <Button variant="ghost-muted" size="xs" onClick={onOpenCommand} aria-label="Jump to a page, item or run" title="Jump to a page, item or run">

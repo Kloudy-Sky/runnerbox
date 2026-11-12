@@ -14,13 +14,16 @@
   },
   "dependencies": {
     "@runnerbox/client-runtime": "workspace:*",
+    "@runnerbox/connect": "workspace:*",
     "@runnerbox/contracts": "workspace:*",
     "effect": "4.0.5",
-    "@runnerbox/connect": "workspace:*"
+    "electron-updater": "6.8.11",
+    "semver": "7.7.4"
   },
   "devDependencies": {
+    "@types/semver": "7.8.0",
     "electron": "44.10.0",
-    "esbuild": "0.28.2",
-    "electron-builder": "26.16.1"
+    "electron-builder": "26.16.1",
+    "esbuild": "0.28.2"
   }
 }

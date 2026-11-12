@@ -1,12 +1,18 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { SavedEnvironment, SshRoute } from "@runnerbox/client-runtime";
+import { SavedEnvironment, SshRoute, UpdateChannel } from "@runnerbox/client-runtime";
 import { app, BrowserWindow, type IpcMainInvokeEvent, ipcMain, protocol, safeStorage, session, shell } from "electron";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import { createCatalog, type TokenCipher } from "./catalog.ts";
 import { createConnect } from "./connect.ts";
 import { CHANNELS } from "./ipc/channels.ts";
 import { createTunnels } from "./ssh/tunnels.ts";
+import { DesktopUpdates, layer as desktopUpdatesLayer } from "./updates/DesktopUpdates.ts";
+import { layer as electronUpdaterLayer } from "./updates/electronUpdaterLive.ts";
 
 // The desktop app is only a client: it serves the bundled web UI from disk and keeps saved
 // environments. Every server it shows is reached over that server's own HTTP and WebSocket.
@@ -48,6 +54,29 @@ const decodeId = Schema.decodeUnknownSync(Schema.String);
 const decodeRoute = Schema.decodeUnknownSync(SshRoute);
 const decodeProofRequest = Schema.decodeUnknownSync(Schema.Struct({ method: Schema.String, url: Schema.String }));
 const tunnels = createTunnels();
+
+// Why this build never updates itself, or null when it has a feed to check. A release build
+// carries `app-update.yml`, naming its feed; one from a checkout, or an unsigned macOS build, has none.
+function updatesDisabledReason() {
+  if (!app.isPackaged || DEV_URL) return "This build runs from a checkout, so it doesn't update itself.";
+  if (process.env.RUNNERBOX_DISABLE_UPDATES) return "RUNNERBOX_DISABLE_UPDATES turns updates off for this app.";
+  if (process.platform === "linux" && !process.env.APPIMAGE) return "Only the AppImage updates itself.";
+  if (!existsSync(join(process.resourcesPath, "app-update.yml"))) return "This build has no update feed: it's unsigned, or wasn't built by a release.";
+  return null;
+}
+const decodeChannel = Schema.decodeUnknownSync(UpdateChannel);
+const updates = ManagedRuntime.make(
+  desktopUpdatesLayer({
+    version: app.getVersion(),
+    userData: app.getPath("userData"),
+    disabledReason: updatesDisabledReason(),
+    broadcast: (state) => {
+      for (const window of BrowserWindow.getAllWindows()) window.webContents.send(CHANNELS.updatesState, state);
+    },
+    now: () => new Date(),
+  }).pipe(Layer.provide(electronUpdaterLayer)),
+);
+const withUpdates = <A>(use: (service: DesktopUpdates["Service"]) => Effect.Effect<A>) => updates.runPromise(Effect.flatMap(DesktopUpdates, use));
 
 // Only the app's own page may call main; anything else that loads in a window gets nothing.
 const fromApp = (event: IpcMainInvokeEvent) => {
@@ -100,6 +129,23 @@ function registerIpc() {
     fromApp(event);
     return connect.prove(decodeId(keyId), decodeProofRequest(request));
   });
+  ipcMain.handle(CHANNELS.updatesGetState, (event) => {
+    fromApp(event);
+    return withUpdates((service) => service.state);
+  });
+  ipcMain.handle(CHANNELS.updatesSetChannel, (event, channel: unknown) => {
+    fromApp(event);
+    const picked = decodeChannel(channel);
+    return withUpdates((service) => service.setChannel(picked));
+  });
+  ipcMain.handle(CHANNELS.updatesCheck, (event) => {
+    fromApp(event);
+    return withUpdates((service) => service.check);
+  });
+  ipcMain.handle(CHANNELS.updatesInstall, (event) => {
+    fromApp(event);
+    return withUpdates((service) => service.install);
+  });
   ipcMain.handle(CHANNELS.sshOpenTunnel, (event, route: unknown) => {
     fromApp(event);
     return tunnels.open(decodeRoute(route));
@@ -151,6 +197,8 @@ app.whenReady().then(() => {
   serveBundledUi();
   registerIpc();
   createWindow();
+  // Starts the schedule of checks.
+  void withUpdates((service) => service.state);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
