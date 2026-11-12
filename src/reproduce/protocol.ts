@@ -21,11 +21,15 @@ export const ReproduceRequest = type({
   network: "'on' | 'setup'",
 })
   .or({ "+": "reject", op: "'exec'", id: Id, command: `1 <= string <= ${MAX_COMMAND_LENGTH}`, timeoutSec: `1 <= number.integer <= ${MAX_COMMAND_SECONDS}` })
-  .or({ "+": "reject", op: "'stop'", id: Id });
+  .or({ "+": "reject", op: "'stop'", id: Id })
+  // Whether a reproduce is still there, since `up` removes one on its own and never says so.
+  .or({ "+": "reject", op: "'status'", id: Id });
 
 export type ReproduceRequest = typeof ReproduceRequest.infer;
 
 export type Started = { id: string; image: string; imageFallback: boolean };
 export type Executed = { exitCode: number | null; output: string; truncated: boolean; timedOut: boolean; commandsLeft: number };
 export type Stopped = { stopped: true };
-export type ReproduceResponse = ({ ok: true } & (Started | Executed | Stopped)) | { ok: false; error: string };
+// `reason` says why it ended, in the words its next command would get.
+export type Status = { running: true } | { running: false; reason: string };
+export type ReproduceResponse = ({ ok: true } & (Started | Executed | Stopped | Status)) | { ok: false; error: string };

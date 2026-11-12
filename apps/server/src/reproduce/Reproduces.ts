@@ -32,6 +32,9 @@ export class Reproduces extends Context.Service<
     // Why it ended, to log: the owner stopped it, or `up` had already removed it and says why.
     // Null when the thread had none running.
     readonly stop: (threadId: string) => Effect.Effect<string | null, ReproduceError>;
+    // Asks `up` whether the thread's reproduce is still there. Returns why it ended when this call
+    // found it gone, after which `running` is false; null otherwise, including when `up` can't say.
+    readonly refresh: (threadId: string) => Effect.Effect<string | null>;
     // For the turn's lifetime, lets `sessionId`'s token run commands in the thread's reproduce.
     readonly bind: (sessionId: string, threadId: string) => Effect.Effect<void, never, Scope.Scope>;
     readonly boundThread: (sessionId: string) => string | undefined;
@@ -81,6 +84,16 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const refresh = Effect.fn("Reproduces.refresh")(function* (threadId: string) {
+    const current = running.get(threadId);
+    if (!current) return null;
+    // An older `up` doesn't know `status`; its reproduce is then taken to be running.
+    const reason = yield* up.status(current.install, current.upId).pipe(Effect.orElseSucceed(() => null));
+    if (reason === null || running.get(threadId) !== current) return null;
+    running.delete(threadId);
+    return reason;
+  });
+
   const bind = (sessionId: string, threadId: string) =>
     Effect.acquireRelease(
       Effect.sync(() => bindings.set(sessionId, threadId)),
@@ -100,7 +113,7 @@ const make = Effect.gen(function* () {
     );
   });
 
-  return Reproduces.of({ check, start, running: (threadId) => running.has(threadId), startedHere: (threadId) => startedHere.has(threadId), stop, bind, boundThread: (sessionId) => bindings.get(sessionId), exec });
+  return Reproduces.of({ check, start, running: (threadId) => running.has(threadId), startedHere: (threadId) => startedHere.has(threadId), stop, refresh, bind, boundThread: (sessionId) => bindings.get(sessionId), exec });
 });
 
 export const layer = Layer.effect(Reproduces, make);

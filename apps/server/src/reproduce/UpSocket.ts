@@ -15,6 +15,8 @@ const Answer = Schema.Union([
   Schema.Struct({ ok: Schema.Literal(true), id: Schema.String, image: Schema.String, imageFallback: Schema.Boolean }),
   Schema.Struct({ ok: Schema.Literal(true), exitCode: Schema.NullOr(Schema.Int), output: Schema.String, truncated: Schema.Boolean, timedOut: Schema.Boolean, commandsLeft: Schema.Int }),
   Schema.Struct({ ok: Schema.Literal(true), stopped: Schema.Literal(true) }),
+  Schema.Struct({ ok: Schema.Literal(true), running: Schema.Literal(true) }),
+  Schema.Struct({ ok: Schema.Literal(true), running: Schema.Literal(false), reason: Schema.String }),
   Schema.Struct({ ok: Schema.Literal(false), error: Schema.String }),
 ]);
 type Answer = typeof Answer.Type;
@@ -36,6 +38,8 @@ export class UpSocket extends Context.Service<
     readonly start: (install: string, request: Extract<ReproduceRequest, { op: "start" }>) => Effect.Effect<Started, ReproduceError>;
     readonly exec: (install: string, request: Extract<ReproduceRequest, { op: "exec" }>) => Effect.Effect<Executed, ReproduceError>;
     readonly stop: (install: string, id: string) => Effect.Effect<void, ReproduceError>;
+    // Null while it runs; why it ended once `up` removed it.
+    readonly status: (install: string, id: string) => Effect.Effect<string | null, ReproduceError>;
   }
 >()("runnerbox/server/reproduce/UpSocket") {}
 
@@ -100,6 +104,10 @@ const make = Effect.gen(function* () {
     exec: (install, request) =>
       send(install, request, (request.timeoutSec + 60) * 1000).pipe(Effect.flatMap((answer) => ("exitCode" in answer ? Effect.succeed(answer) : Effect.fail(unexpected)))),
     stop: (install, id) => send(install, { op: "stop", id }, QUICK_MS).pipe(Effect.asVoid),
+    status: (install, id) =>
+      send(install, { op: "status", id }, QUICK_MS).pipe(
+        Effect.flatMap((answer) => ("running" in answer ? Effect.succeed(answer.running ? null : answer.reason) : Effect.fail(unexpected))),
+      ),
   });
 });
 

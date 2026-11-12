@@ -207,10 +207,19 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const ended = (id: string, reason: string) => appendNow(id, (seq, at) => ({ _tag: "ReproduceEnded", seq, reason, at }));
+
+  // `up` removes a reproduce on its own, for real jobs' memory, idling or age, and never says so.
+  // Asking before a turn, and whenever the app checks, logs that end once with `up`'s reason.
+  const settleReproduce = (id: string) =>
+    reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
+
   const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, scopes }: { readonly accountId?: string | undefined; readonly scopes: ReadonlyArray<AuthScope> }) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
+    // So a turn doesn't get the shell for a container `up` already removed.
+    yield* settleReproduce(id);
     const driver = drivers.get(account.driver);
     const status = yield* driver.status({ hasKey: account.apiKey !== null });
     if (!status.available) return yield* new ThreadError({ reason: "provider_unavailable" });
@@ -282,6 +291,7 @@ const make = Effect.gen(function* () {
 
   const checkReproduce = Effect.fn("Threads.checkReproduce")(function* (id: string) {
     const { packet, subject } = yield* header(id);
+    yield* settleReproduce(id);
     return yield* reproduces.check(packet, jobIdOf(subject));
   });
 
@@ -291,8 +301,6 @@ const make = Effect.gen(function* () {
     const started = yield* reproduces.start(id, packet, jobIdOf(subject), network);
     yield* appendNow(id, (seq, at) => ({ _tag: "ReproduceStarted", seq, ...started, network, at }));
   });
-
-  const ended = (id: string, reason: string) => appendNow(id, (seq, at) => ({ _tag: "ReproduceEnded", seq, reason, at }));
 
   const stopReproduce = Effect.fn("Threads.stopReproduce")(function* (id: string) {
     yield* header(id);

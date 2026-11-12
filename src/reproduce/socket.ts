@@ -71,6 +71,8 @@ async function answer(reproducer: Reproducer, line: string): Promise<ReproduceRe
         return { ok: true, ...(await reproducer.exec(request)) };
       case "stop":
         return { ok: true, ...(await reproducer.stop(request.id)) };
+      case "status":
+        return { ok: true, ...reproducer.status(request.id) };
     }
   } catch (error) {
     // Refusals are meant for the user. Anything else is a fault, and its details stay in up's log.
