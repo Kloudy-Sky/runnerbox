@@ -1,0 +1,58 @@
+name: release-check
+
+# Packages the desktop app as a nightly would, without publishing anything or reaching the
+# `release` environment's secrets: Linux gets its update feed, and an unsigned macOS build gets
+# none. Runs only when what a release builds changes.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/release*.yml"
+      - "apps/desktop/**"
+      - "scripts/release-*.ts"
+      - "scripts/set-version.ts"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: --linux
+            feed: release/nightly-linux.yml
+          - os: macos-15
+            platform: --mac
+            feed: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/set-version.ts 0.0.1-nightly.20260101.1
+      - run: pnpm --filter @runnerbox/desktop ensure:electron
+      - env:
+          RUNNERBOX_UPDATE_REPO: ${{ github.repository }}
+        run: pnpm desktop:dist ${{ matrix.platform }}
+      - name: Only the expected update feed is built
+        working-directory: apps/desktop
+        env:
+          FEED: ${{ matrix.feed }}
+        run: |
+          ls -l release
+          found=""
+          for file in release/*.yml; do
+            case "$file" in release/builder-*|"release/*.yml") ;; *) found="$found$file" ;; esac
+          done
+          if [ "$found" != "$FEED" ]; then
+            echo "Expected update feed '${FEED:-none}', found '${found:-none}'."
+            exit 1
+          fi
