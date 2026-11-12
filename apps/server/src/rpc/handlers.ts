@@ -48,7 +48,7 @@ export const layer = (session: Session) =>
         "threads.list": ({ subject }) => threads.list(subject),
         "threads.read": ({ id }) => threads.read(id),
         "threads.create": ({ subject, days }) => threads.create(subject, days),
-        "threads.startTurn": ({ id, text, accountId }) => threads.startTurn(id, text, accountId),
+        "threads.startTurn": ({ id, text, accountId }) => threads.startTurn(id, text, { accountId, scopes: session.scopes }),
         "threads.interrupt": ({ id }) => threads.interrupt(id),
         "threads.subscribe": ({ id }) => threads.subscribe(id),
         "threads.checkReproduce": ({ id }) => threads.checkReproduce(id),
