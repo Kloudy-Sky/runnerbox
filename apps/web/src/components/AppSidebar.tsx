@@ -63,7 +63,7 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
                 <SidebarMenuButton size="lg" isActive={isOpen(item)} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-start gap-2">
-                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warning" />
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive" />
                       <span className="line-clamp-2">{item.title}</span>
                     </span>
                   </span>
@@ -82,6 +82,7 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
                   <Collapsible defaultOpen={group.items.some(isOpen)}>
                     <SidebarMenuButton render={<CollapsibleTrigger />} className="group/trigger">
                       <ChevronRight className="transition-transform duration-150 group-data-panel-open/trigger:rotate-90" />
+                      {group.kind === "flaky" ? <span className="size-1.5 shrink-0 rounded-full bg-warning" /> : null}
                       <span>{group.title}</span>
                     </SidebarMenuButton>
                     <CollapsiblePanel>

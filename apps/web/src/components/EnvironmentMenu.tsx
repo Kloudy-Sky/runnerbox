@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ChevronsUpDown } from "lucide-react";
 import { useStore } from "zustand";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
-import { activeRoute, routeKind } from "../lib/routes.ts";
+import { activeRoute } from "../lib/routes.ts";
 import { runtime } from "../runtime.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { usePreferences } from "../state/preferences.ts";
@@ -25,8 +25,7 @@ export function EnvironmentMenu() {
           <span className="block truncate font-medium">{environment?.label ?? "No environment"}</span>
           {environment ? (
             <span className="flex items-center gap-2 text-xs">
-              <ConnectionState connection={connection} />
-              {route ? <span className="text-muted-foreground">{routeKind(route)}</span> : null}
+              <ConnectionState connection={connection} route={route} />
             </span>
           ) : null}
         </span>

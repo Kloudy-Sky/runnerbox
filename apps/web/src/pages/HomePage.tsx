@@ -34,7 +34,7 @@ export function HomePage() {
       </Reading.Header>
       {inbox.items.length > 0 ? (
         <div className="flex flex-col gap-6">
-          {inbox.items.map((item) => (
+          {inbox.items.map((item, index) => (
             <section key={item.id} className="enter flex flex-col gap-1.5">
               <h2 className="font-medium">
                 <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="hover:underline">
@@ -44,7 +44,8 @@ export function HomePage() {
               <p className="text-foreground/90">{item.happened}</p>
               <p className="text-muted-foreground">{item.action}</p>
               <div>
-                <Button size="sm" variant="secondary" render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
+                {/* The first is the screen's one primary action; the rest stay quiet. */}
+                <Button size="sm" variant={index === 0 ? "default" : "link"} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
                   Look into it
                 </Button>
               </div>
