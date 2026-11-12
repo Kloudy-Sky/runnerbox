@@ -5,7 +5,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { serverIsBehind, serverUpdateCommand } from "./serverUpdate.ts";
+import { releaseRepository, serverIsBehind, serverUpdateCommand } from "./serverUpdate.ts";
 
 test("a server is behind only when it's older than a released app", () => {
   assert.equal(serverIsBehind("0.2.1", "0.2.0"), true);
@@ -30,7 +30,7 @@ async function runUpdate(served: { script: string; sha256Of: string }) {
     await writeFile(join(bin, "systemctl"), `#!/bin/sh\necho "$@" > "$HOME/restarted"\n`);
     await chmod(join(bin, "curl"), 0o755);
     await chmod(join(bin, "systemctl"), 0o755);
-    const ran = spawnSync("sh", ["-c", serverUpdateCommand("0.2.1")], { env: { PATH: `${bin}:${process.env.PATH}`, HOME: home }, encoding: "utf8" });
+    const ran = spawnSync("sh", ["-c", serverUpdateCommand("owner/name", "0.2.1")], { env: { PATH: `${bin}:${process.env.PATH}`, HOME: home }, encoding: "utf8" });
     const read = (path: string) => readFile(join(home, path), "utf8").catch(() => null);
     return { status: ran.status, installed: await read("runnerbox/runnerbox.js"), restarted: await read("restarted"), curlArgs: await read("curl-args") };
   } finally {
@@ -41,11 +41,19 @@ async function runUpdate(served: { script: string; sha256Of: string }) {
 test("the command installs this app's release only after its sha256 checks out, then restarts the server", async () => {
   const good = await runUpdate({ script: "new", sha256Of: "new" });
   assert.deepEqual([good.status, good.installed, good.restarted?.trim()], [0, "new", "--user restart runnerbox-serve"]);
-  assert.match(good.curlArgs ?? "", /releases\/download\/v0\.2\.1\/runnerbox\.js .*releases\/download\/v0\.2\.1\/runnerbox\.js\.sha256/);
+  assert.equal(good.curlArgs?.trim(), "-fsSL -O https://github.com/owner/name/releases/download/v0.2.1/runnerbox.js -O https://github.com/owner/name/releases/download/v0.2.1/runnerbox.js.sha256");
 });
 
 test("a download that doesn't match its sha256 leaves the old file and doesn't restart", async () => {
   const bad = await runUpdate({ script: "tampered", sha256Of: "new" });
   assert.notEqual(bad.status, 0);
   assert.deepEqual([bad.installed, bad.restarted], ["old", null]);
+});
+
+test("the command names only the repository this build was released from", () => {
+  assert.equal(releaseRepository("owner/name"), "owner/name");
+  assert.equal(releaseRepository(""), null);
+  assert.equal(releaseRepository(undefined), null);
+  assert.equal(releaseRepository("owner/name; rm -rf ~"), null);
+  assert.throws(() => serverUpdateCommand("owner", "0.2.1"), /owner\/name/);
 });
