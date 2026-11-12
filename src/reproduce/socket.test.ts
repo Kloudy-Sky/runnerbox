@@ -16,6 +16,7 @@ const reproducer: Reproducer = {
     throw new ReproduceRefused("No reproduce has that id.");
   },
   stop: async () => ({ stopped: true }),
+  status: () => ({ running: false, reason: "This reproduce ended: it was idle for 5 minutes." }),
   check: async () => {},
   begin: async () => () => {},
   end: async () => {},
@@ -39,6 +40,7 @@ test("the socket is the owner's alone, and answers each request with one JSON li
     assert.equal((await stat(path)).mode & 0o777, 0o600);
     assert.equal((await stat(join(dir, "reproduce"))).mode & 0o777, 0o700);
     assert.deepEqual(await ask(path, JSON.stringify({ op: "stop", id: "0a1b2c3d" })), { ok: true, stopped: true });
+    assert.deepEqual(await ask(path, JSON.stringify({ op: "status", id: "0a1b2c3d" })), { ok: true, running: false, reason: "This reproduce ended: it was idle for 5 minutes." });
     const refused = await ask(path, JSON.stringify({ op: "start", repo: "owner/name", commit: "a".repeat(40), kind: "linux", network: "on" }));
     assert.deepEqual(refused, { ok: false, error: "A reproduce is already running on this install. Stop it first." });
     const invalid = (await ask(path, JSON.stringify({ op: "exec", id: "0a1b2c3d", command: "ls", timeoutSec: 601 }))) as { ok: boolean; error: string };

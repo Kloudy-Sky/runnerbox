@@ -207,3 +207,23 @@ test("a turn gets the shell only when the session asking holds threads:reproduce
       assert.deepEqual(up.requests.flatMap((request) => (request.op === "exec" ? [request.command] : [])), ["echo full"]);
     },
   ));
+
+test("after up removes a reproduce on its own, the next check logs why and the next turn has no shell", () =>
+  withReproduce([[{ text: "Reading." }]], async (server, up, fake) => {
+    const token = await session(server);
+    const id = await withClient(server, token, (client) =>
+      Effect.gen(function* () {
+        const thread = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: ITEM }, days: 14 });
+        yield* client["threads.startReproduce"]({ id: thread.id, network: "on" });
+        // As when it sat idle for 5 minutes.
+        yield* Effect.promise(() => up.reproducer.stop("00000000"));
+        yield* client["threads.checkReproduce"]({ id: thread.id });
+        yield* client["threads.checkReproduce"]({ id: thread.id });
+        yield* ask(client, thread.id);
+        return thread.id;
+      }),
+    );
+    const ended = (await threadLog(server, id)).filter((item) => item._tag === "ReproduceEnded");
+    assert.deepEqual(ended.map((item) => item._tag === "ReproduceEnded" && item.reason), ["This reproduce ended: stopped."]);
+    assert.deepEqual(fake.inputs.map((input) => input.reproduce), [false]);
+  }));

@@ -2,7 +2,7 @@ import type { Readable } from "node:stream";
 import type { RunnerType } from "../launcher/launcher-config.ts";
 import type { VmExec } from "../vm/exec-in-vm.ts";
 import { execCommand, imageExistsCommand, networkOffCommand, removeCommand, reproduceRunCommand, sweepCommand, unpackCommand, workdirCommand } from "./container-command.ts";
-import type { Executed, ReproduceRequest, Started, Stopped } from "./protocol.ts";
+import type { Executed, ReproduceRequest, Started, Status, Stopped } from "./protocol.ts";
 
 // One throwaway container at a time per install, on a kind's image with a commit's files, for
 // `runnerbox serve` to rerun a failing step in. It yields to real jobs: it starts only while no
@@ -135,6 +135,12 @@ export function createReproducer(actions: ReproducerActions) {
     }
   }
 
+  // Answers without touching the VM, so asking never keeps a reproduce alive.
+  function status(id: string): Status {
+    if (session?.id === id) return { running: true };
+    return { running: false, reason: ended?.id === id ? `This reproduce ended: ${ended.reason}.` : "No reproduce has that id." };
+  }
+
   async function stop(id: string): Promise<Stopped> {
     await remove(own(id), "stopped");
     return { stopped: true };
@@ -154,6 +160,7 @@ export function createReproducer(actions: ReproducerActions) {
     start,
     exec,
     stop,
+    status,
     check,
     // Removes whatever an earlier `up` left, then keeps checking leases until stopped.
     async begin() {

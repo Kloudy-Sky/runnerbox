@@ -47,11 +47,15 @@ export function useThread(subject: ThreadSubject, days: number) {
     );
   }, [enabled, environmentId, threadId, connected]);
 
+  const current = threadId !== null && view?.id === threadId ? view.value : EMPTY_VIEW;
+  const reproducing = isReproducing(current.items);
   // Whether this thread's job can be reproduced, and whether this session may: the server decides.
+  // While a container runs, asking again each minute lets the server notice `up` removed it.
   const reproduce = useQuery({
     queryKey: [environmentId, "threads.checkReproduce", threadId],
     queryFn: () => runtime.run(environmentId, (client) => client["threads.checkReproduce"]({ id: threadId! })),
     enabled: enabled && threadId !== null,
+    refetchInterval: reproducing ? 60_000 : false,
     retry: false,
   });
   // The owner's click; the server picks the image from the job's own runner.
@@ -94,12 +98,11 @@ export function useThread(subject: ThreadSubject, days: number) {
     runtime.run(environmentId, (client) => client["threads.interrupt"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
   };
 
-  const current = threadId !== null && view?.id === threadId ? view.value : EMPTY_VIEW;
   return {
     permitted,
     provider: provider.data,
     view: current,
-    reproduce: { check: reproduce.data ?? null, running: isReproducing(current.items), start: startReproduce, stop: stopReproduce },
+    reproduce: { check: reproduce.data ?? null, running: reproducing, start: startReproduce, stop: stopReproduce },
     error,
     send,
     interrupt,

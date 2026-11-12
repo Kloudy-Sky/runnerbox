@@ -81,8 +81,14 @@ test("a real slot waiting for memory removes the reproduce, and its next command
 test("an idle or old reproduce is removed, and a stopped one can't be used", async () => {
   const idle = await fakes();
   const first = await idle.reproducer.start({ ...start, kind: idle.kind });
+  const calls = idle.vmCalls.length;
+  assert.deepEqual(idle.reproducer.status(first.id), { running: true });
   idle.clock.now += IDLE_MS + 1;
   await idle.reproducer.check();
+  // Asking whether it's there says why it went, and runs nothing in the VM.
+  assert.deepEqual(idle.reproducer.status(first.id), { running: false, reason: "This reproduce ended: it was idle for 5 minutes." });
+  assert.deepEqual(idle.reproducer.status("ffffffff"), { running: false, reason: "No reproduce has that id." });
+  assert.equal(idle.vmCalls.length, calls + 1, "only the removal ran in the VM");
   await assert.rejects(idle.reproducer.exec({ op: "exec", id: first.id, command: "ls", timeoutSec: 10 }), /idle for 5 minutes/);
 
   const old = await fakes();
