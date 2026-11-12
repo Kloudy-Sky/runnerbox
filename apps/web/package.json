@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "test": "node --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
