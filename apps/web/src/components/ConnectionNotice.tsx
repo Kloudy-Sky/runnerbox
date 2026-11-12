@@ -20,7 +20,7 @@ export function ConnectionNotice() {
     return (
       <div className="mx-3 flex shrink-0 flex-col gap-1.5 rounded-lg bg-surface px-3 py-2">
         <span>
-          The server on {environment.label} runs runnerbox {serverVersion}, older than this app ({APP_VERSION}). Update it on that machine:
+          The server on {environment.label} runs runnerbox {serverVersion}, older than this app ({APP_VERSION}). Update it on that machine. Its installs pick up the same file when they next restart:
         </span>
         <ServerUpdateCommand appVersion={APP_VERSION} />
       </div>

@@ -12,7 +12,8 @@ import { defaultChannel, feedOf, isOffered } from "./channel.ts";
 import { ElectronUpdater } from "./ElectronUpdater.ts";
 
 // What the app around the updater supplies. `disabledReason` is why this build never checks: run
-// from a checkout, or built without a feed (an unsigned macOS build, or not by a release).
+// from a checkout, built without a feed (an unsigned macOS build, or not by a release), a Linux
+// build that isn't the AppImage, or RUNNERBOX_DISABLE_UPDATES.
 export type UpdateHost = {
   readonly version: string;
   readonly userData: string;
