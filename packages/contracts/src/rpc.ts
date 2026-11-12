@@ -4,7 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, PairingCode, SessionSummary } from "./auth.ts";
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
-import { InboxItem } from "./inbox.ts";
+import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { CreateThread, MessageText, ProviderStatus, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
@@ -84,7 +84,7 @@ export const RunnerboxRpcGroup = RpcGroup.make(
     success: WeeklySummary,
     error: ReadError,
   }),
-  Rpc.make(RPC_METHODS.inboxList, { payload: { days: Days }, success: Schema.Array(InboxItem), error: ReadError }),
+  Rpc.make(RPC_METHODS.inboxList, { payload: { days: Days }, success: Inbox, error: ReadError }),
   Rpc.make(RPC_METHODS.runnersEvents, {
     payload: { days: Days },
     success: Schema.Array(LauncherEvent),

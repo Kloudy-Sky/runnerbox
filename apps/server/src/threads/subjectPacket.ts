@@ -1,4 +1,4 @@
-import { type Evidence, ThreadError, type ThreadSubject } from "@runnerbox/contracts";
+import { type Evidence, inboxItems, ThreadError, type ThreadSubject } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { machineLookup } from "../history/machineLookup.ts";
@@ -20,7 +20,7 @@ export const subjectPacket = Effect.fn("subjectPacket")(function* (subject: Thre
   const unreadable = () => new ThreadError({ reason: "log_unreadable" });
   if (subject._tag === "inbox") {
     const inbox = yield* Inbox.Inbox;
-    const item = (yield* inbox.list(days).pipe(Effect.mapError(unreadable))).find((candidate) => candidate.id === subject.itemId);
+    const item = inboxItems(yield* inbox.list(days).pipe(Effect.mapError(unreadable))).find((candidate) => candidate.id === subject.itemId);
     if (!item) return yield* missing;
     const { evidence, id: _id, ...rest } = item;
     return { title: item.title, packet: JSON.stringify({ subject: "inbox item", ...rest, ruleVerdict: item.verdict, evidence: compact(evidence) }) };

@@ -43,9 +43,9 @@ export function AnalyticsPage() {
         <thead className="text-left text-[11px] tracking-wide text-dim uppercase">
           <tr>
             <th className={th}>Job</th><th className={th}>Runner</th>
-            <th className={`${th} text-right`}>Ran</th><th className={`${th} text-right`}>Failed</th><th className={`${th} text-right`}>Retry passed</th><th className={`${th} text-right`}>No runner</th>
-            <th className={`${th} text-right`}>P50</th><th className={`${th} text-right`}>P90</th><th className={`${th} text-right`}>Queue P50</th>
-            <th className={`${th} text-right`}>VM low P50</th><th className={`${th} text-right`}>VM swap P90</th><th className={`${th} text-right`}>Total</th>
+            <th className={`${th} text-right`}>Ran</th><th className={`${th} text-right`}>Failed</th><th className={`${th} text-right`}>Retry passed</th><th className={`${th} text-right`}>No runner came</th>
+            <th className={`${th} text-right`}>Typical</th><th className={`${th} text-right`}>Slowest 10%</th><th className={`${th} text-right`}>Typical wait</th>
+            <th className={`${th} text-right`}>VM free, typical</th><th className={`${th} text-right`}>VM swap, high</th><th className={`${th} text-right`}>Total</th>
           </tr>
         </thead>
         <tbody>
@@ -69,7 +69,7 @@ export function AnalyticsPage() {
       </table>
       {selected && steps.data ? (
         <>
-          <Heading>Steps of {jobName(selected)}, median of passing runs</Heading>
+          <Heading>Steps of {jobName(selected)}, typical of passing runs</Heading>
           <table className="border-collapse">
             <thead className="text-left text-[11px] tracking-wide text-dim uppercase">
               <tr>
@@ -111,7 +111,7 @@ export function AnalyticsPage() {
               <tr>
                 <th className={th}>Install</th><th className={th}>Kind</th><th className={`${th} text-right`}>Runners</th><th className={`${th} text-right`}>Failed</th>
                 <th className={`${th} text-right`}>Released, memory</th><th className={`${th} text-right`}>Released, image</th><th className={`${th} text-right`}>Memory waits</th>
-                <th className={`${th} text-right`}>Wait P90</th><th className={`${th} text-right`}>Builds</th><th className={`${th} text-right`}>Failed builds</th>
+                <th className={`${th} text-right`}>Long memory wait</th><th className={`${th} text-right`}>Builds</th><th className={`${th} text-right`}>Failed builds</th>
               </tr>
             </thead>
             <tbody>

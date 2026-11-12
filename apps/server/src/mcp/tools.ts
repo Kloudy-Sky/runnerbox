@@ -1,4 +1,4 @@
-import { Days, GroupBy, InboxItem, InstallState, JobRun, JobSummary, LauncherEvent, MachineSample, Overview, RepoName, StepComparison, WeeklySummary } from "@runnerbox/contracts";
+import { Days, GroupBy, Inbox, InstallState, JobRun, JobSummary, LauncherEvent, MachineSample, Overview, RepoName, StepComparison, WeeklySummary } from "@runnerbox/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -23,9 +23,9 @@ export const RunnerboxToolkit = Toolkit.make(
   Tool.make("ci_inbox", {
       ...shared,
       description:
-        "What CI needs from the person running these runners: failures with a verdict (code, flaky, infra, unconfirmed) and the evidence for it, jobs that never got a runner, slots that keep failing, and jobs slower than their own history. `needs_you` items come first.",
+        "What CI needs from the person running these runners. `summary` is the headline and four facts. `items` need the owner: failures the machine caused, jobs that waited too long for a runner, runner slots that keep failing, jobs that have become slower. `quiet` counts the rest by kind. Each item has a plain title, what happened, why, what to do, a verdict for failures (code, flaky, infra, unconfirmed), and the evidence.",
       parameters: Schema.Struct({ days }),
-      success: Schema.Array(InboxItem),
+      success: Inbox,
     }).annotateMerge(READ_ONLY),
   Tool.make("ci_overview", { ...shared, description: "Totals across every repo: jobs, failures, retries that passed, jobs without a runner, median times.", parameters: Schema.Struct({ days }), success: Overview }).annotateMerge(READ_ONLY),
   Tool.make("job_summaries", {

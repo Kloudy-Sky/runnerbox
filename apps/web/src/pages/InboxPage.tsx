@@ -1,93 +1,93 @@
-import type { InboxItem } from "@runnerbox/contracts";
+import { type InboxItem, inboxItems, type QuietGroup } from "@runnerbox/contracts";
 import { useState } from "react";
-import { NoHistory } from "../components/NoHistory.tsx";
-import { Stats } from "../components/Stats.tsx";
 import { InboxEvidence } from "../components/InboxEvidence.tsx";
-import { InboxTag } from "../components/InboxTag.tsx";
+import { NoHistory } from "../components/NoHistory.tsx";
 import { ThreadDock } from "../components/ThreadDock.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRange } from "../hooks/useRange.ts";
-import { useRpcQuery } from "../hooks/useRpcQuery.ts";
-import { listening, useRunnerState } from "../hooks/useRunnerState.ts";
-import { formatAge, formatDuration, formatPercent } from "../lib/format.ts";
-
-const GROUPS = [
-  ["needs_you", "Needs you"],
-  ["no_action", "No action"],
-] as const;
+import { formatAge } from "../lib/format.ts";
 
 export function InboxPage() {
   const { days } = useRange();
   const inbox = useInbox();
-  const overview = useRpcQuery(["overview", days], (client) => client["history.overview"]({ days }));
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const items = inbox.data ?? [];
-  const selected = items.find((item) => item.id === selectedId) ?? items[0];
-  const stats = overview.data;
-  const installs = useRunnerState();
-  const slots = installs && installs.length > 0 ? listening(installs) : null;
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const data = inbox.data;
+  const all = data ? inboxItems(data) : [];
+  const selected = all.find((item) => item.id === selectedId) ?? data?.items[0];
+  const toggle = (kind: string) => setOpen((current) => new Set(current.has(kind) ? [...current].filter((each) => each !== kind) : [...current, kind]));
+  if (data && data.summary.jobs === 0 && all.length === 0) return <NoHistory />;
   return (
     <div className="flex h-full flex-col">
-      {stats && stats.repos.length > 0 ? (
-        <Stats
-          items={[
-            [stats.jobs, "jobs"],
-            [formatPercent(stats.failed, stats.jobs), "failed"],
-            [stats.passedOnRetry, "passed on retry"],
-            [stats.noRunner, "never got a runner"],
-            [formatDuration(stats.p50Ms), "p50 passing job"],
-            [formatDuration(stats.queueP50Ms), "queue p50"],
-            ...(slots ? [[`${slots.online}/${slots.total}`, "slots listening"] as const] : []),
-          ]}
-        />
+      {data ? (
+        <div className="px-3 pt-3 pb-2">
+          <div className="text-[15px] font-medium">{data.summary.headline}</div>
+          <div className="text-dim">{data.summary.facts.join(" ")}</div>
+        </div>
       ) : null}
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1 overflow-auto">
-          {stats && stats.repos.length === 0 ? (
-            <NoHistory />
-          ) : inbox.isSuccess && items.length === 0 ? (
-            <p className="px-3 py-2 text-dim">Nothing needs you. No failures, waits or slow jobs in this range.</p>
-          ) : (
-            <table className="w-full border-collapse">
-              {GROUPS.map(([group, heading]) => (
-                <InboxGroup key={group} heading={heading} items={items.filter((item) => item.group === group)} selected={selected} onSelect={setSelectedId} />
-              ))}
-            </table>
-          )}
+          <table className="w-full border-collapse">
+            {data && data.items.length > 0 ? (
+              <tbody>
+                <Group heading="Needs you" />
+                {data.items.map((item) => (
+                  <Row key={item.id} item={item} selected={selected} onSelect={setSelectedId} />
+                ))}
+              </tbody>
+            ) : null}
+            {data && data.quiet.length > 0 ? (
+              <tbody>
+                <Group heading="Nothing to do" />
+                {data.quiet.map((group) => (
+                  <Quiet key={group.kind} group={group} open={open.has(group.kind)} onToggle={() => toggle(group.kind)} selected={selected} onSelect={setSelectedId} />
+                ))}
+              </tbody>
+            ) : null}
+          </table>
         </div>
         {selected ? <InboxEvidence item={selected} /> : null}
         {selected ? (
-          <ThreadDock
-            key={selected.id}
-            subject={{ _tag: "inbox", itemId: selected.id }}
-            days={days}
-            title={selected.title}
-            detail={[selected.verdict, selected.repo ?? selected.install].filter(Boolean).join(", ")}
-          />
+          <ThreadDock key={selected.id} subject={{ _tag: "inbox", itemId: selected.id }} days={days} title={selected.title} detail={selected.repo ?? selected.install ?? ""} />
         ) : null}
       </div>
     </div>
   );
 }
 
-function InboxGroup(props: { heading: string; items: InboxItem[]; selected: InboxItem | undefined; onSelect: (id: string) => void }) {
-  if (props.items.length === 0) return null;
+const Group = ({ heading }: { heading: string }) => (
+  <tr>
+    <th colSpan={3} className="px-3 pt-3 pb-1 text-left text-[11px] font-medium tracking-wide text-dim uppercase">
+      {heading}
+    </th>
+  </tr>
+);
+
+function Row(props: { item: InboxItem; selected: InboxItem | undefined; onSelect: (id: string) => void; indent?: boolean }) {
+  const { item } = props;
   return (
-    <tbody>
-      <tr>
-        <th colSpan={5} className="px-3 pt-3 pb-1 text-left text-[11px] font-medium tracking-wide text-dim uppercase">
-          {props.heading}
-        </th>
+    <tr onClick={() => props.onSelect(item.id)} className={`cursor-default align-top ${item.id === props.selected?.id ? "bg-surf2" : "hover:bg-surf"}`}>
+      <td className={`py-1 pr-3 ${props.indent ? "pl-7" : "pl-3"}`}>
+        <div>{item.title}</div>
+        <div className="text-dim">{item.happened}</div>
+      </td>
+      <td className="py-1 pr-3 whitespace-nowrap text-dim">{item.repo ?? item.install}</td>
+      <td className="py-1 pr-3 text-right whitespace-nowrap text-dim">{formatAge(item.at)}</td>
+    </tr>
+  );
+}
+
+// A quiet kind is one counted row until it's opened.
+function Quiet(props: { group: QuietGroup; open: boolean; onToggle: () => void; selected: InboxItem | undefined; onSelect: (id: string) => void }) {
+  return (
+    <>
+      <tr onClick={props.onToggle} className="cursor-default hover:bg-surf">
+        <td colSpan={3} className="py-1 pr-3 pl-3">
+          <span className="inline-block w-4 text-dim">{props.open ? "▾" : "▸"}</span>
+          {props.group.title}
+        </td>
       </tr>
-      {props.items.map((item) => (
-        <tr key={item.id} onClick={() => props.onSelect(item.id)} className={`cursor-default ${item.id === props.selected?.id ? "bg-surf2" : "hover:bg-surf"}`}>
-          <td className="w-16 py-1 pr-3 pl-3"><InboxTag item={item} /></td>
-          <td className="py-1 pr-3 whitespace-nowrap">{item.title}</td>
-          <td className="py-1 pr-3 whitespace-nowrap text-dim">{item.repo ?? item.install}</td>
-          <td className={`w-full py-1 pr-3 ${item.group === "no_action" ? "text-dim" : ""}`}>{item.detail}</td>
-          <td className="py-1 pr-3 text-right whitespace-nowrap text-dim">{formatAge(item.at)}</td>
-        </tr>
-      ))}
-    </tbody>
+      {props.open ? props.group.items.map((item) => <Row key={item.id} item={item} selected={props.selected} onSelect={props.onSelect} indent />) : null}
+    </>
   );
 }
