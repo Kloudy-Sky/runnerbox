@@ -42,12 +42,14 @@ test("a reproduce starts on the kind's image with the commit's files, and a comm
   const started = await reproducer.start({ ...start, kind });
   assert.deepEqual(started, { id: "0a1b2c3d", image: "runnerbox-base", imageFallback: false });
   assert.match(vmCalls[0]!.command, /docker run -d --rm --name 'example-repro-0a1b2c3d'/);
-  assert.deepEqual(vmCalls[1], { command: "exec docker exec -i -w /work 'example-repro-0a1b2c3d' tar -xz --strip-components=1 -f -", input: "<tarball>" });
+  // /work goes to the image's own user before the files land in it.
+  assert.match(vmCalls[1]!.command, /docker exec -u 0 'example-repro-0a1b2c3d' chown "\$u:\$g" \/work$/);
+  assert.deepEqual(vmCalls[2], { command: "exec docker exec -i -w /work 'example-repro-0a1b2c3d' tar -xz --strip-components=1 -f -", input: "<tarball>" });
   const ran = await reproducer.exec({ op: "exec", id: started.id, command: "pnpm test", timeoutSec: 120 });
   assert.equal(ran.exitCode, 0);
   assert.equal(ran.commandsLeft, MAX_COMMANDS - 1);
-  assert.equal(vmCalls[2]!.input, "pnpm test");
-  assert.ok(!vmCalls[2]!.command.includes("pnpm test"));
+  assert.equal(vmCalls[3]!.input, "pnpm test");
+  assert.ok(!vmCalls[3]!.command.includes("pnpm test"));
   await assert.rejects(reproducer.start({ ...start, kind }), /already running/);
 });
 
@@ -110,4 +112,34 @@ test("commands are capped, setup mode cuts the network after the first, and the 
   assert.equal(vmCalls.filter((call) => call.command.includes("network disconnect")).length, 1);
   for (let count = 2; count < MAX_COMMANDS; count += 1) await reproducer.exec({ op: "exec", id, command: "true", timeoutSec: 1 });
   await assert.rejects(reproducer.exec({ op: "exec", id, command: "true", timeoutSec: 1 }), /run its 40 commands/);
+});
+
+test("two starts at once run one container, and a drain mid-start leaves none behind", async () => {
+  const { reproducer, vmCalls, kind } = await fakes();
+  const results = await Promise.allSettled([reproducer.start({ ...start, kind }), reproducer.start({ ...start, kind })]);
+  assert.deepEqual(results.map((result) => result.status), ["fulfilled", "rejected"]);
+  assert.equal(vmCalls.filter((call) => call.command.includes("docker run")).length, 1);
+
+  // `up` drains while a start is still checking memory: it removes what it made, and sweeps.
+  let release = () => {};
+  const slow = await fakes({ roomFor: () => new Promise((resolve) => (release = () => resolve(null))) });
+  const starting = slow.reproducer.start({ ...start, kind: slow.kind });
+  await slow.reproducer.end();
+  release();
+  await assert.rejects(starting, /up is stopping/);
+  assert.match(slow.vmCalls[0]!.command, /label=runnerbox\.reproduce=example/, "drain sweeps every labelled container");
+  assert.equal(slow.vmCalls.at(-1)!.command, "docker rm -f 'example-repro-0a1b2c3d' >/dev/null 2>&1; true");
+});
+
+test("a setup reproduce whose network can't be cut is removed rather than kept online", async () => {
+  const { reproducer, vmCalls, kind } = await fakes({
+    vm: async (command) => {
+      vmCalls.push({ command, input: null });
+      return { exitCode: command.includes("network disconnect") ? 1 : 0, output: "", truncated: false, timedOut: false };
+    },
+  });
+  const { id } = await reproducer.start({ ...start, kind, network: "setup" });
+  await assert.rejects(reproducer.exec({ op: "exec", id, command: "pnpm install", timeoutSec: 600 }), /network couldn't be cut/);
+  assert.equal(vmCalls.at(-1)!.command, "docker rm -f 'example-repro-0a1b2c3d' >/dev/null 2>&1; true");
+  await assert.rejects(reproducer.exec({ op: "exec", id, command: "curl example.com", timeoutSec: 10 }), /ended: its network couldn't be cut/);
 });

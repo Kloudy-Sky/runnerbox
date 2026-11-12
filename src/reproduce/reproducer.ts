@@ -1,7 +1,7 @@
 import type { Readable } from "node:stream";
 import type { RunnerType } from "../launcher/launcher-config.ts";
 import type { VmExec } from "../vm/exec-in-vm.ts";
-import { execCommand, imageExistsCommand, networkOffCommand, removeCommand, reproduceRunCommand, sweepCommand, unpackCommand } from "./container-command.ts";
+import { execCommand, imageExistsCommand, networkOffCommand, removeCommand, reproduceRunCommand, sweepCommand, unpackCommand, workdirCommand } from "./container-command.ts";
 import type { Executed, ReproduceRequest, Started, Stopped } from "./protocol.ts";
 
 // One throwaway container at a time per install, on a kind's image with a commit's files, for
@@ -47,6 +47,8 @@ export function createReproducer(actions: ReproducerActions) {
   // Why the last reproduce ended, so its next command can say so rather than "no such reproduce".
   let ended: { id: string; reason: string } | null = null;
   let starting = false;
+  // Set once `up` drains, so a start still in flight removes its own container.
+  let closed = false;
 
   const remove = async (current: Session, reason: string) => {
     if (session === current) session = null;
@@ -57,16 +59,18 @@ export function createReproducer(actions: ReproducerActions) {
 
   async function start(request: Extract<ReproduceRequest, { op: "start" }>): Promise<Started> {
     if (actions.jobVms) throw new ReproduceRefused("Reproduce doesn't run on an install with jobVms yet.");
+    if (closed) throw new ReproduceRefused("up is stopping.");
     if (session || starting) throw new ReproduceRefused("A reproduce is already running on this install. Stop it first.");
     const runner = actions.runners.find((candidate) => candidate.name === request.kind);
     if (!runner) throw new ReproduceRefused(`This install has no runner kind named ${request.kind}.`);
     if (actions.slotsWaiting() > 0) throw new ReproduceRefused("Real jobs are waiting for memory, so a reproduce can't start now.");
-    const short = await actions.roomFor(runner);
-    if (short) throw new ReproduceRefused(`Not enough memory for a reproduce: ${short}.`);
     const current = actions.currentImage(runner.name);
     if (!current) throw new ReproduceRefused(`${runner.name}'s image isn't ready yet.`);
+    // Taken before the first await, so a second start can't slip in while this one checks memory.
     starting = true;
     try {
+      const short = await actions.roomFor(runner);
+      if (short) throw new ReproduceRefused(`Not enough memory for a reproduce: ${short}.`);
       const requested = request.image && request.image !== current && (await vm(imageExistsCommand(request.image), { timeoutMs: QUICK_MS, maxOutput: 1024 })).exitCode === 0;
       const image = requested ? request.image! : current;
       const tarball = await actions.source(request.repo, request.commit).catch((error: unknown) => {
@@ -80,8 +84,14 @@ export function createReproducer(actions: ReproducerActions) {
       };
       const ran = await vm(reproduceRunCommand(install, runner, id, image), { timeoutMs: QUICK_MS, maxOutput: 4096 });
       if (ran.exitCode !== 0) return await fail("The container didn't start", ran);
+      const workdir = await vm(workdirCommand(install, id), { timeoutMs: QUICK_MS, maxOutput: 4096 });
+      if (workdir.exitCode !== 0) return await fail("/work couldn't be given to the image's user", workdir);
       const unpacked = await vm(unpackCommand(install, id), { input: tarball, timeoutMs: UNPACK_MS, maxOutput: 4096 });
       if (unpacked.exitCode !== 0) return await fail("The commit's files didn't unpack", unpacked);
+      if (closed) {
+        await vm(removeCommand(install, id), { timeoutMs: QUICK_MS, maxOutput: 1024 });
+        throw new ReproduceRefused("up is stopping.");
+      }
       const at = now();
       session = { id, kind: runner.name, startedAt: at, usedAt: at, commands: 0, cutNetwork: request.network === "setup", busy: false };
       log(`reproduce ${id}: started on ${image} with ${request.repo} at ${request.commit.slice(0, 7)}`);
@@ -111,7 +121,12 @@ export function createReproducer(actions: ReproducerActions) {
       });
       if (current.cutNetwork && session === current) {
         current.cutNetwork = false;
-        await vm(networkOffCommand(install, current.id), { timeoutMs: QUICK_MS, maxOutput: 1024 });
+        const cut = await vm(networkOffCommand(install, current.id), { timeoutMs: QUICK_MS, maxOutput: 1024 });
+        // A reproduce asked to lose its network after setup never carries on with it.
+        if (cut.exitCode !== 0) {
+          await remove(current, "its network couldn't be cut after setup");
+          throw new ReproduceRefused("The network couldn't be cut after the setup command, so this reproduce was removed.");
+        }
       }
       current.usedAt = now();
       return { ...result, timedOut: result.timedOut || result.exitCode === 124, commandsLeft: MAX_COMMANDS - current.commands };
@@ -145,8 +160,11 @@ export function createReproducer(actions: ReproducerActions) {
       await vm(sweepCommand(install), { timeoutMs: QUICK_MS, maxOutput: 1024 });
       return actions.every(CHECK_MS, check);
     },
+    // Removes the running reproduce, and any other this install has, as `up` drains.
     async end() {
+      closed = true;
       if (session) await remove(session, "up stopped");
+      await vm(sweepCommand(install), { timeoutMs: QUICK_MS, maxOutput: 1024 });
     },
   };
 }

@@ -29,6 +29,13 @@ export function reproduceRunCommand(install: string, runner: RunnerType, id: str
   ].join(" ");
 }
 
+// `docker run -w` creates /work as root, and the image's own user (`runner` in image/) couldn't
+// write to it, so it's handed to whichever user the image runs as.
+export function workdirCommand(install: string, id: string) {
+  const name = shellQuote(reproduceName(install, id));
+  return `u=$(docker exec ${name} id -u) && g=$(docker exec ${name} id -g) && exec docker exec -u 0 ${name} chown "$u:$g" /work`;
+}
+
 // Unpacks a commit's tarball, read from stdin, into /work.
 export const unpackCommand = (install: string, id: string) =>
   `exec docker exec -i -w /work ${shellQuote(reproduceName(install, id))} tar -xz --strip-components=1 -f -`;
