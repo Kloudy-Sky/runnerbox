@@ -124,12 +124,21 @@ export class AuthStore extends Context.Service<
   }
 >()("runnerbox/server/AuthStore") {}
 
-const toSession = ({ id, label, audience, scopes, proofKeyThumbprint }: typeof StoredSession.Type): Session => ({
-  id,
-  label,
-  audience,
-  scopes,
-  ...(proofKeyThumbprint === undefined ? {} : { proofKeyThumbprint }),
+// A client session paired by address or SSH with `access:write` was given everything the server
+// offered, so it also gets scopes added since, which today is `threads:operate`. The owner chose
+// this widening. Stored scopes never change, so an older server reads the file as before; MCP
+// tokens and Connect (key-bound) sessions get nothing extra.
+const effectiveScopes = ({ audience, scopes, proofKeyThumbprint }: typeof StoredSession.Type): ReadonlyArray<AuthScope> =>
+  audience === "client" && proofKeyThumbprint === undefined && scopes.includes("access:write") && !scopes.includes("threads:operate")
+    ? [...scopes, "threads:operate"]
+    : scopes;
+
+const toSession = (stored: typeof StoredSession.Type): Session => ({
+  id: stored.id,
+  label: stored.label,
+  audience: stored.audience,
+  scopes: effectiveScopes(stored),
+  ...(stored.proofKeyThumbprint === undefined ? {} : { proofKeyThumbprint: stored.proofKeyThumbprint }),
 });
 
 const make = Effect.gen(function* () {
@@ -306,14 +315,14 @@ const make = Effect.gen(function* () {
   });
 
   const list = Effect.fn("AuthStore.list")(function* (currentId: string) {
-    return (yield* readLive).sessions.map(({ id, label, audience, scopes, createdAt, lastSeenAt }) => ({
-      id,
-      label,
-      audience,
-      scopes,
-      createdAt,
-      lastSeenAt,
-      current: id === currentId,
+    return (yield* readLive).sessions.map((stored) => ({
+      id: stored.id,
+      label: stored.label,
+      audience: stored.audience,
+      scopes: effectiveScopes(stored),
+      createdAt: stored.createdAt,
+      lastSeenAt: stored.lastSeenAt,
+      current: stored.id === currentId,
     }));
   });
 

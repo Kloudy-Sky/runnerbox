@@ -1,5 +1,6 @@
 import { subjectKey, type ThreadSubject } from "@runnerbox/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import * as Predicate from "effect/Predicate";
 import { useEffect, useState } from "react";
 import { EMPTY_VIEW, foldThread, type ThreadView } from "../lib/threadView.ts";
 import { runtime } from "../runtime.ts";
@@ -12,17 +13,20 @@ const errorText = (error: unknown) => (error instanceof Error ? error.message : 
 export function useThread(subject: ThreadSubject, days: number) {
   const { environment, connection } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
-  const permitted = environment?.scopes.includes("threads:operate") ?? false;
   const connected = connection?.status === "connected" ? connection.since : null;
-  const enabled = permitted && connected !== null;
   const key = subjectKey(subject);
   const queryClient = useQueryClient();
 
+  // The server decides whether this session may run threads: the scopes saved at pairing can be
+  // older than what it grants now.
   const provider = useQuery({
     queryKey: [environmentId, "threads.provider"],
     queryFn: () => runtime.run(environmentId, (client) => client["threads.provider"]()),
-    enabled,
+    enabled: connected !== null,
+    retry: false,
   });
+  const permitted = !Predicate.isTagged(provider.error, "AuthorizationError");
+  const enabled = provider.isSuccess && connected !== null;
   const latest = useQuery({
     queryKey: [environmentId, "threads", key],
     queryFn: () => runtime.run(environmentId, (client) => client["threads.list"]({ subject })),

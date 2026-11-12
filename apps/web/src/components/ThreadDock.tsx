@@ -20,7 +20,7 @@ export function ThreadDock(props: { subject: ThreadSubject; days: number; title:
     if (await thread.send(text)) setDraft("");
   };
   const unavailable = !thread.permitted
-    ? "This session can't run threads. Pair again by address or over SSH to get them."
+    ? "This session can't run threads."
     : thread.provider && !thread.provider.available
       ? `${thread.provider.provider} isn't available on this environment. ${thread.provider.fix ?? ""}`
       : null;

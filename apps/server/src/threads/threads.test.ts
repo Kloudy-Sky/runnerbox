@@ -136,6 +136,14 @@ test("a thread survives a server restart: the cut-off turn reads as interrupted 
   }
 });
 
+test("a device paired with every scope before threads existed can run them without pairing again", () =>
+  withServer([[{ text: "Yes." }]], async (server) => {
+    const { code } = await server.createPairingCode(["history:read", "runners:read", "access:write"]);
+    const old = await Effect.runPromise(pairWithCode(server.baseUrl, code, "older app"));
+    const status = await withClient(server, old.token, (client) => client["threads.provider"]());
+    assert.equal(status.available, true);
+  }));
+
 test("threads need threads:operate, which a Connect session never gets", () =>
   withServer([[{ text: "unused" }]], async (server) => {
     const { code } = await server.createPairingCode(["history:read", "runners:read"]);
