@@ -14,4 +14,10 @@ export const CHANNELS = {
   connectRequestCredential: "runnerbox:connect:request-credential",
   connectCreateProofKey: "runnerbox:connect:create-proof-key",
   connectProve: "runnerbox:connect:prove",
+  updatesGetState: "runnerbox:updates:get-state",
+  updatesSetChannel: "runnerbox:updates:set-channel",
+  updatesCheck: "runnerbox:updates:check",
+  updatesInstall: "runnerbox:updates:install",
+  // Main to the page: the update state, whenever it changes.
+  updatesState: "runnerbox:updates:state",
 } as const;

@@ -1,4 +1,4 @@
-import type { ClientPlatform } from "@runnerbox/client-runtime";
+import type { ClientPlatform, UpdateState } from "@runnerbox/client-runtime";
 import { contextBridge, ipcRenderer } from "electron";
 import { CHANNELS } from "./ipc/channels.ts";
 
@@ -32,6 +32,17 @@ const bridge: ClientPlatform = {
     openTunnel: (route) => invoke(CHANNELS.sshOpenTunnel, route),
     closeTunnel: (route) => invoke(CHANNELS.sshCloseTunnel, route),
     fetchPairingCode: (route) => invoke(CHANNELS.sshFetchPairingCode, route),
+  },
+  updates: {
+    state: () => invoke(CHANNELS.updatesGetState),
+    subscribe: (listener) => {
+      const handler = (_event: unknown, state: UpdateState) => listener(state);
+      ipcRenderer.on(CHANNELS.updatesState, handler);
+      return () => void ipcRenderer.removeListener(CHANNELS.updatesState, handler);
+    },
+    setChannel: (channel) => invoke(CHANNELS.updatesSetChannel, channel),
+    check: () => invoke(CHANNELS.updatesCheck),
+    install: () => invoke(CHANNELS.updatesInstall),
   },
 };
 
