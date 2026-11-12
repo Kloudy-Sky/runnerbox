@@ -13,10 +13,12 @@ export function Composer({ thread, placeholder }: { thread: Thread; placeholder:
   const [draft, setDraft] = useState("");
   const { view } = thread;
   const { accounts } = useAccounts();
-  // The account picked here, or the one this thread last ran as, or the default.
+  // The account picked here, or the one this thread last ran as if it still exists, or the default.
   const [picked, setPicked] = useState<string | null>(null);
   const lastUsed = view.items.findLast((item) => item._tag === "UserMessage" && item.accountId !== undefined);
-  const accountId = picked ?? (lastUsed?._tag === "UserMessage" ? lastUsed.accountId : undefined) ?? accounts.find((account) => account.isDefault)?.id;
+  const remembered = lastUsed?._tag === "UserMessage" ? lastUsed.accountId : undefined;
+  // An account removed since the thread last ran falls through to the default, so the thread stays usable.
+  const accountId = picked ?? accounts.find((account) => account.id === remembered)?.id ?? accounts.find((account) => account.isDefault)?.id;
   const account = accounts.find((candidate) => candidate.id === accountId);
   const status = account?.status ?? thread.provider;
   const unavailable = !thread.permitted
