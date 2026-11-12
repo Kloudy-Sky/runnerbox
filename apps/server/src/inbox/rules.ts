@@ -72,10 +72,15 @@ export function machineCauses(job: JobRecord, input: Pick<InboxInput, "machine" 
 // this job ran, and the job's container was stopped for it."
 export function plainCause(causes: readonly MachineCause[]) {
   const has = (source: MachineCause["source"]) => causes.some((cause) => cause.source === source);
-  const ranOut = has("vm_memory") || has("swap") ? "the VM" : has("host_memory") ? "the host" : null;
+  const vm = has("vm_memory");
+  const host = has("host_memory");
+  // Swap is a sign of pressure, not of running out, so it's said as that when it's the only sign.
+  const memory = vm && host ? "the VM and the host ran out of memory" : vm ? "the VM ran out of memory" : host ? "the host ran out of memory" : null;
+  const short = !vm && has("swap") ? "the VM was short of memory and swapping" : null;
+  const pressure = memory ?? short;
   const clauses = [
-    ...(ranOut ? [`${ranOut} ran out of memory while this job ran`] : []),
-    ...(has("out_of_memory") ? [ranOut ? "the job's container was stopped for it" : "the job's container was stopped for using too much memory"] : []),
+    ...(pressure ? [`${pressure} while this job ran`] : []),
+    ...(has("out_of_memory") ? [pressure ? "the job's container was stopped for it" : "the job's container was stopped for using too much memory"] : []),
     ...(has("connection") ? ["the connection to the VM dropped while it ran"] : []),
     ...(has("exit") ? ["the job's container stopped with an error"] : []),
   ];

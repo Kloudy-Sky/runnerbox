@@ -93,7 +93,7 @@ test("low memory during a failed job points at the machine", () => {
   );
   assert.deepEqual(failures(items), [["infra", "needs_you"]]);
   assert.equal(items[0]!.why, "The VM ran out of memory while this job ran. That points at the machine, not the code.");
-  assert.deepEqual(items[0]!.evidence.reasons, ["the VM had only 0.29 GiB of its 8 GiB free"]);
+  assert.deepEqual(items[0]!.evidence.reasons, ["the VM had only 300 MiB of its 8 GiB free"]);
   assert.equal(items[0]!.evidence.machine?.vmLowMiB, 300);
 });
 
@@ -319,5 +319,15 @@ test("a machine failure's Why is one plain sentence, and its figures stay in the
   const events: LauncherEvent[] = [{ install: "example", event: "runner", slot: 3, runner, startedAt: iso(NOW), durationMs: 1, exitCode: 137, released: false }];
   const [item] = deriveInbox(input({ jobs: [failed], events, machine: (candidate) => (candidate === failed ? { samples: 4, vmLowMiB: 574, vmTotalMiB: 16384 } : undefined) }));
   assert.equal(item!.why, "The VM ran out of memory while this job ran, and the job's container was stopped for it. That points at the machine, not the code.");
-  assert.deepEqual(item!.evidence.reasons, ["the VM had only 0.56 GiB of its 16 GiB free", "its container stopped with exit code 137, which means it was killed for using too much memory"]);
+  assert.deepEqual(item!.evidence.reasons, ["the VM had only 574 MiB of its 16 GiB free", "its container stopped with exit code 137, which means it was killed for using too much memory"]);
+});
+
+test("Why names every machine that ran short, and says swapping as pressure, not as running out", () => {
+  const failed = job({ conclusion: "failure" });
+  const why = (machine: { vmLowMiB?: number; vmTotalMiB?: number; hostLowMiB?: number; hostTotalMiB?: number; vmSwapPeakMiB?: number }) =>
+    deriveInbox(input({ jobs: [failed], machine: (candidate) => (candidate === failed ? { samples: 4, ...machine } : undefined) }))[0]!.why;
+  assert.equal(why({ vmLowMiB: 300, vmTotalMiB: 8192, hostLowMiB: 500, hostTotalMiB: 32768 }), "The VM and the host ran out of memory while this job ran. That points at the machine, not the code.");
+  assert.equal(why({ vmLowMiB: 5120, vmTotalMiB: 16384, vmSwapPeakMiB: 1536 }), "The VM was short of memory and swapping while this job ran. That points at the machine, not the code.");
+  const [dry] = deriveInbox(input({ jobs: [failed], machine: (candidate) => (candidate === failed ? { samples: 4, vmLowMiB: 4, vmTotalMiB: 8192 } : undefined) }));
+  assert.deepEqual(dry!.evidence.reasons, ["the VM had only 4 MiB of its 8 GiB free"]);
 });
