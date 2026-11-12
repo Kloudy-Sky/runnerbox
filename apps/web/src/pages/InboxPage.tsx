@@ -4,6 +4,7 @@ import { NoHistory } from "../components/NoHistory.tsx";
 import { Stats } from "../components/Stats.tsx";
 import { InboxEvidence } from "../components/InboxEvidence.tsx";
 import { InboxTag } from "../components/InboxTag.tsx";
+import { ThreadDock } from "../components/ThreadDock.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
@@ -55,6 +56,15 @@ export function InboxPage() {
           )}
         </div>
         {selected ? <InboxEvidence item={selected} /> : null}
+        {selected ? (
+          <ThreadDock
+            key={selected.id}
+            subject={{ _tag: "inbox", itemId: selected.id }}
+            days={days}
+            title={selected.title}
+            detail={[selected.verdict, selected.repo ?? selected.install].filter(Boolean).join(", ")}
+          />
+        ) : null}
       </div>
     </div>
   );

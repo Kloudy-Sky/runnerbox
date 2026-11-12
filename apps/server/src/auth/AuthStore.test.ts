@@ -62,3 +62,50 @@ test("a socket that starts watching after its session was revoked still hears of
     await rm(stateDir, { recursive: true, force: true });
   }
 });
+
+test("a full session paired before threads gets threads:operate; narrow, MCP and Connect sessions don't, and the file stays as it was", async () => {
+  const stateDir = await mkdtemp(join(tmpdir(), "runnerbox-auth-"));
+  try {
+    const full = ["history:read", "runners:read", "access:write"];
+    const session = (id: string, extra: object) => ({
+      id, tokenHash: sha256(`rbx_${id}`), label: id, audience: "client", scopes: full, createdAt: "2026-01-01T00:00:00.000Z", lastSeenAt: null, ...extra,
+    });
+    const sessions = [
+      session("full", {}),
+      session("narrow", { scopes: ["history:read", "runners:read"] }),
+      session("agent", { audience: "mcp" }),
+      // Connect never grants access:write; this checks the rule itself refuses a key-bound session.
+      session("connect", { proofKeyThumbprint: "key", expiresAt: "2999-01-01T00:00:00.000Z" }),
+    ];
+    await mkdir(join(stateDir, ".server"), { recursive: true });
+    await writeFile(join(stateDir, ".server", "auth.json"), JSON.stringify({ v: 1, codes: [], sessions }));
+    const outcome = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* AuthStore.AuthStore;
+        const scopesOf = (id: string, audience: "client" | "mcp", key?: string) => store.authenticate(`rbx_${id}`, audience, key).pipe(Effect.map((found) => found?.scopes));
+        const fullSession = (yield* store.authenticate("rbx_full", "client"))!;
+        return {
+          full: fullSession.scopes,
+          narrow: yield* scopesOf("narrow", "client"),
+          agent: yield* scopesOf("agent", "mcp"),
+          connect: yield* scopesOf("connect", "client", "key"),
+          listed: (yield* store.list("full")).find((entry) => entry.id === "full")?.scopes,
+          // It can hand threads on, since it now holds them.
+          delegated: (yield* store.delegatePairingCode(fullSession, ["history:read", "threads:operate"])).scopes,
+          narrowDelegates: yield* Effect.flip(store.delegatePairingCode((yield* store.authenticate("rbx_narrow", "client"))!, ["threads:operate"])),
+        };
+      }).pipe(Effect.provide(AuthStore.layer.pipe(Layer.provideMerge(ServerPaths.layer(stateDir)), Layer.provideMerge(NodeServices.layer)))),
+    );
+    assert.deepEqual(outcome.full, [...full, "threads:operate"]);
+    assert.deepEqual(outcome.listed, [...full, "threads:operate"]);
+    assert.deepEqual(outcome.narrow, ["history:read", "runners:read"]);
+    assert.deepEqual(outcome.agent, full);
+    assert.deepEqual(outcome.connect, full);
+    assert.deepEqual(outcome.delegated, ["history:read", "threads:operate"]);
+    assert.equal(outcome.narrowDelegates._tag === "AccessError" && outcome.narrowDelegates.reason, "scope_not_held");
+    const stored = JSON.parse(await readFile(join(stateDir, ".server", "auth.json"), "utf8")) as { sessions: { id: string; scopes: string[] }[] };
+    assert.deepEqual(stored.sessions.find((entry) => entry.id === "full")?.scopes, full, "an older server reads the same scopes");
+  } finally {
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});

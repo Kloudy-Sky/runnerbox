@@ -11,7 +11,11 @@ import type { AuthScope } from "@runnerbox/contracts";
 import * as AuthStore from "../auth/AuthStore.ts";
 import * as CloudLink from "../cloud/CloudLink.ts";
 import { layerApp } from "../server.ts";
+import { makeFakeProvider } from "./FakeProvider.ts";
 import { writeFixtures } from "./fixtures.ts";
+
+// Tests never reach a real provider: a server without a scripted one has none available.
+const makeFakeProviderUnavailable = () => makeFakeProvider({ turns: [], available: false });
 
 const freePort = () =>
   new Promise<number>((resolve) => {
@@ -22,15 +26,17 @@ const freePort = () =>
   });
 
 // A real server on random loopback ports over freshly written fixture logs, in a temporary
-// directory that `close` removes.
-export async function startTestServer({ fixtures = true } = {}) {
-  const stateDir = await mkdtemp(join(tmpdir(), "runnerbox-server-test-"));
+// directory that `close` removes. Pass `stateDir` to start again over an earlier server's files,
+// and `close(false)` to keep them. Threads use `provider`, or one that's never available.
+export async function startTestServer(options: { fixtures?: boolean; stateDir?: string; provider?: ReturnType<typeof makeFakeProvider> } = {}) {
+  const stateDir = options.stateDir ?? (await mkdtemp(join(tmpdir(), "runnerbox-server-test-")));
   const now = Date.now();
-  if (fixtures) await writeFixtures(stateDir, now);
+  if (options.stateDir === undefined && options.fixtures !== false) await writeFixtures(stateDir, now);
+  const provider = options.provider ?? makeFakeProviderUnavailable();
   const scope = Effect.runSync(Scope.make());
   // Two loopback listeners on free ports: the one apps use, and the tunnel-facing one.
   const [port, tunnelPort] = [await freePort(), await freePort()];
-  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port, tunnelPort, stateDir }), scope));
+  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port, tunnelPort, stateDir, provider: provider.layer }), scope));
   const auth = Context.get(context, AuthStore.AuthStore);
   const cloudLink = Context.get(context, CloudLink.CloudLink);
   return {
@@ -45,9 +51,9 @@ export async function startTestServer({ fixtures = true } = {}) {
     now,
     createPairingCode: (scopes: ReadonlyArray<AuthScope>) => Effect.runPromise(auth.createPairingCode(scopes)),
     mintMcpToken: () => Effect.runPromise(auth.mintMcpToken("agent")).then(({ token }) => token),
-    close: async () => {
+    close: async (remove = true) => {
       await Effect.runPromise(Scope.close(scope, Exit.void));
-      await rm(stateDir, { recursive: true, force: true });
+      if (remove) await rm(stateDir, { recursive: true, force: true });
     },
   };
 }

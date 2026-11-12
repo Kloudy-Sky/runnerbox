@@ -46,7 +46,7 @@ const StoredSession = Schema.Struct({
   // Set for a session bought with a Connect credential: every use must carry a DPoP proof from
   // the key with this thumbprint.
   proofKeyThumbprint: Schema.optionalKey(Schema.String),
-  // Key-bound sessions expire; others last until revoked.
+  // Key-bound sessions and a thread turn's MCP token expire; others last until revoked.
   expiresAt: Schema.optionalKey(Schema.String),
 });
 const StoredCode = Schema.Struct({
@@ -105,7 +105,8 @@ export class AuthStore extends Context.Service<
       // Refuses a code that isn't bound to a key, leaving it unspent for its owner.
       readonly keyBoundOnly?: boolean;
     }) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError | PairingRejected>;
-    readonly mintMcpToken: (label: string) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError>;
+    // `ttlMs` makes the token expire on its own, for one that should be revoked but might not be.
+    readonly mintMcpToken: (label: string, options?: { readonly ttlMs?: number }) => Effect.Effect<{ readonly token: string; readonly session: Session }, AuthStoreError>;
     readonly authenticate: (
       token: string,
       audience: SessionAudience,
@@ -123,12 +124,21 @@ export class AuthStore extends Context.Service<
   }
 >()("runnerbox/server/AuthStore") {}
 
-const toSession = ({ id, label, audience, scopes, proofKeyThumbprint }: typeof StoredSession.Type): Session => ({
-  id,
-  label,
-  audience,
-  scopes,
-  ...(proofKeyThumbprint === undefined ? {} : { proofKeyThumbprint }),
+// A client session paired by address or SSH with `access:write` was given everything the server
+// offered, so it also gets scopes added since, which today is `threads:operate`. The owner chose
+// this widening. Stored scopes never change, so an older server reads the file as before; MCP
+// tokens and Connect (key-bound) sessions get nothing extra.
+const effectiveScopes = ({ audience, scopes, proofKeyThumbprint }: typeof StoredSession.Type): ReadonlyArray<AuthScope> =>
+  audience === "client" && proofKeyThumbprint === undefined && scopes.includes("access:write") && !scopes.includes("threads:operate")
+    ? [...scopes, "threads:operate"]
+    : scopes;
+
+const toSession = (stored: typeof StoredSession.Type): Session => ({
+  id: stored.id,
+  label: stored.label,
+  audience: stored.audience,
+  scopes: effectiveScopes(stored),
+  ...(stored.proofKeyThumbprint === undefined ? {} : { proofKeyThumbprint: stored.proofKeyThumbprint }),
 });
 
 const make = Effect.gen(function* () {
@@ -242,8 +252,17 @@ const make = Effect.gen(function* () {
     });
   });
 
-  const mintMcpToken = Effect.fn("AuthStore.mintMcpToken")(function* (label: string) {
-    return yield* update((file, now) => Effect.succeed(addSession(file, now, { label, audience: "mcp", scopes: MCP_SCOPES })));
+  const mintMcpToken = Effect.fn("AuthStore.mintMcpToken")(function* (label: string, options: { readonly ttlMs?: number } = {}) {
+    return yield* update((file, now) =>
+      Effect.succeed(
+        addSession(file, now, {
+          label,
+          audience: "mcp",
+          scopes: MCP_SCOPES,
+          ...(options.ttlMs === undefined ? {} : { expiresAt: new Date(now + options.ttlMs).toISOString() }),
+        }),
+      ),
+    );
   });
 
   const authenticate = Effect.fn("AuthStore.authenticate")(function* (
@@ -296,14 +315,14 @@ const make = Effect.gen(function* () {
   });
 
   const list = Effect.fn("AuthStore.list")(function* (currentId: string) {
-    return (yield* readLive).sessions.map(({ id, label, audience, scopes, createdAt, lastSeenAt }) => ({
-      id,
-      label,
-      audience,
-      scopes,
-      createdAt,
-      lastSeenAt,
-      current: id === currentId,
+    return (yield* readLive).sessions.map((stored) => ({
+      id: stored.id,
+      label: stored.label,
+      audience: stored.audience,
+      scopes: effectiveScopes(stored),
+      createdAt: stored.createdAt,
+      lastSeenAt: stored.lastSeenAt,
+      current: stored.id === currentId,
     }));
   });
 

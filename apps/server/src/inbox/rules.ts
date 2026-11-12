@@ -351,3 +351,19 @@ export function deriveInbox(input: InboxInput): InboxItem[] {
     (a, b) => (a.group === b.group ? Date.parse(b.at) - Date.parse(a.at) : a.group === "needs_you" ? -1 : 1),
   );
 }
+
+// One job attempt with what the inbox would show for it: its attempts on the same commit, its
+// steps against the usual, the machine while it ran, and the failure verdict if it failed.
+export function runEvidence(jobId: number, input: InboxInput) {
+  const job = input.jobs.find((candidate) => candidate.jobId === jobId);
+  if (!job) return undefined;
+  const attempts = input.jobs.filter((other) => sameUnit(other, job)).toSorted((a, b) => startedMs(a) - startedMs(b));
+  const unit = isFailure(job) ? classifyFailures(attempts, input).find((candidate) => candidate.key === unitKey(job)) : undefined;
+  const evidence = evidenceFor(job, attempts, input.jobs, input);
+  return {
+    title: `${jobName(job)} #${job.runId}${job.attempt > 1 ? ` attempt ${job.attempt}` : ""}`,
+    job,
+    verdict: unit?.verdict ?? null,
+    evidence: { ...evidence, reasons: unit ? [...new Set(unit.reasons)] : [] },
+  };
+}
