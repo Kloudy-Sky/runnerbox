@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { useThread } from "../../hooks/useThread.ts";
 import { useAccounts } from "../../hooks/useAccounts.ts";
 import { Button } from "../ui/button.tsx";
+import { ReproduceControl } from "./ReproduceControl.tsx";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select.tsx";
 import { Textarea } from "../ui/textarea.tsx";
 
@@ -74,8 +75,9 @@ export function Composer({ thread, placeholder }: { thread: Thread; placeholder:
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <span className="flex flex-1 items-center gap-1">
           {picker}
-          <span>read-only</span>
+          <span>{thread.reproduce.running ? "reads, and runs commands in the container" : "read-only"}</span>
         </span>
+        <ReproduceControl thread={thread} />
         {view.items.length > 0 && !view.running ? (
           <Button variant="link" size="xs" onClick={thread.startFresh}>
             New thread

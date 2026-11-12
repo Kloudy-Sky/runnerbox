@@ -1,3 +1,4 @@
+import { MAX_COMMAND_SECONDS } from "runnerbox/src/reproduce/protocol.ts";
 import { RunnerboxToolkit } from "../../mcp/tools.ts";
 
 // How a thread's turn runs the environment's own `claude`: headless, streaming JSON in and out,
@@ -8,9 +9,12 @@ import { RunnerboxToolkit } from "../../mcp/tools.ts";
 export const SERVER_NAME = "runnerbox";
 export const toolName = (name: string) => `mcp__${SERVER_NAME}__${name}`;
 export const READ_ONLY_TOOLS = Object.keys(RunnerboxToolkit.tools).map(toolName);
+export const REPRODUCE_TOOL = toolName("repro_exec");
 export const MAX_AGENT_STEPS = 12;
+// Rerunning a step and narrowing it down takes more steps than reading.
+export const MAX_REPRODUCE_STEPS = 30;
 
-export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly systemPrompt: string; readonly model: string | undefined }) {
+export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly systemPrompt: string; readonly model: string | undefined; readonly reproduce: boolean }) {
   return [
     "--print",
     "--input-format=stream-json",
@@ -25,8 +29,9 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
     "--mcp-config",
     turn.mcpConfigPath,
     "--strict-mcp-config",
-    // Its tools run without asking. Anything else is refused, and nothing ever prompts.
-    `--allowedTools=${READ_ONLY_TOOLS.join(",")}`,
+    // Its tools run without asking. Anything else is refused, and nothing ever prompts. A turn
+    // with a reproduce running also gets its shell tool; every other turn can only read.
+    `--allowedTools=${[...READ_ONLY_TOOLS, ...(turn.reproduce ? [REPRODUCE_TOOL] : [])].join(",")}`,
     "--permission-mode=dontAsk",
     "--permission-prompts=none",
     // No user, project or local settings, so no hooks, permission rules, plugins or CLAUDE.md.
@@ -37,7 +42,7 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
     "--no-session-persistence",
     // Replaces Claude Code's own prompt, which describes tools this agent doesn't have.
     `--system-prompt=${turn.systemPrompt}`,
-    `--max-turns=${MAX_AGENT_STEPS}`,
+    `--max-turns=${turn.reproduce ? MAX_REPRODUCE_STEPS : MAX_AGENT_STEPS}`,
     ...(turn.model === undefined ? [] : [`--model=${turn.model}`]),
   ];
 }
@@ -75,6 +80,8 @@ const PASSED = new Set([
   "SSL_CERT_DIR",
 ]);
 
+const TOOL_TIMEOUT_MS = (MAX_COMMAND_SECONDS + 60) * 1000;
+
 // `apiKey` is the turn's account's own key, the only credential that reaches `claude` from runnerbox.
 export function claudeEnv(from: Record<string, string | undefined>, apiKey: string | null = null) {
   const passed = Object.entries(from).filter((entry): entry is [string, string] => entry[1] !== undefined && (PASSED.has(entry[0]) || entry[0].startsWith("LC_")));
@@ -88,6 +95,8 @@ export function claudeEnv(from: Record<string, string | undefined>, apiKey: stri
     ENABLE_MCP_LARGE_OUTPUT_FILES: "false",
     CLAUDE_CODE_AUTO_CONNECT_IDE: "0",
     CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
+    // A reproduce command can take up to 10 minutes; Claude Code's own MCP timeout is shorter.
+    MCP_TOOL_TIMEOUT: String(TOOL_TIMEOUT_MS),
   };
 }
 

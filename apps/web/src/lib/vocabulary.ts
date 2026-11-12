@@ -47,5 +47,6 @@ export const SCOPE_WORDS: Record<AuthScope, string> = {
   "history:read": "read job history",
   "runners:read": "see runners",
   "threads:operate": "ask the agent",
+  "threads:reproduce": "start a container the agent can run commands in",
   "access:write": "manage access and accounts",
 };

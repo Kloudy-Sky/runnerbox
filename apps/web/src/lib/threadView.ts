@@ -26,8 +26,15 @@ export function foldThread(view: ThreadView, event: ThreadEvent): ThreadView {
     case "AgentText":
       return { ...view, items: [...view.items, event], partial: null };
     case "ToolCall":
+    case "ReproduceStarted":
+    case "ReproduceCommand":
+    case "ReproduceEnded":
       return { ...view, items: [...view.items, event] };
     case "TurnEnded":
       return { ...view, items: [...view.items, event], partial: null, running: false };
   }
 }
+
+// Whether the thread's reproduce is running: it started, and hasn't ended since.
+export const isReproducing = (items: ReadonlyArray<ThreadItem>) =>
+  items.findLast((item) => item._tag === "ReproduceStarted" || item._tag === "ReproduceEnded")?._tag === "ReproduceStarted";

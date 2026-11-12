@@ -12,6 +12,7 @@ import type { Sample } from "runnerbox/src/tracking/sample-record.ts";
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const INSTALL = "example";
+export const LINUX_IMAGE = "app-ci:3f9a1c2b7d4e";
 const SELF_HOSTED = ["self-hosted", "example-linux"];
 const HOSTED = ["ubuntu-24.04"];
 
@@ -104,6 +105,7 @@ export async function writeFixtures(dir: string, now: number) {
         durationMs: started + ms - registered,
         exitCode: outcome.exitCode === undefined ? 0 : outcome.exitCode,
         released: false,
+        image: LINUX_IMAGE,
       });
     }
     return record;
@@ -161,7 +163,7 @@ export async function writeFixtures(dir: string, now: number) {
     events.push({ time: iso(at + 3000), event: "runner", runnerType: "docker", slot: 1, runner: `${INSTALL}-docker-1-${Math.floor(at / 1000)}`, startedAt: iso(at), durationMs: 3000, exitCode: 125, released: false });
   }
   // Image builds, one failed, and runners released for memory and for a new image.
-  events.push({ time: iso(now - 6 * HOUR), event: "image_build", runnerType: "linux", tag: "app-ci:3f9a1c2b7d4e", startedAt: iso(now - 6 * HOUR - 4 * MINUTE), durationMs: 4 * MINUTE, ok: true });
+  events.push({ time: iso(now - 6 * HOUR), event: "image_build", runnerType: "linux", tag: LINUX_IMAGE, startedAt: iso(now - 6 * HOUR - 4 * MINUTE), durationMs: 4 * MINUTE, ok: true });
   events.push({ time: iso(now - 2 * HOUR), event: "image_build", runnerType: "docker", tag: "app-docker:9c1e2f3a4b5d", startedAt: iso(now - 2 * HOUR - MINUTE), durationMs: MINUTE, ok: false });
   events.push({ time: iso(now - 5 * HOUR), event: "runner", runnerType: "linux", slot: 2, runner: `${INSTALL}-linux-2-${Math.floor((now - 6 * HOUR) / 1000)}`, startedAt: iso(now - 6 * HOUR), durationMs: HOUR, exitCode: 0, released: "image" });
 
@@ -197,7 +199,7 @@ export async function writeFixtures(dir: string, now: number) {
     { name: "linux", label: "example-linux", slots: 2 },
     { name: "docker", label: "example-docker", slots: 1 },
   ], () => now);
-  live.image("linux", "app-ci:3f9a1c2b7d4e", null);
+  live.image("linux", LINUX_IMAGE, null);
   live.image("docker", null, "app-docker:9c1e2f3a4b5d");
   live.slot("linux", 1, "busy", { runner: `${INSTALL}-linux-1-${Math.floor(now / 1000) - 300}` });
   live.slot("linux", 2, "waiting", { detail: "VM has 1840 MiB available, below its floor of 2048 MiB" });

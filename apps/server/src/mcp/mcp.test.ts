@@ -13,7 +13,7 @@ after(() => server.close());
 
 const mcpSession = (token: string) => mcpClient(`${server.baseUrl}/mcp`, token);
 
-test("an agent's token lists only read-only tools and reads the same inbox the app does", async () => {
+test("an agent's token sees read-only tools, can't use the reproduce shell, and reads the same inbox the app does", async () => {
   const { init, request } = await mcpSession(await server.mintMcpToken());
   assert.equal(init.status, 200);
   const { body: listed } = await request("tools/list");
@@ -21,8 +21,11 @@ test("an agent's token lists only read-only tools and reads the same inbox the a
   assert.ok(tools.length >= 10);
   assert.deepEqual(
     tools.filter((tool) => tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint !== false).map((tool) => tool.name),
-    [],
+    ["repro_exec"],
   );
+  const { body: shell } = await request("tools/call", { name: "repro_exec", arguments: { command: "id" } });
+  assert.equal(shell.result.isError, true);
+  assert.match(shell.result.content[0].text, /can't run commands/);
   const { body: called } = await request("tools/call", { name: "ci_inbox", arguments: { days: 7 } });
   const inbox = called.result.structuredContent ?? JSON.parse(called.result.content[0].text);
   assert.match(inbox.summary.headline, /need/);

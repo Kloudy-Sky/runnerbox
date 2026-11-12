@@ -118,6 +118,7 @@ An install with a `reproduce` block lets `runnerbox serve`, on the same machine 
 - It refuses public repositories, since their commits can come from anyone's pull request and the container shares the VM with your jobs. It doesn't run with `jobVms` yet.
 - The network can be kept for the first command only, which installs dependencies, and cut after it.
 - The socket is `<state>/<install>/reproduce/up.sock`. Its directory must belong to the user running `up` and be closed to everyone else.
+- In a thread, Reproduce asks before it starts one, and needs `threads:reproduce`, which pairing by address or SSH grants and Connect never does. The container runs on the image the job's runner recorded. While it runs, that thread's turns get one more tool, `repro_exec`, to run a shell command in it; each command and the end of its output show in the thread. Stop container removes it.
 
 ## Jobs on a Mac's own OS
 

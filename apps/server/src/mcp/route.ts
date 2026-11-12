@@ -8,6 +8,9 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as AuthStore from "../auth/AuthStore.ts";
 import { bearerToken } from "../http/bearer.ts";
 import * as Handlers from "./handlers.ts";
+import { McpSession } from "./McpSession.ts";
+import * as ReproduceHandler from "./reproduceHandler.ts";
+import { ReproduceToolkit } from "./reproduceTool.ts";
 import { RunnerboxToolkit } from "./tools.ts";
 
 // `/mcp` takes only tokens from `runnerbox mcp-token`, never an app's session: a token kept
@@ -25,7 +28,7 @@ const layerAuth = HttpRouter.middleware(
             { status: 401, headers: { "cache-control": "no-store", "www-authenticate": "Bearer" } },
           );
         }
-        return yield* httpEffect;
+        return yield* httpEffect.pipe(Effect.provideService(McpSession, session));
       });
   }),
 ).layer;
@@ -35,7 +38,10 @@ const layerTransport = McpServer.layerHttp({
   version: packageJson.version,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
-  instructions: "Read-only CI history and runner state for one machine running runnerbox. Start with ci_inbox.",
+  instructions: "Read-only CI history and runner state for one machine running runnerbox. Start with ci_inbox. repro_exec only works inside a runnerbox thread's reproduce.",
 }).pipe(Layer.provide(layerAuth));
 
-export const layer = McpServer.toolkit(RunnerboxToolkit).pipe(Layer.provide(Handlers.layer), Layer.provideMerge(layerTransport));
+export const layer = Layer.mergeAll(
+  McpServer.toolkit(RunnerboxToolkit).pipe(Layer.provide(Handlers.layer)),
+  McpServer.toolkit(ReproduceToolkit).pipe(Layer.provide(ReproduceHandler.layer)),
+).pipe(Layer.provideMerge(layerTransport));

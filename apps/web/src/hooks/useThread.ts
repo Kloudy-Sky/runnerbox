@@ -1,8 +1,8 @@
-import { subjectKey, type ThreadSubject } from "@runnerbox/contracts";
+import { type ReproduceNetwork, subjectKey, type ThreadSubject } from "@runnerbox/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Predicate from "effect/Predicate";
 import { useEffect, useState } from "react";
-import { EMPTY_VIEW, foldThread, type ThreadView } from "../lib/threadView.ts";
+import { EMPTY_VIEW, foldThread, isReproducing, type ThreadView } from "../lib/threadView.ts";
 import { runtime } from "../runtime.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
 
@@ -47,6 +47,30 @@ export function useThread(subject: ThreadSubject, days: number) {
     );
   }, [enabled, environmentId, threadId, connected]);
 
+  // Whether this thread's job can be reproduced, and whether this session may: the server decides.
+  const reproduce = useQuery({
+    queryKey: [environmentId, "threads.checkReproduce", threadId],
+    queryFn: () => runtime.run(environmentId, (client) => client["threads.checkReproduce"]({ id: threadId! })),
+    enabled: enabled && threadId !== null,
+    retry: false,
+  });
+  // The owner's click; the server picks the image from the job's own runner.
+  const startReproduce = async (network: ReproduceNetwork) => {
+    if (threadId === null) return false;
+    setError(null);
+    try {
+      await runtime.run(environmentId, (client) => client["threads.startReproduce"]({ id: threadId, network }));
+      return true;
+    } catch (cause) {
+      setError(errorText(cause));
+      return false;
+    }
+  };
+  const stopReproduce = () => {
+    if (threadId === null) return;
+    runtime.run(environmentId, (client) => client["threads.stopReproduce"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
+  };
+
   // `accountId` picks the account the turn runs as; without it, the default.
   const send = async (text: string, accountId?: string) => {
     setError(null);
@@ -70,10 +94,12 @@ export function useThread(subject: ThreadSubject, days: number) {
     runtime.run(environmentId, (client) => client["threads.interrupt"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
   };
 
+  const current = threadId !== null && view?.id === threadId ? view.value : EMPTY_VIEW;
   return {
     permitted,
     provider: provider.data,
-    view: threadId !== null && view?.id === threadId ? view.value : EMPTY_VIEW,
+    view: current,
+    reproduce: { check: reproduce.data ?? null, running: isReproducing(current.items), start: startReproduce, stop: stopReproduce },
     error,
     send,
     interrupt,

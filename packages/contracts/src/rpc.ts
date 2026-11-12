@@ -7,7 +7,7 @@ import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, 
 import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { Account, AccountError, AccountId, SaveAccount } from "./accounts.ts";
-import { CreateThread, MessageText, ProviderStatus, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
+import { CreateThread, MessageText, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
 export class StateReadError extends Schema.TaggedError<StateReadError>()("StateReadError", {
@@ -30,6 +30,7 @@ export class AccessError extends Schema.TaggedError<AccessError>()("AccessError"
 
 const ReadError = Schema.Union([AuthorizationError, StateReadError]);
 const ThreadFailure = Schema.Union([AuthorizationError, ThreadError]);
+const ReproduceFailure = Schema.Union([AuthorizationError, ThreadError, ReproduceError]);
 const ThreadId = { id: Schema.String };
 const Window = { repo: RepoName, days: Days };
 
@@ -55,6 +56,9 @@ export const RPC_METHODS = {
   threadsStartTurn: "threads.startTurn",
   threadsInterrupt: "threads.interrupt",
   threadsSubscribe: "threads.subscribe",
+  threadsCheckReproduce: "threads.checkReproduce",
+  threadsStartReproduce: "threads.startReproduce",
+  threadsStopReproduce: "threads.stopReproduce",
   accountsList: "accounts.list",
   accountsSave: "accounts.save",
   accountsRemove: "accounts.remove",
@@ -129,6 +133,11 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.threadsStartTurn, { payload: { ...ThreadId, text: MessageText, accountId: Schema.optionalKey(AccountId) }, success: Schema.Struct({ turnId: Schema.String }), error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsInterrupt, { payload: ThreadId, error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsSubscribe, { payload: ThreadId, success: ThreadEvent, error: ThreadFailure, stream: true }),
+  Rpc.make(RPC_METHODS.threadsCheckReproduce, { payload: ThreadId, success: ReproduceCheck, error: ReproduceFailure }),
+  // The owner's click. The container's image is the one the job's runner recorded, never one a
+  // client names. Its start is logged on the thread's stream.
+  Rpc.make(RPC_METHODS.threadsStartReproduce, { payload: { ...ThreadId, network: ReproduceNetwork }, error: ReproduceFailure }),
+  Rpc.make(RPC_METHODS.threadsStopReproduce, { payload: ThreadId, error: ReproduceFailure }),
   Rpc.make(RPC_METHODS.accountsList, { success: Schema.Array(Account), error: Schema.Union([AuthorizationError, AccountError]) }),
   Rpc.make(RPC_METHODS.accountsSave, { payload: SaveAccount, success: Account, error: Schema.Union([AuthorizationError, AccountError]) }),
   Rpc.make(RPC_METHODS.accountsRemove, { payload: { id: AccountId }, error: Schema.Union([AuthorizationError, AccountError]) }),
@@ -146,6 +155,7 @@ const RUNNERS = ["runners:read"] as const;
 const ACCESS = ["access:write"] as const;
 // The agent reads history and runner state through its tools, so a thread needs both as well.
 const THREADS = ["history:read", "runners:read", "threads:operate"] as const;
+const REPRODUCE = [...THREADS, "threads:reproduce"] as const;
 export const RPC_SCOPES = {
   [RPC_METHODS.historyRepos]: HISTORY,
   [RPC_METHODS.historyOverview]: HISTORY,
@@ -169,6 +179,9 @@ export const RPC_SCOPES = {
   [RPC_METHODS.threadsStartTurn]: THREADS,
   [RPC_METHODS.threadsInterrupt]: THREADS,
   [RPC_METHODS.threadsSubscribe]: THREADS,
+  [RPC_METHODS.threadsCheckReproduce]: REPRODUCE,
+  [RPC_METHODS.threadsStartReproduce]: REPRODUCE,
+  [RPC_METHODS.threadsStopReproduce]: REPRODUCE,
   // Picking an account is part of running threads; changing one, or setting a key, manages access.
   [RPC_METHODS.accountsList]: THREADS,
   [RPC_METHODS.accountsSave]: ["access:write", "threads:operate"],
