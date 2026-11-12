@@ -118,7 +118,7 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
     // otherwise stay listed as offline.
     if (!released) await release(registration.runnerId);
     registered.delete(slot);
-    record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released });
+    record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released, image: startedImage });
     log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
     if (stopping()) return report(slot, "stopped");
     // A released runner exits fast on purpose, so that isn't a broken VM.

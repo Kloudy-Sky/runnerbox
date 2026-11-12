@@ -104,6 +104,21 @@ A job VM has to boot before its runner starts listening, and a job that arrives 
 
 A builder made by an earlier release needs one change first, because its copies would otherwise share one identity on the network. In the builder, add `dhcp-identifier: mac` under the interface in `/etc/netplan/50-cloud-init.yaml`, next to `dhcp4: true`, and run `sudo netplan apply`.
 
+## Reproduce containers
+
+An install with a `reproduce` block lets `runnerbox serve`, on the same machine and as the same user, ask `up` for a throwaway container in which to rerun a failing step. It's for a thread in the desktop app; without the block there's no socket and `up` behaves as before.
+
+```json
+"reproduce": { "sourceTokenFile": "/home/example/.config/runnerbox/source-token" }
+```
+
+- `sourceTokenFile` holds a second fine-grained token that can only read code: "Contents: Read-only" on the repositories you want reproduced. It must be owner-only, and `up` refuses it if it's the token that mints runners, by path or by contents. `up` downloads the commit with it on the host and streams the files into the container, so neither token reaches the VM.
+- The container is a job's container without the job: the kind's image (the tag the job ran on, if it's still in the VM), runtime, limits and env, behind the same network filter, with no mounts, no registration and no token. Its files are in `/work`.
+- One reproduce runs at a time. It starts only while no slot waits for memory and the VM has the kind's floor plus its memory limit available. It's removed as soon as a slot has to wait for memory, after 5 minutes idle, after 30 minutes, or after 40 commands. Each command gets at most 10 minutes. `up` removes any left over when it starts and when it drains.
+- It refuses public repositories, since their commits can come from anyone's pull request and the container shares the VM with your jobs. It doesn't run with `jobVms` yet.
+- The network can be kept for the first command only, which installs dependencies, and cut after it.
+- The socket is `<state>/<install>/reproduce/up.sock`. Its directory must belong to the user running `up` and be closed to everyone else.
+
 ## Jobs on a Mac's own OS
 
 A Linux VM can't sign a Mac app. A host install runs jobs on the Mac itself, with no VM or container around them, so it protects much less. Read [what it gives up](docs/threat-model.md#jobs-on-the-hosts-own-os) first, and only give it workflows you'd run on that Mac by hand.
