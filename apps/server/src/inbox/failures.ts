@@ -2,8 +2,8 @@ import type { InboxItem, QuietKind } from "@runnerbox/contracts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import { runnerType } from "runnerbox/src/tracking/report.ts";
 import { adviceFor } from "./advice.ts";
-import { at, capitalize, isFailure, jobKey, jobName, listed, sameUnit } from "./jobs.ts";
-import { classifyFailures, evidenceFor, type InboxInput, type Unit } from "./rules.ts";
+import { at, capitalize, isFailure, jobKey, jobName, listed, plural, sameUnit } from "./jobs.ts";
+import { classifyFailures, evidenceFor, type InboxInput, plainCause, type Unit } from "./rules.ts";
 
 const RESOLVED_ACTION = "Nothing to do now. If it fails this way again, it comes back here.";
 // A job flaky this often in the window is worth a look even though each retry passed.
@@ -33,7 +33,9 @@ export function failureItems(input: InboxInput): InboxItem[] {
     const types = listed([...new Set(group.flatMap((each) => each.attempts.filter(isFailure).map(runnerType)))]);
     const isFixed = fixed(job);
     const later = isFixed ? " A later run on this branch passed." : "";
-    const howOften = group.length === 1 ? `It failed on ${types}.` : `It failed in ${group.length} of ${runs} runs, on ${types}.`;
+    // Which job, how often, where, and whether retrying the same code passed: what a newcomer needs.
+    const retry = unit.retried ? ` A retry on ${job.headSha ? "the same commit" : "the same run"} passed.` : "";
+    const howOften = `${name} failed ${group.length === 1 ? "once" : `${group.length} times`} in ${plural(runs, "run")}, on ${types}.${retry}`;
     const evidence = { ...evidenceFor(failedAttempt, unit.attempts, input.jobs, input), reasons: unit.reasons };
     const base = { id: `failure:${jobKey(job)}:${unit.verdict}`, kind: "failure" as const, verdict: unit.verdict, repo: job.repo, install: null, at: at(job), evidence };
     const item = (quiet: QuietKind | null, words: { title: string; happened: string; why: string; action: string }): InboxItem => ({
@@ -45,13 +47,13 @@ export function failureItems(input: InboxInput): InboxItem[] {
 
     switch (unit.verdict) {
       case "infra": {
-        const why = `The machine, not the code, looks responsible: ${listed([...new Set(group.flatMap((each) => each.causes.map((cause) => cause.text)))])}.`;
+        const why = `${plainCause(group.flatMap((each) => each.causes))} That points at the machine, not the code.`;
         return isFixed
           ? item("resolved", { title: `${name} failed on this machine, and a later run passed`, happened: `${howOften}${later}`, why, action: RESOLVED_ACTION })
           : item(null, { title: `${name} fails on this machine, not in its code`, happened: howOften, why, action: adviceFor(group.flatMap((each) => each.causes)) });
       }
       case "flaky": {
-        const happened = `It failed, then passed when retried, in ${group.length} of ${runs} runs.${later}`;
+        const happened = `${name} failed, then passed when retried, in ${group.length} of ${plural(runs, "run")}.${later}`;
         const why = "The same code both failed and passed, and the machine looked fine, so something in the test or its setup isn't reliable.";
         const frequent = group.length >= FREQUENT_FLAKES;
         return item(frequent ? (isFixed ? "resolved" : null) : "flaky", {

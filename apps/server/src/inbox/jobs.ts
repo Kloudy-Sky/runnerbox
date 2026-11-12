@@ -24,6 +24,13 @@ export const at = (job: JobRecord) => job.completedAt ?? job.startedAt ?? job.cr
 export const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export const plural = (count: number, one: string, many = `${one}s`) => `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
 export const mib = (value: number) => `${Math.round(value).toLocaleString("en-US")} MiB`;
+// "574 MiB", "3.2 GiB", "16 GiB": memory the way the evidence states it. Under 1 GiB it stays in
+// MiB, so a machine that ran dry never reads as "0 GiB".
+export function gib(valueMiB: number) {
+  if (valueMiB < 1024) return mib(valueMiB);
+  const value = valueMiB / 1024;
+  return `${value < 10 ? value.toFixed(1).replace(/\.0$/, "") : Math.round(value).toString()} GiB`;
+}
 
 // "45 seconds", "12 minutes", "2.5 hours": how long, the way a person says it.
 export function plainDuration(ms: number) {

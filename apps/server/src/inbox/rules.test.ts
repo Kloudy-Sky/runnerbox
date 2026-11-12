@@ -76,7 +76,10 @@ test("a failure gets a verdict, and only the machine's failures need the runner 
     ["unconfirmed", "failed_once"],
   ]);
   assert.equal(items[0]!.title, "ci / e2e fails on this machine, not in its code");
-  assert.match(items[0]!.why, /stopped for using too much memory \(exit 137\)/);
+  assert.equal(items[0]!.why, "The job's container was stopped for using too much memory. That points at the machine, not the code.");
+  assert.equal(items[0]!.happened, "ci / e2e failed once in 1 run, on example-linux. A retry on the same run passed.");
+  // The exact figures stay in the evidence.
+  assert.match(items[0]!.evidence.reasons[0]!, /exit code 137, which means it was killed for using too much memory/);
   assert.equal(items[0]!.action, ADVICE.memory);
 });
 
@@ -89,6 +92,8 @@ test("low memory during a failed job points at the machine", () => {
     }),
   );
   assert.deepEqual(failures(items), [["infra", "needs_you"]]);
+  assert.equal(items[0]!.why, "The VM ran out of memory while this job ran. That points at the machine, not the code.");
+  assert.deepEqual(items[0]!.evidence.reasons, ["the VM had only 300 MiB of its 8 GiB free"]);
   assert.equal(items[0]!.evidence.machine?.vmLowMiB, 300);
 });
 
@@ -306,4 +311,23 @@ test("a frequent flake a later run fixed is quiet, and says there's nothing to d
   const item = deriveInbox(input({ jobs: [...flaky, later] })).find((each) => each.verdict === "flaky")!;
   assert.equal(item.quiet, "resolved");
   assert.equal(item.action, "Nothing to do now. If it fails this way again, it comes back here.");
+});
+
+test("a machine failure's Why is one plain sentence, and its figures stay in the evidence", () => {
+  const runner = "example-linux-3-1780000000";
+  const failed = job({ conclusion: "failure", runner });
+  const events: LauncherEvent[] = [{ install: "example", event: "runner", slot: 3, runner, startedAt: iso(NOW), durationMs: 1, exitCode: 137, released: false }];
+  const [item] = deriveInbox(input({ jobs: [failed], events, machine: (candidate) => (candidate === failed ? { samples: 4, vmLowMiB: 574, vmTotalMiB: 16384 } : undefined) }));
+  assert.equal(item!.why, "The VM ran out of memory while this job ran, and the job's container was stopped for it. That points at the machine, not the code.");
+  assert.deepEqual(item!.evidence.reasons, ["the VM had only 574 MiB of its 16 GiB free", "its container stopped with exit code 137, which means it was killed for using too much memory"]);
+});
+
+test("Why names every machine that ran short, and says swapping as pressure, not as running out", () => {
+  const failed = job({ conclusion: "failure" });
+  const why = (machine: { vmLowMiB?: number; vmTotalMiB?: number; hostLowMiB?: number; hostTotalMiB?: number; vmSwapPeakMiB?: number }) =>
+    deriveInbox(input({ jobs: [failed], machine: (candidate) => (candidate === failed ? { samples: 4, ...machine } : undefined) }))[0]!.why;
+  assert.equal(why({ vmLowMiB: 300, vmTotalMiB: 8192, hostLowMiB: 500, hostTotalMiB: 32768 }), "The VM and the host ran out of memory while this job ran. That points at the machine, not the code.");
+  assert.equal(why({ vmLowMiB: 5120, vmTotalMiB: 16384, vmSwapPeakMiB: 1536 }), "The VM was short of memory and swapping while this job ran. That points at the machine, not the code.");
+  const [dry] = deriveInbox(input({ jobs: [failed], machine: (candidate) => (candidate === failed ? { samples: 4, vmLowMiB: 4, vmTotalMiB: 8192 } : undefined) }));
+  assert.deepEqual(dry!.evidence.reasons, ["the VM had only 4 MiB of its 8 GiB free"]);
 });

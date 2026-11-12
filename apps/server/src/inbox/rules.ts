@@ -2,7 +2,7 @@ import type { Evidence, InstallState, LauncherEvent, Verdict } from "@runnerbox/
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import type { JobMachine } from "runnerbox/src/tracking/job-machine.ts";
 import { runnerType } from "runnerbox/src/tracking/report.ts";
-import { durationMs, isFailure, jobKey, jobName, median, mib, present, startedMs, unitKey } from "./jobs.ts";
+import { durationMs, gib, isFailure, jobKey, jobName, median, present, startedMs, unitKey } from "./jobs.ts";
 
 // The inbox's judgement: rules over data already recorded that tell the machine's failures from
 // the code's. The person who reads it owns the machines, not the code, so a failure in a job's own
@@ -23,14 +23,19 @@ const SWAP_PRESSURE_MIB = 1024;
 // A container killed by the kernel for memory exits 128 + 9.
 export const OUT_OF_MEMORY_EXIT = 137;
 
-// One sign that the machine, not the code, failed a job, as a phrase that fits after "because".
-export type MachineCause = { kind: "memory" | "connection" | "container"; text: string };
+// One sign that the machine, not the code, failed a job. `source` says what it was, for the plain
+// sentence in Why; `text` states the figures, for the evidence. `kind` picks the advice.
+export type MachineCause = {
+  kind: "memory" | "connection" | "container";
+  source: "vm_memory" | "host_memory" | "swap" | "out_of_memory" | "connection" | "exit";
+  text: string;
+};
 
 export const exitText = (exitCode: number | null) =>
   exitCode === null
     ? "the connection to the VM dropped"
     : exitCode === OUT_OF_MEMORY_EXIT
-      ? "its container was stopped for using too much memory (exit 137)"
+      ? "its container stopped with exit code 137, which means it was killed for using too much memory"
       : `its container stopped with exit code ${exitCode}`;
 
 // Why the machine, not the code, looks responsible for one failed attempt. Empty when nothing does.
@@ -40,26 +45,52 @@ export function machineCauses(job: JobRecord, input: Pick<InboxInput, "machine" 
   if (machine) {
     const { vmLowMiB, vmTotalMiB, hostLowMiB, hostTotalMiB, vmSwapPeakMiB } = machine;
     if (present(vmLowMiB) && present(vmTotalMiB) && vmLowMiB < vmTotalMiB * LOW_MEMORY_SHARE) {
-      causes.push({ kind: "memory", text: `the VM had only ${mib(vmLowMiB)} of its ${mib(vmTotalMiB)} free` });
+      causes.push({ kind: "memory", source: "vm_memory", text: `the VM had only ${gib(vmLowMiB)} of its ${gib(vmTotalMiB)} free` });
     }
     if (present(hostLowMiB) && present(hostTotalMiB) && hostLowMiB < hostTotalMiB * LOW_MEMORY_SHARE) {
-      causes.push({ kind: "memory", text: `the host had only ${mib(hostLowMiB)} of its ${mib(hostTotalMiB)} free` });
+      causes.push({ kind: "memory", source: "host_memory", text: `the host had only ${gib(hostLowMiB)} of its ${gib(hostTotalMiB)} free` });
     }
-    if (present(vmSwapPeakMiB) && vmSwapPeakMiB >= SWAP_PRESSURE_MIB) causes.push({ kind: "memory", text: `the VM was swapping (${mib(vmSwapPeakMiB)} of swap in use)` });
+    if (present(vmSwapPeakMiB) && vmSwapPeakMiB >= SWAP_PRESSURE_MIB) causes.push({ kind: "memory", source: "swap", text: `the VM was swapping, with ${gib(vmSwapPeakMiB)} of swap in use` });
   }
   // A runner exits 0 after its one job whether the job passed or not, so any other exit is the
   // container or SSH failing under it.
   const runner = input.events.find((event) => event.event === "runner" && event.runner === job.runner);
   if (runner?.event === "runner" && !runner.released && runner.exitCode !== 0) {
-    causes.push({
-      kind: runner.exitCode === null ? "connection" : runner.exitCode === OUT_OF_MEMORY_EXIT ? "memory" : "container",
-      text: exitText(runner.exitCode),
-    });
+    const { exitCode } = runner;
+    causes.push(
+      exitCode === null
+        ? { kind: "connection", source: "connection", text: exitText(exitCode) }
+        : exitCode === OUT_OF_MEMORY_EXIT
+          ? { kind: "memory", source: "out_of_memory", text: exitText(exitCode) }
+          : { kind: "container", source: "exit", text: exitText(exitCode) },
+    );
   }
   return causes;
 }
 
-export type Unit = { key: string; attempts: JobRecord[]; verdict: Verdict; causes: MachineCause[]; reasons: string[] };
+// The machine's causes as one plain sentence, without figures: "The VM ran out of memory while
+// this job ran, and the job's container was stopped for it."
+export function plainCause(causes: readonly MachineCause[]) {
+  const has = (source: MachineCause["source"]) => causes.some((cause) => cause.source === source);
+  const vm = has("vm_memory");
+  const host = has("host_memory");
+  // Swap is a sign of pressure, not of running out, so it's said as that when it's the only sign.
+  const memory = vm && host ? "the VM and the host ran out of memory" : vm ? "the VM ran out of memory" : host ? "the host ran out of memory" : null;
+  const short = !vm && has("swap") ? "the VM was short of memory and swapping" : null;
+  const pressure = memory ?? short;
+  const clauses = [
+    ...(pressure ? [`${pressure} while this job ran`] : []),
+    ...(has("out_of_memory") ? [pressure ? "the job's container was stopped for it" : "the job's container was stopped for using too much memory"] : []),
+    ...(has("connection") ? ["the connection to the VM dropped while it ran"] : []),
+    ...(has("exit") ? ["the job's container stopped with an error"] : []),
+  ];
+  const sentence =
+    clauses.length === 0 ? "something on the machine went wrong while this job ran" : clauses.length === 1 ? clauses[0]! : `${clauses.slice(0, -1).join(", ")}, and ${clauses.at(-1)}`;
+  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+}
+
+// `retried` is true when an attempt on the same commit (or run) passed after the last failure.
+export type Unit = { key: string; attempts: JobRecord[]; verdict: Verdict; causes: MachineCause[]; reasons: string[]; retried: boolean };
 
 // Gives each run of a job with a failed attempt its verdict. Infra wins over flaky: a retry that
 // passed after the machine ran out of memory still points at the machine.
@@ -87,7 +118,7 @@ export function classifyFailures(jobs: readonly JobRecord[], input: Pick<InboxIn
     if (verdict === "flaky") reasons.push(`it failed, then passed when retried ${onCommit ? "on the same commit" : "in the same run"}`);
     if (verdict === "code") reasons.push(types.size >= 2 ? `it failed on ${[...types].join(" and ")}` : `it failed all ${failed.length} attempts`);
     if (verdict === "unconfirmed") reasons.push("it failed once, on one kind of runner, and nothing points at the machine");
-    units.push({ key, attempts, verdict, causes, reasons: [...new Set(reasons)] });
+    units.push({ key, attempts, verdict, causes, reasons: [...new Set(reasons)], retried: passedLater });
   }
   return units;
 }
