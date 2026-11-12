@@ -1,4 +1,4 @@
-import type { JobRun, Verdict } from "@runnerbox/contracts";
+import type { AuthScope, JobRun, Verdict } from "@runnerbox/contracts";
 import { formatDuration, jobName } from "./format.ts";
 
 // What a failure's verdict means, in words someone new to CI reads without a glossary.
@@ -41,3 +41,11 @@ export function runHappened(run: JobRun) {
             : (run.conclusion ?? "is still running");
   return `${jobName(run)} ${outcome} after ${formatDuration(run.durationMs)} on ${where}. It waited ${formatDuration(run.queueMs)} for a runner.`;
 }
+
+// What each scope lets a session do, as the access list says it.
+export const SCOPE_WORDS: Record<AuthScope, string> = {
+  "history:read": "read job history",
+  "runners:read": "see runners",
+  "threads:operate": "ask the agent",
+  "access:write": "manage access and accounts",
+};

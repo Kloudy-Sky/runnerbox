@@ -27,7 +27,9 @@ import type * as StateLogs from "../history/StateLogs.ts";
 import type * as Inbox from "../inbox/Inbox.ts";
 import type * as RunnerState from "../runners/RunnerState.ts";
 import { SYSTEM_PROMPT, turnPrompt } from "./prompt.ts";
-import { ProviderAdapter, type ProviderEvent } from "./provider/ProviderAdapter.ts";
+import * as AccountStore from "../accounts/AccountStore.ts";
+import { Drivers } from "./provider/Drivers.ts";
+import type { ProviderEvent } from "./provider/ProviderAdapter.ts";
 import { subjectPacket } from "./subjectPacket.ts";
 import * as ThreadLog from "./ThreadLog.ts";
 
@@ -41,7 +43,7 @@ export class Threads extends Context.Service<
     readonly read: (id: string) => Effect.Effect<ThreadDetail, ThreadError>;
     readonly create: (subject: ThreadSubject, days: number) => Effect.Effect<ThreadSummary, ThreadError>;
     // Logs the question and starts the turn in the background; it ends on the thread's stream.
-    readonly startTurn: (id: string, text: string) => Effect.Effect<{ readonly turnId: string }, ThreadError>;
+    readonly startTurn: (id: string, text: string, accountId?: string) => Effect.Effect<{ readonly turnId: string }, ThreadError>;
     // Returns once the turn has ended and that's logged. Does nothing when no turn is running.
     readonly interrupt: (id: string) => Effect.Effect<void, ThreadError>;
     readonly subscribe: (id: string) => Stream.Stream<ThreadEvent, ThreadError>;
@@ -58,7 +60,13 @@ const nowIso = Clock.currentTimeMillis.pipe(Effect.map((ms) => new Date(ms).toIS
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const { serverDir } = yield* ServerPaths.ServerPaths;
-  const provider = yield* ProviderAdapter;
+  const drivers = yield* Drivers;
+  const accounts = yield* AccountStore.AccountStore;
+  // Whether the default account can run turns, for a client deciding whether to offer threads.
+  const provider = accounts.resolve(undefined).pipe(
+    Effect.flatMap((account) => drivers.get(account.driver).status({ hasKey: account.apiKey !== null })),
+    Effect.catch(() => Effect.succeed<ProviderStatus>({ provider: "Claude", available: false, fix: "Couldn't read the accounts file on the server." })),
+  );
   const auth = yield* AuthStore.AuthStore;
   const { baseUrl } = yield* LocalEndpoint.LocalEndpoint;
   const readers = yield* Effect.context<Inbox.Inbox | StateLogs.StateLogs | RunnerState.RunnerState>();
@@ -164,15 +172,20 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string) {
-    const status = yield* provider.status;
+  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, accountId?: string) {
+    const account = yield* accounts
+      .resolve(accountId)
+      .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
+    const driver = drivers.get(account.driver);
+    const status = yield* driver.status({ hasKey: account.apiKey !== null });
     if (!status.available) return yield* new ThreadError({ reason: "provider_unavailable" });
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
         if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
         const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
-        yield* appendUnlocked(id, { _tag: "UserMessage", seq: turn.nextSeq, turnId: turn.turnId, text, at: yield* nowIso });
+        // The account's ID only: its key never goes in a thread's log.
+        yield* appendUnlocked(id, { _tag: "UserMessage", seq: turn.nextSeq, turnId: turn.turnId, text, at: yield* nowIso, accountId: account.id });
         turn.nextSeq += 1;
         running.set(id, turn);
         const prompt = turnPrompt(file.header.packet, file.items, text);
@@ -182,8 +195,13 @@ const make = Effect.gen(function* () {
           const grant = yield* Effect.acquireRelease(auth.mintMcpToken("agent thread", { ttlMs: TURN_TOKEN_TTL_MS }), ({ session }) =>
             auth.revoke(session.id).pipe(Effect.ignore),
           );
-          yield* provider
-            .runTurn({ systemPrompt: SYSTEM_PROMPT, prompt, mcp: { url: `${baseUrl}/mcp`, token: grant.token } })
+          yield* driver
+            .runTurn({
+              systemPrompt: SYSTEM_PROMPT,
+              prompt,
+              mcp: { url: `${baseUrl}/mcp`, token: grant.token },
+              account: { label: account.label, model: account.model, apiKey: account.apiKey },
+            })
             .pipe(Stream.runForEach(onEvent(id, turn)));
         }).pipe(
           Effect.scoped,
@@ -219,7 +237,7 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  return Threads.of({ provider: provider.status, list, read, create, startTurn, interrupt, subscribe });
+  return Threads.of({ provider, list, read, create, startTurn, interrupt, subscribe });
 });
 
 export const layer = Layer.effect(Threads, make);

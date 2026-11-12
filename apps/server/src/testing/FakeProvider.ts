@@ -50,7 +50,7 @@ export function makeFakeProvider(options: { readonly turns: ReadonlyArray<Readon
   };
 
   const layer = Layer.succeed(ProviderAdapter)({
-    status: Effect.succeed(options.available === false ? { provider: "Fake", available: false, fix: "Install Claude Code on this machine and run `claude` once to sign in." } : { provider: "Fake", available: true, fix: null }),
+    status: () => Effect.succeed(options.available === false ? { provider: "Fake", available: false, fix: "Install Claude Code on this machine and run `claude` once to sign in." } : { provider: "Fake", available: true, fix: null }),
     runTurn: (input) =>
       Stream.suspend(() => {
         const script = options.turns[inputs.length % options.turns.length] ?? [];

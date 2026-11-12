@@ -18,7 +18,7 @@ export function ConnectionNotice() {
       </span>
       <span className="flex-1" />
       {connection.reason === "unauthorized" ? (
-        <Link to="/connect" search={(previous: RootSearch) => previous} className="text-foreground">
+        <Link to="/settings/connections" search={(previous: RootSearch) => previous} className="text-foreground">
           Forget it and pair again
         </Link>
       ) : (
