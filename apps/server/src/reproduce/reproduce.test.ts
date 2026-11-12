@@ -183,3 +183,27 @@ test("stopping a reproduce removes it and logs one line saying the owner did", (
     assert.deepEqual(ended.map((item) => item._tag === "ReproduceEnded" && item.reason), ["The owner stopped it."]);
     await assert.rejects(up.reproducer.exec({ op: "exec", id: "00000000", command: "true", timeoutSec: 5 }), /ended: stopped/);
   }));
+
+test("a turn gets the shell only when the session asking holds threads:reproduce, whoever started the reproduce", () =>
+  withReproduce(
+    [
+      [{ tool: "repro_exec", input: { command: "echo narrow", timeoutSec: 60 } }, { text: "Done." }],
+      [{ tool: "repro_exec", input: { command: "echo full", timeoutSec: 60 } }, { text: "Done." }],
+    ],
+    async (server, up, fake) => {
+      const full = await session(server);
+      const narrow = await session(server, ["history:read", "runners:read", "threads:operate"]);
+      const id = await withClient(server, full, (client) =>
+        Effect.gen(function* () {
+          const thread = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: ITEM }, days: 14 });
+          yield* client["threads.startReproduce"]({ id: thread.id, network: "on" });
+          return thread.id;
+        }),
+      );
+      await withClient(server, narrow, (client) => ask(client, id));
+      await withClient(server, full, (client) => ask(client, id));
+      assert.deepEqual(fake.inputs.map((input) => input.reproduce), [false, true]);
+      assert.match(fake.toolResults[0]!.text, /can't run commands/);
+      assert.deepEqual(up.requests.flatMap((request) => (request.op === "exec" ? [request.command] : [])), ["echo full"]);
+    },
+  ));

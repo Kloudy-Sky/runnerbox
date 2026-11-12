@@ -1,4 +1,5 @@
 import {
+  type AuthScope,
   type ProviderStatus,
   type ReproduceCheck,
   ReproduceError,
@@ -48,7 +49,9 @@ export class Threads extends Context.Service<
     readonly read: (id: string) => Effect.Effect<ThreadDetail, ThreadError>;
     readonly create: (subject: ThreadSubject, days: number) => Effect.Effect<ThreadSummary, ThreadError>;
     // Logs the question and starts the turn in the background; it ends on the thread's stream.
-    readonly startTurn: (id: string, text: string, accountId?: string) => Effect.Effect<{ readonly turnId: string }, ThreadError>;
+    // `scopes` are the asking session's: only one holding `threads:reproduce` gives the turn the
+    // reproduce's shell tool, whoever started the reproduce.
+    readonly startTurn: (id: string, text: string, options: { readonly accountId?: string | undefined; readonly scopes: ReadonlyArray<AuthScope> }) => Effect.Effect<{ readonly turnId: string }, ThreadError>;
     // Returns once the turn has ended and that's logged. Does nothing when no turn is running.
     readonly interrupt: (id: string) => Effect.Effect<void, ThreadError>;
     readonly subscribe: (id: string) => Stream.Stream<ThreadEvent, ThreadError>;
@@ -204,7 +207,7 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, accountId?: string) {
+  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, scopes }: { readonly accountId?: string | undefined; readonly scopes: ReadonlyArray<AuthScope> }) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
@@ -221,8 +224,9 @@ const make = Effect.gen(function* () {
         turn.nextSeq += 1;
         running.set(id, turn);
         const prompt = turnPrompt(file.header.packet, file.items, text);
-        // Only a turn that starts with a reproduce running gets the tool, bound to this thread.
-        const reproducing = reproduces.running(id);
+        // Only a turn that starts with a reproduce running, asked by a session that may reproduce,
+        // gets the tool, bound to this thread.
+        const reproducing = reproduces.running(id) && scopes.includes("threads:reproduce");
         // The agent's tools are `/mcp` itself, read-only, with a token that lives for this turn.
         // Forked into the service's scope, so stopping the server interrupts it and logs that.
         turn.fiber = yield* Effect.gen(function* () {
