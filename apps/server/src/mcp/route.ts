@@ -8,6 +8,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as AuthStore from "../auth/AuthStore.ts";
 import { bearerToken } from "../http/bearer.ts";
 import * as Handlers from "./handlers.ts";
+import { McpSession } from "./McpSession.ts";
 import * as ReproduceHandler from "./reproduceHandler.ts";
 import { ReproduceToolkit } from "./reproduceTool.ts";
 import { RunnerboxToolkit } from "./tools.ts";
@@ -27,7 +28,7 @@ const layerAuth = HttpRouter.middleware(
             { status: 401, headers: { "cache-control": "no-store", "www-authenticate": "Bearer" } },
           );
         }
-        return yield* httpEffect;
+        return yield* httpEffect.pipe(Effect.provideService(McpSession, session));
       });
   }),
 ).layer;

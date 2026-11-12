@@ -292,8 +292,8 @@ const make = Effect.gen(function* () {
 
   const stopReproduce = Effect.fn("Threads.stopReproduce")(function* (id: string) {
     yield* header(id);
-    if (!reproduces.running(id)) return;
-    yield* reproduces.stop(id).pipe(Effect.ensuring(ended(id, "The owner stopped it.").pipe(Effect.ignore)));
+    const reason = yield* reproduces.stop(id).pipe(Effect.tapError(() => (reproduces.running(id) ? Effect.void : ended(id, "The owner stopped it.").pipe(Effect.ignore))));
+    if (reason !== null) yield* ended(id, reason);
   });
 
   const OUTPUT_KEPT = 4000;
@@ -301,7 +301,9 @@ const make = Effect.gen(function* () {
     const id = reproduces.boundThread(sessionId);
     if (id === undefined) return yield* new ReproduceError({ why: "This token can't run commands. Only a thread's turn with a reproduce running can." });
     const result = yield* reproduces.exec(id, command, timeoutSec).pipe(
-      Effect.tapError((error) => (reproduces.running(id) ? Effect.void : ended(id, error.why).pipe(Effect.ignore))),
+      Effect.catchTag("ExecFailed", (failure) =>
+        (failure.endedHere ? ended(id, failure.why).pipe(Effect.ignore) : Effect.void).pipe(Effect.andThen(Effect.fail(new ReproduceError({ why: failure.why })))),
+      ),
     );
     const turn = running.get(id);
     if (turn) {

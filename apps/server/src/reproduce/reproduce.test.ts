@@ -109,8 +109,8 @@ test("only the turn of the thread whose reproduce runs can run commands, and a c
     },
   ));
 
-test("when up removes the reproduce, the thread says why", () =>
-  withReproduce([[{ tool: "repro_exec", input: { command: "true", timeoutSec: 60 } }, { text: "Gone." }]], async (server, up) => {
+test("when up removes the reproduce, the thread says why once, however often the agent retries", () =>
+  withReproduce([[{ tool: "repro_exec", input: { command: "true", timeoutSec: 60 } }, { tool: "repro_exec", input: { command: "true", timeoutSec: 60 } }, { text: "Gone." }]], async (server, up) => {
     const token = await session(server);
     const id = await withClient(server, token, (client) =>
       Effect.gen(function* () {
@@ -122,8 +122,24 @@ test("when up removes the reproduce, the thread says why", () =>
         return thread.id;
       }),
     );
-    const ended = (await threadLog(server, id)).find((item) => item._tag === "ReproduceEnded");
-    assert.equal(ended?._tag === "ReproduceEnded" && ended.reason, "This reproduce ended: stopped.");
+    const ended = (await threadLog(server, id)).filter((item) => item._tag === "ReproduceEnded");
+    assert.deepEqual(ended.map((item) => item._tag === "ReproduceEnded" && item.reason), ["This reproduce ended: stopped."]);
+  }));
+
+test("stopping a reproduce up already removed logs up's reason, not the owner's", () =>
+  withReproduce([], async (server, up) => {
+    const token = await session(server);
+    const id = await withClient(server, token, (client) =>
+      Effect.gen(function* () {
+        const thread = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: ITEM }, days: 14 });
+        yield* client["threads.startReproduce"]({ id: thread.id, network: "on" });
+        yield* Effect.promise(() => up.reproducer.stop("00000000"));
+        yield* client["threads.stopReproduce"]({ id: thread.id });
+        return thread.id;
+      }),
+    );
+    const ended = (await threadLog(server, id)).filter((item) => item._tag === "ReproduceEnded");
+    assert.deepEqual(ended.map((item) => item._tag === "ReproduceEnded" && item.reason), ["This reproduce ended: stopped."]);
   }));
 
 test("the server won't talk to a socket whose directory other users can open", () =>
