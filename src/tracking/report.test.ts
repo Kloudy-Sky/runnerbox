@@ -33,16 +33,17 @@ test("percentile returns a real value by nearest rank", () => {
   assert.equal(percentile([], 50), null);
 });
 
-test("a job that never got a runner counts as no runner, not as time spent", () => {
+test("a job that waited and never got a runner counts as no runner, not as time spent", () => {
   const [summary] = summarizeJobs([
     record({ seconds: 60 }),
-    record({ seconds: 240, runner: null, conclusion: "cancelled" }),
-    record({ seconds: 8, runner: null, conclusion: "failure" }),
+    record({ seconds: 600, runner: null, conclusion: "cancelled" }),
+    // Cancelled seconds after it was created, usually by a newer push: it didn't wait for a runner.
+    record({ seconds: 8, runner: null, conclusion: "cancelled" }),
   ]);
 
   assert.deepEqual(
     { ran: summary?.ran, failed: summary?.failed, noRunner: summary?.noRunner, totalMs: summary?.totalMs, p90Ms: summary?.p90Ms },
-    { ran: 1, failed: 0, noRunner: 2, totalMs: 60_000, p90Ms: 60_000 },
+    { ran: 1, failed: 0, noRunner: 1, totalMs: 60_000, p90Ms: 60_000 },
   );
 });
 

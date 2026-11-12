@@ -62,6 +62,8 @@ export const JobRun = Schema.Struct({
   durationMs: NullableNumber,
   queueMs: NullableNumber,
   verdict: Schema.NullOr(Verdict),
+  // Waited for a runner long enough and never got one, rather than being cancelled within minutes.
+  starved: Schema.Boolean,
 });
 export type JobRun = typeof JobRun.Type;
 

@@ -23,7 +23,7 @@ const withClient = <A, E>(server: Server, token: string, use: (client: Client) =
 // A thread on the first inbox item, as the dock makes one.
 const newThread = (client: Client) =>
   Effect.gen(function* () {
-    const [item] = yield* client["inbox.list"]({ days: 14 });
+    const [item] = (yield* client["inbox.list"]({ days: 14 })).items;
     assert.ok(item, "the fixtures have inbox items");
     return { item, thread: yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: item.id }, days: 14 }) };
   });

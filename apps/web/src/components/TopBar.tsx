@@ -14,7 +14,7 @@ const TABS = [
 
 export function TopBar() {
   const { range } = useRange();
-  const needsYou = useInbox().data?.filter((item) => item.group === "needs_you").length ?? 0;
+  const needsYou = useInbox().data?.summary.needYou ?? 0;
   return (
     <header className="flex h-9 shrink-0 items-center gap-4 bg-surf px-3">
       <EnvironmentSwitcher />

@@ -166,7 +166,7 @@ Each inbox item and each run can have a thread: ask a question beside the eviden
 
 An agent you already run can read the same history and runner state over MCP. `runnerbox mcp-token` prints a token and the `claude mcp add` line that uses it. The token only reads, works only at `/mcp`, and can be revoked from the app.
 
-The **Inbox** lists what needs you, by rules over the logs: failures the machine caused (low memory, a container that died, lost SSH), jobs that keep passing only on retry, jobs that never got a runner, slots that keep failing, and jobs slower than their own history. Failures in a job's own code go under "no action", since the check already told its author.
+The **Inbox** opens with one sentence on whether anything needs you, and four facts: jobs run, how many passed, how long a typical job waited for a runner, and time on your machines against GitHub's. Below it is what needs you, decided by rules over the logs and written in plain words: what happened, why, and what you can do. That covers failures the machine caused (low memory, a container that died, a lost connection), jobs that keep passing only on retry, jobs that waited over 5 minutes and never got a runner, runner slots that keep failing, and jobs that have become slower. The same problem across repositories, labels or slots is one item. The rest is counted, not listed: one-off failures, failures in a job's own code (the check already told its author), single slow runs, and problems a later run fixed.
 
 ## How a project uses it
 

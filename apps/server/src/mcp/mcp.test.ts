@@ -24,9 +24,9 @@ test("an agent's token lists only read-only tools and reads the same inbox the a
     [],
   );
   const { body: called } = await request("tools/call", { name: "ci_inbox", arguments: { days: 7 } });
-  const items = called.result.structuredContent ?? JSON.parse(called.result.content[0].text);
-  const list = Array.isArray(items) ? items : items.result;
-  assert.ok(list.some((item: { kind: string; verdict: string | null }) => item.kind === "failure" && item.verdict === "infra"));
+  const inbox = called.result.structuredContent ?? JSON.parse(called.result.content[0].text);
+  assert.match(inbox.summary.headline, /need/);
+  assert.ok(inbox.items.some((item: { kind: string; verdict: string | null }) => item.kind === "failure" && item.verdict === "infra"));
 });
 
 test("/mcp takes only agent tokens, and an agent token can't open the app's socket", async () => {

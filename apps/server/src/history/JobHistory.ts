@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import { elapsedMs } from "runnerbox/src/tracking/job-record.ts";
 import { summarizeLauncher } from "runnerbox/src/tracking/launcher-summary.ts";
 import { summarizeMachines } from "runnerbox/src/tracking/machine-summary.ts";
-import { compareSteps, percentile, runnerType, summarizeJobs } from "runnerbox/src/tracking/report.ts";
+import { compareSteps, percentile, runnerType, starved, summarizeJobs } from "runnerbox/src/tracking/report.ts";
 import { verdictsByJobId } from "../inbox/rules.ts";
 import { machineLookup } from "./machineLookup.ts";
 import * as StateLogs from "./StateLogs.ts";
@@ -75,14 +75,18 @@ const make = Effect.gen(function* () {
     return jobs
       .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, limit)
-      .map(({ v: _v, labels, steps: _steps, ...job }) => ({
-        ...job,
-        runnerType: runnerType({ labels }),
-        headSha: job.headSha ?? null,
-        durationMs: elapsedMs(job.startedAt, job.completedAt),
-        queueMs: job.runner === null ? null : elapsedMs(job.createdAt, job.startedAt),
-        verdict: verdicts.get(job.jobId) ?? null,
-      }));
+      .map((record) => {
+        const { v: _v, labels, steps: _steps, ...job } = record;
+        return {
+          ...job,
+          runnerType: runnerType({ labels }),
+          headSha: job.headSha ?? null,
+          durationMs: elapsedMs(job.startedAt, job.completedAt),
+          queueMs: job.runner === null ? null : elapsedMs(job.createdAt, job.startedAt),
+          verdict: verdicts.get(job.jobId) ?? null,
+          starved: starved(record),
+        };
+      });
   });
 
   const weeklySummary = Effect.fn("JobHistory.weeklySummary")(function* ({ repo, days, by }: Window & { readonly by: GroupBy }) {

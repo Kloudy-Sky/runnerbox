@@ -8,6 +8,7 @@ import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { formatAge, formatDuration, jobName } from "../lib/format.ts";
+import { VERDICT_WORDS } from "../lib/vocabulary.ts";
 
 const VERDICT_COLOR = { code: "text-red", infra: "text-amber", flaky: "text-amber", unconfirmed: "text-dim" } as const;
 
@@ -47,9 +48,9 @@ export function RunsPage() {
               <th className="py-1 pr-3 font-medium">Commit</th>
               <th className="py-1 pr-3 font-medium">Run</th>
               <th className="py-1 pr-3 font-medium">Age</th>
-              <th className="py-1 pr-3 text-right font-medium">Queue</th>
+              <th className="py-1 pr-3 text-right font-medium">Waited</th>
               <th className="py-1 pr-3 text-right font-medium">Time</th>
-              <th className="py-1 pr-3 font-medium">Verdict</th>
+              <th className="py-1 pr-3 font-medium">Cause</th>
             </tr>
           </thead>
           <tbody>
@@ -64,7 +65,7 @@ export function RunsPage() {
                 <td className="py-0.5 pr-3 text-dim">{formatAge(run.createdAt)}</td>
                 <td className="py-0.5 pr-3 text-right text-dim tabular-nums">{formatDuration(run.queueMs)}</td>
                 <td className="py-0.5 pr-3 text-right tabular-nums">{run.runner === null ? "-" : formatDuration(run.durationMs)}</td>
-                <td className="py-0.5 pr-3">{run.verdict ? <span className={VERDICT_COLOR[run.verdict]}>{run.verdict}</span> : run.runner === null && run.conclusion !== "skipped" ? <span className="text-dim">no runner</span> : null}</td>
+                <td className="py-0.5 pr-3">{run.verdict ? <span className={VERDICT_COLOR[run.verdict]}>{VERDICT_WORDS[run.verdict]}</span> : run.starved ? <span className="text-dim">no runner came</span> : null}</td>
               </tr>
             ))}
           </tbody>
@@ -76,7 +77,7 @@ export function RunsPage() {
           subject={{ _tag: "run", repo: selected.repo, jobId: selected.jobId }}
           days={days}
           title={`${jobName(selected)} #${selected.runId}${selected.attempt > 1 ? ` attempt ${selected.attempt}` : ""}`}
-          detail={[selected.verdict ?? selected.conclusion, selected.runnerType, selected.branch].filter(Boolean).join(", ")}
+          detail={[selected.verdict ? `failed: ${VERDICT_WORDS[selected.verdict]}` : selected.conclusion, selected.runnerType, selected.branch].filter(Boolean).join(", ")}
         />
       ) : null}
     </div>

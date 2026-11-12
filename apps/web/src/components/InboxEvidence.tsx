@@ -6,18 +6,35 @@ import { Sparkline } from "./Sparkline.tsx";
 const conclusionMark = (conclusion: string | null) =>
   conclusion === "success" ? <span className="text-green">✓</span> : conclusion === "failure" || conclusion === "timed_out" ? <span className="text-red">✕</span> : <span className="text-dim">○</span>;
 
-// Everything the item was decided from, so its verdict can be checked rather than trusted.
+// The item in plain words, then everything it was decided from, so it can be checked rather than trusted.
 export function InboxEvidence({ item }: { item: InboxItem }) {
-  const { steps, attempts, machine, launcher, durations, reasons } = item.evidence;
+  const { steps, attempts, machine, launcher, durations, breakdown } = item.evidence;
   return (
     <aside className="w-[380px] shrink-0 overflow-auto bg-surf px-3 py-2">
       <div className="font-medium">{item.title}</div>
       <div className="text-dim">{[item.repo, item.install].filter(Boolean).join(" ")}</div>
-      <ul className="mt-2">
-        {reasons.map((reason) => (
-          <li key={reason}>{reason.charAt(0).toUpperCase() + reason.slice(1)}.</li>
-        ))}
-      </ul>
+      <Heading>What happened</Heading>
+      <p>{item.happened}</p>
+      <Heading>Why</Heading>
+      <p>{item.why}</p>
+      <Heading>What you can do</Heading>
+      <p>{item.action}</p>
+      {breakdown.length > 0 ? (
+        <>
+          <Heading>Where</Heading>
+          <table className="w-full">
+            <tbody>
+              {breakdown.map((part) => (
+                <tr key={part.label}>
+                  <td className="pr-3">{part.label}</td>
+                  <td className="pr-3 text-right tabular-nums">{part.count}</td>
+                  <td className="text-dim">{part.detail}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
       {steps.length > 0 ? (
         <>
           <Heading>Steps, this attempt</Heading>
@@ -36,7 +53,7 @@ export function InboxEvidence({ item }: { item: InboxItem }) {
       ) : null}
       {attempts.length > 0 ? (
         <>
-          <Heading>{item.kind === "no_runner" ? "Jobs" : attempts.some((attempt) => attempt.headSha !== null) ? "Attempts on this commit" : "Attempts in this run"}</Heading>
+          <Heading>{item.kind === "no_runner" ? "Jobs that waited" : attempts.some((attempt) => attempt.headSha !== null) ? "Attempts on this commit" : "Attempts in this run"}</Heading>
           {attempts.map((attempt) => (
             <div key={attempt.jobId} className="flex gap-2">
               {conclusionMark(attempt.conclusion)}
