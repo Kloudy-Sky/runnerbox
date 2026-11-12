@@ -12,6 +12,7 @@ import { createImageKeeper } from "../image/image-keeper.ts";
 import type { InTurn } from "../jobvm/in-turn.ts";
 import { startJobVms } from "../jobvm/start-job-vms.ts";
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
+import { startReproduce } from "../reproduce/start-reproduce.ts";
 import { createRotatingLog } from "../tracking/rotating-log.ts";
 import { createSampler, VM_SAMPLE_COMMAND } from "../tracking/sampler.ts";
 import { stateDir } from "../tracking/state-dir.ts";
@@ -79,6 +80,18 @@ export async function startRunners(configPath: string) {
   const remove = async (runnerId: number) =>
     removeRunner({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerId });
 
+  // Slots waiting for memory, which a reproduce container yields to.
+  const waitingSlots = new Set<string>();
+  // Each kind's image for new containers, once ready, for a reproduce on that kind.
+  const images = new Map<string, () => string>();
+  const reproduce =
+    "vm" in config && config.reproduce
+      ? await startReproduce(
+          { ...config, reproduce: config.reproduce },
+          { roomForJob, installFloor, currentImage: (kind) => images.get(kind)?.() ?? null, slotsWaiting: () => waitingSlots.size },
+        )
+      : null;
+
   // A runner still waiting for a job would otherwise stay listed until GitHub notices it's gone.
   async function removeWaitingRunners() {
     const runnerIds = registered.flatMap((slots) => [...slots.values()]);
@@ -101,6 +114,7 @@ export async function startRunners(configPath: string) {
       if (stopping) process.exit(1);
       stopping = true;
       void slotState.stopping();
+      void reproduce?.close();
       console.log(`${signal}: draining. Busy jobs finish first; send it again to exit now.`);
       void removeWaitingRunners();
     });
@@ -133,7 +147,11 @@ export async function startRunners(configPath: string) {
         log: (line) => console.log(`${runner.name} ${line}`),
         record: (event) => record({ ...event, runnerType: runner.name }),
         stopping: () => stopping,
-        report: (slot, phase, details) => slotState.slot(runner.name, slot, phase, details),
+        report: (slot, phase, details) => {
+          if (phase === "waiting") waitingSlots.add(`${runner.name} ${slot}`);
+          else waitingSlots.delete(`${runner.name} ${slot}`);
+          slotState.slot(runner.name, slot, phase, details);
+        },
       },
       registered[index],
     );
@@ -150,6 +168,7 @@ export async function startRunners(configPath: string) {
         const image = await keepImage(config, runner, () => roomForJob(installFloor), recordForType, () => stopping, onImage, inBuilder);
         // Draining before this kind's image was ever ready, so it has no slots to wait for.
         if (!image) return;
+        images.set(runner.name, image.current);
         await startSlots(runner, index, {
           image: image.current,
           run: async (slot, secret, tag) => {

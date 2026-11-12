@@ -89,6 +89,10 @@ export const VmInstall = type({
     addresses: Ipv4.array().atLeastLength(1),
   },
   runners: RunnerType.array().atLeastLength(1),
+  // Lets `runnerbox serve` ask for a throwaway container on a kind's image, with a commit's files,
+  // to rerun a failing step in. `sourceTokenFile` holds a token that can only read the code
+  // (Contents: read), never the token that mints runners. Without this block there's no socket.
+  "reproduce?": { "+": "reject", sourceTokenFile: AbsolutePath },
 });
 
 export type VmInstall = typeof VmInstall.infer;

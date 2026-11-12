@@ -162,6 +162,7 @@ test("each runner and each wait for memory becomes one event", async () => {
     durationMs: 90_000,
     exitCode: 0,
     released: false,
+    image: "app:1",
   });
 });
 
