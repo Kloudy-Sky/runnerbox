@@ -33,10 +33,14 @@ const minutes = STARVED_AFTER_MS / 60_000;
 export function waitItems(input: InboxInput): InboxItem[] {
   const served = servedTypes(input);
   const waiting = input.jobs.filter(starved).toSorted((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-  const recent = (job: JobRecord) => input.now - Date.parse(job.createdAt) < DAY_MS;
+  // A wait is over once it's more than a day old and a later job on its label got a runner.
+  // Until then it still needs the owner, even if nothing has been pushed since.
+  const over = (job: JobRecord) =>
+    input.now - Date.parse(job.createdAt) >= DAY_MS &&
+    input.jobs.some((other) => other.runner !== null && runnerType(other) === runnerType(job) && Date.parse(other.createdAt) > Date.parse(at(job)));
   const parts: { quiet: QuietKind | null; jobs: JobRecord[] }[] = [
-    { quiet: null, jobs: waiting.filter((job) => served.has(runnerType(job)) && recent(job)) },
-    { quiet: "resolved", jobs: waiting.filter((job) => served.has(runnerType(job)) && !recent(job)) },
+    { quiet: null, jobs: waiting.filter((job) => served.has(runnerType(job)) && !over(job)) },
+    { quiet: "resolved", jobs: waiting.filter((job) => served.has(runnerType(job)) && over(job)) },
     { quiet: "other_runners", jobs: waiting.filter((job) => !served.has(runnerType(job))) },
   ];
   return parts.flatMap(({ quiet, jobs }) => {
@@ -47,9 +51,11 @@ export function waitItems(input: InboxInput): InboxItem[] {
       const memory = overlapping(input.events, group).length;
       return { label, count: group.length, detail: memory > 0 ? `${plural(memory, "memory wait")} meanwhile` : "" };
     }).toSorted((a, b) => b.count - a.count);
-    const labels = [...new Set(jobs.map(runnerType))];
-    const top = breakdown[0]!.label.split(", ")[1]!;
-    const most = labels.length > 1 ? ` Most were on ${top}.` : ` All were on ${top}.`;
+    const byLabel = [...Map.groupBy(jobs, runnerType)].toSorted((a, b) => b[1].length - a[1].length);
+    const labels = byLabel.map(([label]) => label);
+    const [top, topJobs] = byLabel[0]!;
+    const most =
+      labels.length === 1 ? ` All were on ${top}.` : topJobs.length * 2 > jobs.length ? ` Most were on ${top}.` : ` They were on ${listed(labels)}.`;
     const repos = [...new Set(jobs.map((job) => job.repo))];
     const memoryWhy = `Your machine was short of free memory ${waits.length === 1 ? "once" : `${waits.length} times`} while they waited, so it couldn't start more runners.`;
     const unexplainedWhy = "Nothing in the logs explains it. Your runners may all have been busy, or up may not have been running.";
@@ -62,8 +68,8 @@ export function waitItems(input: InboxInput): InboxItem[] {
             action: "Nothing to do here, unless this machine should serve those labels.",
           }
         : {
-            title: quiet === null ? "Jobs are waiting too long for a runner" : "Jobs waited too long for a runner earlier this week",
-            happened: `${plural(jobs.length, "job")} waited more than ${minutes} minutes for one of your runners and ended without getting one.${most}`,
+            title: quiet === null ? "Jobs are waiting too long for a runner" : "Jobs waited too long for a runner more than a day ago",
+            happened: `${plural(jobs.length, "job")} waited more than ${minutes} minutes for one of your runners and ended without getting one.${most}${quiet === null ? "" : " Since then, runners have taken jobs on those labels again."}`,
             why: waits.length > 0 ? memoryWhy : unexplainedWhy,
             action:
               quiet === null

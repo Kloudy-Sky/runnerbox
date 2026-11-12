@@ -50,6 +50,14 @@ const queueMs = (record: JobRecord) => elapsedMs(record.createdAt, record.starte
 const present = <T>(value: T | null): value is T => value !== null;
 const isFailure = ({ conclusion }: JobRecord) => conclusion === "failure" || conclusion === "timed_out";
 
+// A job that ended without a runner after less than this was cancelled, usually by a newer push,
+// not left waiting for one.
+export const STARVED_AFTER_MS = 5 * 60_000;
+
+// Never got a runner, after waiting long enough that it wasn't just cancelled.
+export const starved = (record: JobRecord) =>
+  record.runner === null && record.conclusion !== "skipped" && (elapsedMs(record.createdAt, record.completedAt) ?? 0) >= STARVED_AFTER_MS;
+
 type SummaryOptions = { by?: GroupBy; machine?: (record: JobRecord) => JobMachine | undefined };
 
 export function summarizeJobs(records: readonly JobRecord[], { by = "labels", machine }: SummaryOptions = {}): JobSummary[] {
@@ -75,7 +83,7 @@ export function summarizeJobs(records: readonly JobRecord[], { by = "labels", ma
         ran: ran.length,
         failed: ran.filter(isFailure).length,
         passedOnRetry: group.filter((record) => retried.has(record.jobId)).length,
-        noRunner: group.length - ran.length,
+        noRunner: group.filter(starved).length,
         p50Ms: percentile(durations, 50),
         p90Ms: percentile(durations, 90),
         queueP50Ms: percentile(ran.map(queueMs).filter(present), 50),

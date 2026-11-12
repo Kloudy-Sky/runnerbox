@@ -15,12 +15,14 @@ export function summarize(jobs: readonly JobRecord[], items: readonly InboxItem[
     ran.filter((job) => job.labels.includes("self-hosted") === own).reduce((sum, job) => sum + (durationMs(job) ?? 0), 0);
   const needYou = items.filter((item) => item.group === "needs_you").length;
   const window = days === 1 ? "the last day" : `the last ${days} days`;
+  // What needs the owner comes first: when nothing ran because every runner is failing, that's
+  // the news, not the quiet week.
   const headline =
-    ran.length === 0
-      ? `No jobs ran in ${window}.`
-      : needYou === 0
-        ? "Nothing needs you. CI looks healthy."
-        : `${needYou === 1 ? "1 thing needs" : `${needYou} things need`} you. The rest is fine.`;
+    needYou > 0
+      ? `${needYou === 1 ? "1 thing needs" : `${needYou} things need`} you.${ran.length > 0 ? " The rest is fine." : ""}`
+      : ran.length === 0
+        ? `No jobs ran in ${window}.`
+        : "Nothing needs you. CI looks healthy.";
   const ownMachinesMs = time(true);
   const githubMachinesMs = time(false);
   const facts = [

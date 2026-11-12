@@ -5,6 +5,7 @@ import { adviceFor } from "./advice.ts";
 import { at, capitalize, isFailure, jobKey, jobName, listed, sameUnit } from "./jobs.ts";
 import { classifyFailures, evidenceFor, type InboxInput, type Unit } from "./rules.ts";
 
+const RESOLVED_ACTION = "Nothing to do now. If it fails this way again, it comes back here.";
 // A job flaky this often in the window is worth a look even though each retry passed.
 const FREQUENT_FLAKES = 3;
 
@@ -46,7 +47,7 @@ export function failureItems(input: InboxInput): InboxItem[] {
       case "infra": {
         const why = `The machine, not the code, looks responsible: ${listed([...new Set(group.flatMap((each) => each.causes.map((cause) => cause.text)))])}.`;
         return isFixed
-          ? item("resolved", { title: `${name} failed on this machine, and a later run passed`, happened: `${howOften}${later}`, why, action: "Nothing to do now. If it fails this way again, it comes back here." })
+          ? item("resolved", { title: `${name} failed on this machine, and a later run passed`, happened: `${howOften}${later}`, why, action: RESOLVED_ACTION })
           : item(null, { title: `${name} fails on this machine, not in its code`, happened: howOften, why, action: adviceFor(group.flatMap((each) => each.causes)) });
       }
       case "flaky": {
@@ -57,9 +58,11 @@ export function failureItems(input: InboxInput): InboxItem[] {
           title: `${name} is flaky`,
           happened,
           why,
-          action: frequent
-            ? "Find the step that fails in the latest failed attempt. The agent can compare it with the runs that passed."
-            : "Nothing to do unless it keeps happening.",
+          action: !frequent
+            ? "Nothing to do unless it keeps happening."
+            : isFixed
+              ? RESOLVED_ACTION
+              : "Find the step that fails in the latest failed attempt. The agent can compare it with the runs that passed.",
         });
       }
       case "code":

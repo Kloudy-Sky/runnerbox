@@ -259,3 +259,51 @@ test("attempts on one commit are judged together across runs and runner types, a
   assert.match(byJob.build!.happened, /example-linux and ubuntu-24.04/);
   assert.equal(byJob.docs?.verdict, "unconfirmed");
 });
+
+test("when every runner fails and no job runs, the headline leads with what needs you", () => {
+  const runnerEvent = (minute: number): LauncherEvent => ({
+    install: "example",
+    runnerType: "linux",
+    event: "runner",
+    slot: 1,
+    runner: `example-linux-1-${minute}`,
+    startedAt: iso(NOW - minutes(60 - minute)),
+    durationMs: 2000,
+    exitCode: 125,
+    released: false,
+  });
+  const { summary, items } = buildInbox(input({ events: [1, 2, 3].map(runnerEvent) }), 7);
+  assert.equal(items.length, 1);
+  assert.equal(summary.headline, "1 thing needs you.");
+});
+
+test("a wait names the label most jobs were on only when it has most of them, and old waits stay until a runner comes", () => {
+  const starved = (repo: string, label: string, at = NOW - minutes(30)) =>
+    job({ repo, runner: null, conclusion: "cancelled", labels: ["self-hosted", label], createdAt: iso(at), startedAt: iso(at), completedAt: iso(at + minutes(20)) });
+  const serves = [job({ labels: ["self-hosted", "example-linux"] }), job({ labels: ["self-hosted", "example-docker"], runner: "example-docker-1-1780000000" })];
+  const events: LauncherEvent[] = [
+    { install: "example", event: "runner", slot: 1, runner: "example-linux-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: 1 },
+    { install: "example", event: "runner", slot: 1, runner: "example-docker-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: 1 },
+  ];
+  const happened = (jobs: JobRecord[]) => deriveInbox(input({ jobs: [...serves, ...jobs], events })).find((item) => item.kind === "no_runner")!.happened;
+  // 3 on linux in one repository, 4 on docker across two: docker has most.
+  const mixed = [...[1, 2, 3].map(() => starved("owner/a", "example-linux")), ...[1, 2].flatMap(() => [starved("owner/b", "example-docker"), starved("owner/c", "example-docker")])];
+  assert.match(happened(mixed), /Most were on example-docker\.$/);
+  assert.match(happened([starved("owner/a", "example-linux"), starved("owner/b", "example-docker")]), /They were on example-linux and example-docker\.$/);
+
+  // Three days old, with no job on its label getting a runner since: it still needs you.
+  const old = starved("owner/a", "example-linux", NOW - 3 * 24 * minutes(60));
+  const servedBefore = job({ labels: ["self-hosted", "example-linux"], at: NOW - 4 * 24 * minutes(60) });
+  assert.equal(deriveInbox(input({ jobs: [servedBefore, old], events })).find((item) => item.kind === "no_runner")?.group, "needs_you");
+});
+
+test("a frequent flake a later run fixed is quiet, and says there's nothing to do", () => {
+  const flaky = [1, 2, 3].flatMap((runId) => [
+    job({ job: "lint", runId, conclusion: "failure", at: NOW - minutes(runId * 10 + 60) }),
+    job({ job: "lint", runId, attempt: 2, at: NOW - minutes(runId * 10 + 60) + minutes(5) }),
+  ]);
+  const later = job({ job: "lint", runId: 9, at: NOW - minutes(5) });
+  const item = deriveInbox(input({ jobs: [...flaky, later] })).find((each) => each.verdict === "flaky")!;
+  assert.equal(item.quiet, "resolved");
+  assert.equal(item.action, "Nothing to do now. If it fails this way again, it comes back here.");
+});

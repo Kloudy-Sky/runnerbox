@@ -6,8 +6,7 @@ import * as Layer from "effect/Layer";
 import { elapsedMs } from "runnerbox/src/tracking/job-record.ts";
 import { summarizeLauncher } from "runnerbox/src/tracking/launcher-summary.ts";
 import { summarizeMachines } from "runnerbox/src/tracking/machine-summary.ts";
-import { compareSteps, percentile, runnerGroup, runnerType, summarizeJobs } from "runnerbox/src/tracking/report.ts";
-import { starved } from "../inbox/jobs.ts";
+import { compareSteps, percentile, runnerType, starved, summarizeJobs } from "runnerbox/src/tracking/report.ts";
 import { verdictsByJobId } from "../inbox/rules.ts";
 import { machineLookup } from "./machineLookup.ts";
 import * as StateLogs from "./StateLogs.ts";
@@ -48,7 +47,7 @@ const make = Effect.gen(function* () {
       jobs: sum((row) => row.ran),
       failed: sum((row) => row.failed),
       passedOnRetry: sum((row) => row.passedOnRetry),
-      noRunner: jobs.filter(starved).length,
+      noRunner: sum((row) => row.noRunner),
       p50Ms: percentile(ran.filter((job) => job.conclusion === "success").map((job) => elapsedMs(job.startedAt, job.completedAt)).filter(present), 50),
       queueP50Ms: percentile(ran.map((job) => elapsedMs(job.createdAt, job.startedAt)).filter(present), 50),
     };
@@ -57,13 +56,7 @@ const make = Effect.gen(function* () {
   const jobSummaries = Effect.fn("JobHistory.jobSummaries")(function* ({ repo, days, by, workflow }: Filter) {
     const start = yield* since(days);
     const jobs = (yield* logs.jobs(repo, start)).filter(inWorkflow(workflow));
-    // The core counts every job without a runner; a job cancelled within minutes, usually by a
-    // newer push, didn't wait for one, so only jobs that waited long enough count here.
-    const starvedByRow = Map.groupBy(jobs.filter(starved), (job) => `${job.workflow}\0${job.job}\0${runnerGroup(job, by)}`);
-    return summarizeJobs(jobs, { by, machine: machineLookup(yield* logs.samples(start)) }).map((row) => ({
-      ...row,
-      noRunner: starvedByRow.get(`${row.workflow}\0${row.job}\0${row.runnerType}`)?.length ?? 0,
-    }));
+    return summarizeJobs(jobs, { by, machine: machineLookup(yield* logs.samples(start)) });
   });
 
   const stepComparison = Effect.fn("JobHistory.stepComparison")(function* (input: Filter & { readonly job: string }) {
@@ -82,14 +75,18 @@ const make = Effect.gen(function* () {
     return jobs
       .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, limit)
-      .map(({ v: _v, labels, steps: _steps, ...job }) => ({
-        ...job,
-        runnerType: runnerType({ labels }),
-        headSha: job.headSha ?? null,
-        durationMs: elapsedMs(job.startedAt, job.completedAt),
-        queueMs: job.runner === null ? null : elapsedMs(job.createdAt, job.startedAt),
-        verdict: verdicts.get(job.jobId) ?? null,
-      }));
+      .map((record) => {
+        const { v: _v, labels, steps: _steps, ...job } = record;
+        return {
+          ...job,
+          runnerType: runnerType({ labels }),
+          headSha: job.headSha ?? null,
+          durationMs: elapsedMs(job.startedAt, job.completedAt),
+          queueMs: job.runner === null ? null : elapsedMs(job.createdAt, job.startedAt),
+          verdict: verdicts.get(job.jobId) ?? null,
+          starved: starved(record),
+        };
+      });
   });
 
   const weeklySummary = Effect.fn("JobHistory.weeklySummary")(function* ({ repo, days, by }: Window & { readonly by: GroupBy }) {

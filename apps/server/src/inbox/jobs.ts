@@ -4,9 +4,8 @@ import { percentile } from "runnerbox/src/tracking/report.ts";
 // What the inbox rules say about job records, and how they say numbers to someone new to CI.
 
 export const DAY_MS = 24 * 60 * 60_000;
-// A job that ended without a runner after less than this was cancelled, usually by a newer push,
-// not left waiting.
-export const STARVED_AFTER_MS = 5 * 60_000;
+// The core's rule for a job that waited for a runner and never got one, so the CLI and the app agree.
+export { STARVED_AFTER_MS, starved } from "runnerbox/src/tracking/report.ts";
 
 export const isFailure = ({ conclusion }: JobRecord) => conclusion === "failure" || conclusion === "timed_out";
 export const durationMs = (job: JobRecord) => elapsedMs(job.startedAt, job.completedAt);
@@ -21,10 +20,6 @@ export const startedMs = (job: JobRecord) => Date.parse(job.startedAt ?? job.cre
 export const jobKey = (job: JobRecord) => `${job.repo}\0${job.workflow}\0${job.job}`;
 export const jobName = (job: Pick<JobRecord, "workflow" | "job">) => (job.workflow ? `${job.workflow} / ${job.job}` : job.job);
 export const at = (job: JobRecord) => job.completedAt ?? job.startedAt ?? job.createdAt;
-
-// Never got a runner, after waiting long enough that it wasn't just cancelled.
-export const starved = (job: JobRecord) =>
-  job.runner === null && job.conclusion !== "skipped" && (elapsedMs(job.createdAt, job.completedAt) ?? 0) >= STARVED_AFTER_MS;
 
 export const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export const plural = (count: number, one: string, many = `${one}s`) => `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;

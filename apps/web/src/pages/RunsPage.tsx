@@ -65,7 +65,7 @@ export function RunsPage() {
                 <td className="py-0.5 pr-3 text-dim">{formatAge(run.createdAt)}</td>
                 <td className="py-0.5 pr-3 text-right text-dim tabular-nums">{formatDuration(run.queueMs)}</td>
                 <td className="py-0.5 pr-3 text-right tabular-nums">{run.runner === null ? "-" : formatDuration(run.durationMs)}</td>
-                <td className="py-0.5 pr-3">{run.verdict ? <span className={VERDICT_COLOR[run.verdict]}>{VERDICT_WORDS[run.verdict]}</span> : run.runner === null && run.conclusion !== "skipped" ? <span className="text-dim">no runner came</span> : null}</td>
+                <td className="py-0.5 pr-3">{run.verdict ? <span className={VERDICT_COLOR[run.verdict]}>{VERDICT_WORDS[run.verdict]}</span> : run.starved ? <span className="text-dim">no runner came</span> : null}</td>
               </tr>
             ))}
           </tbody>
