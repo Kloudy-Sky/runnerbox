@@ -302,7 +302,6 @@ const make = Effect.gen(function* () {
     yield* appendNow(id, (seq, at) => ({ _tag: "ReproduceStarted", seq, ...started, network, at }));
   });
 
-
   const stopReproduce = Effect.fn("Threads.stopReproduce")(function* (id: string) {
     yield* header(id);
     const reason = yield* reproduces.stop(id).pipe(Effect.tapError(() => (reproduces.running(id) ? Effect.void : ended(id, "The owner stopped it.").pipe(Effect.ignore))));
