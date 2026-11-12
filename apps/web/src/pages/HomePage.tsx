@@ -1,9 +1,9 @@
+import { inboxItems } from "@runnerbox/contracts";
 import { Link } from "@tanstack/react-router";
 import { Empty } from "../components/ui/empty.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Reading } from "../components/Reading.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
-import { useRepo } from "../hooks/useRepo.ts";
 import type { RootSearch } from "../lib/search.ts";
 
 const keep = (previous: RootSearch) => previous;
@@ -12,8 +12,9 @@ const keep = (previous: RootSearch) => previous;
 // owner, each thing that does as a short paragraph with its next step, and the week in four facts.
 export function HomePage() {
   const inbox = useInbox().data;
-  const { repos, loaded } = useRepo();
-  if (loaded && repos.length === 0) {
+  // The inbox also reads launcher events and live runner state, so a machine with no job log can
+  // still have something that needs the owner, such as a slot that keeps failing.
+  if (inbox && inbox.summary.jobs === 0 && inboxItems(inbox).length === 0) {
     return (
       <Empty.Root className="mx-auto">
         <Empty.Title>No job history on this machine yet</Empty.Title>

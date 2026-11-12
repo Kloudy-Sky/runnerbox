@@ -1,6 +1,6 @@
 import type { InboxItem } from "@runnerbox/contracts";
 import { Button } from "./ui/button.tsx";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useParams, useRouterState } from "@tanstack/react-router";
 import { ChevronRight, Gauge, ListTree, Server, Settings } from "lucide-react";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRunnerState } from "../hooks/useRunnerState.ts";
@@ -33,7 +33,9 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
   const installs = useRunnerState();
   const slots = installs?.filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots)) ?? [];
   const busy = slots.filter((slot) => slot.phase === "busy").length;
-  const itemPath = (item: InboxItem) => `/item/${encodeURIComponent(item.id)}`;
+  // The route's own param, so the open item is found whatever the URL's encoding of its id.
+  const { itemId } = useParams({ strict: false });
+  const isOpen = (item: InboxItem) => item.id === itemId;
 
   const browse = [
     { to: "/runs", label: "All runs", icon: ListTree },
@@ -58,7 +60,7 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
             {inbox && inbox.items.length === 0 ? <li className="px-2.5 py-1 text-muted-foreground">Nothing right now.</li> : null}
             {inbox?.items.map((item) => (
               <SidebarMenuItem key={item.id}>
-                <SidebarMenuButton size="lg" isActive={path === itemPath(item)} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
+                <SidebarMenuButton size="lg" isActive={isOpen(item)} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-start gap-2">
                       <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warning" />
@@ -77,7 +79,7 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
             <SidebarMenu>
               {inbox.quiet.map((group) => (
                 <SidebarMenuItem key={group.kind}>
-                  <Collapsible defaultOpen={group.items.some((item) => path === itemPath(item))}>
+                  <Collapsible defaultOpen={group.items.some(isOpen)}>
                     <SidebarMenuButton render={<CollapsibleTrigger />} className="group/trigger">
                       <ChevronRight className="transition-transform duration-150 group-data-panel-open/trigger:rotate-90" />
                       <span>{group.title}</span>
@@ -86,7 +88,7 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
                       <SidebarMenu className="py-0.5 pl-6">
                         {group.items.map((item) => (
                           <SidebarMenuItem key={item.id}>
-                            <SidebarMenuButton isActive={path === itemPath(item)} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
+                            <SidebarMenuButton isActive={isOpen(item)} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
                               <span className="text-muted-foreground">{item.title}</span>
                             </SidebarMenuButton>
                           </SidebarMenuItem>
