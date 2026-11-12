@@ -1,85 +1,82 @@
 import type { JobRun } from "@runnerbox/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { NoHistory } from "../components/NoHistory.tsx";
 import { DurationStrip } from "../components/DurationStrip.tsx";
+import { NoHistory } from "../components/NoHistory.tsx";
+import { PageHeader } from "../components/PageHeader.tsx";
 import { RepoPicker } from "../components/RepoPicker.tsx";
-import { ThreadDock } from "../components/ThreadDock.tsx";
+import { Input } from "../components/ui/input.tsx";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { formatAge, formatDuration, jobName } from "../lib/format.ts";
+import type { RootSearch } from "../lib/search.ts";
 import { VERDICT_WORDS } from "../lib/vocabulary.ts";
 
-const VERDICT_COLOR = { code: "text-red", infra: "text-amber", flaky: "text-amber", unconfirmed: "text-dim" } as const;
+const VERDICT_COLOR = { code: "text-destructive", infra: "text-warning", flaky: "text-warning", unconfirmed: "text-muted-foreground" } as const;
 
 function Status({ run }: { run: JobRun }) {
-  if (run.runner === null && run.conclusion !== "skipped") return <span className="text-dim">○</span>;
-  if (run.conclusion === "success") return <span className="text-green">✓</span>;
-  if (run.conclusion === "failure" || run.conclusion === "timed_out") return <span className="text-red">✕</span>;
-  return <span className="text-dim">–</span>;
+  if (run.runner === null && run.conclusion !== "skipped") return <span className="text-muted-foreground">○</span>;
+  if (run.conclusion === "success") return <span className="text-success">✓</span>;
+  if (run.conclusion === "failure" || run.conclusion === "timed_out") return <span className="text-destructive">✕</span>;
+  return <span className="text-muted-foreground">–</span>;
 }
+
+const th = "py-1.5 pr-4 text-left font-normal text-muted-foreground";
 
 export function RunsPage() {
   const { days } = useRange();
   const { repo, loaded } = useRepo();
   const [filter, setFilter] = useState("");
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const navigate = useNavigate();
   const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }));
   if (loaded && !repo) return <NoHistory />;
   const needle = filter.trim().toLowerCase();
   const rows = (runs.data ?? []).filter((run) => !needle || `${jobName(run)} ${run.branch ?? ""} ${run.runnerType}`.toLowerCase().includes(needle));
-  const selected = rows.find((run) => run.jobId === selectedId);
+  const open = (jobId: number) => void navigate({ to: "/runs/$jobId", params: { jobId: String(jobId) }, search: (previous: RootSearch) => previous });
   return (
-    <div className="flex h-full">
-      <div className="min-w-0 flex-1 overflow-auto py-2">
-        <div className="flex items-baseline gap-4 px-3 pb-2">
-          <RepoPicker />
-          <span className="flex-1" />
-          <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter jobs, branches, runners" className="w-60 bg-surf px-2 py-0.5 text-fg outline-none placeholder:text-faint" />
-        </div>
-        <DurationStrip runs={rows} days={days} selectedId={selectedId} onSelect={setSelectedId} />
-        <table className="mt-2 w-full border-collapse">
-          <thead className="text-left text-[11px] tracking-wide text-dim uppercase">
-            <tr>
-              <th className="w-6 py-1 pl-3 font-medium" />
-              <th className="py-1 pr-3 font-medium">Job</th>
-              <th className="py-1 pr-3 font-medium">Branch</th>
-              <th className="py-1 pr-3 font-medium">Runner</th>
-              <th className="py-1 pr-3 font-medium">Commit</th>
-              <th className="py-1 pr-3 font-medium">Run</th>
-              <th className="py-1 pr-3 font-medium">Age</th>
-              <th className="py-1 pr-3 text-right font-medium">Waited</th>
-              <th className="py-1 pr-3 text-right font-medium">Time</th>
-              <th className="py-1 pr-3 font-medium">Cause</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((run) => (
-              <tr key={run.jobId} onClick={() => setSelectedId(run.jobId)} className={run.jobId === selectedId ? "bg-surf2" : "hover:bg-surf"}>
-                <td className="py-0.5 pl-3"><Status run={run} /></td>
-                <td className="py-0.5 pr-3 whitespace-nowrap">{jobName(run)}</td>
-                <td className="py-0.5 pr-3 whitespace-nowrap text-dim">{run.branch}</td>
-                <td className="py-0.5 pr-3 whitespace-nowrap">{run.runnerType}</td>
-                <td className="py-0.5 pr-3 font-mono text-[11.5px] text-dim">{run.headSha?.slice(0, 7) ?? "-"}</td>
-                <td className="py-0.5 pr-3 font-mono text-[11.5px] whitespace-nowrap text-dim">#{run.runId}{run.attempt > 1 ? ` attempt ${run.attempt}` : ""}</td>
-                <td className="py-0.5 pr-3 text-dim">{formatAge(run.createdAt)}</td>
-                <td className="py-0.5 pr-3 text-right text-dim tabular-nums">{formatDuration(run.queueMs)}</td>
-                <td className="py-0.5 pr-3 text-right tabular-nums">{run.runner === null ? "-" : formatDuration(run.durationMs)}</td>
-                <td className="py-0.5 pr-3">{run.verdict ? <span className={VERDICT_COLOR[run.verdict]}>{VERDICT_WORDS[run.verdict]}</span> : run.starved ? <span className="text-dim">no runner came</span> : null}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="min-h-0 flex-1 overflow-y-auto pb-6">
+      <PageHeader.Root>
+        <PageHeader.Title>All runs</PageHeader.Title>
+        <RepoPicker />
+        <PageHeader.Spacer />
+        <Input value={filter} onValueChange={setFilter} placeholder="Filter by job, branch or runner" className="w-64" size="sm" />
+      </PageHeader.Root>
+      <div className="px-3">
+        <DurationStrip runs={rows} days={days} selectedId={null} onSelect={open} />
       </div>
-      {selected ? (
-        <ThreadDock
-          key={selected.jobId}
-          subject={{ _tag: "run", repo: selected.repo, jobId: selected.jobId }}
-          days={days}
-          title={`${jobName(selected)} #${selected.runId}${selected.attempt > 1 ? ` attempt ${selected.attempt}` : ""}`}
-          detail={[selected.verdict ? `failed: ${VERDICT_WORDS[selected.verdict]}` : selected.conclusion, selected.runnerType, selected.branch].filter(Boolean).join(", ")}
-        />
-      ) : null}
+      <table className="mt-3 w-full border-collapse text-[13px]">
+        <thead>
+          <tr>
+            <th className={`${th} w-8 pl-6`} />
+            <th className={th}>Job</th>
+            <th className={th}>Branch</th>
+            <th className={th}>Runner</th>
+            <th className={th}>Commit</th>
+            <th className={th}>Run</th>
+            <th className={th}>Started</th>
+            <th className={`${th} text-right`}>Waited</th>
+            <th className={`${th} text-right`}>Took</th>
+            <th className={`${th} pr-6`}>Cause</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((run) => (
+            <tr key={run.jobId} onClick={() => open(run.jobId)} className="cursor-default hover:bg-surface">
+              <td className="py-1 pl-6"><Status run={run} /></td>
+              <td className="py-1 pr-4 whitespace-nowrap">{jobName(run)}</td>
+              <td className="py-1 pr-4 whitespace-nowrap text-muted-foreground">{run.branch}</td>
+              <td className="py-1 pr-4 whitespace-nowrap">{run.runnerType}</td>
+              <td className="py-1 pr-4 font-mono text-[12px] text-muted-foreground">{run.headSha?.slice(0, 7) ?? "-"}</td>
+              <td className="py-1 pr-4 font-mono text-[12px] whitespace-nowrap text-muted-foreground">#{run.runId}{run.attempt > 1 ? ` attempt ${run.attempt}` : ""}</td>
+              <td className="py-1 pr-4 whitespace-nowrap text-muted-foreground">{formatAge(run.createdAt)} ago</td>
+              <td className="py-1 pr-4 text-right text-muted-foreground tabular-nums">{formatDuration(run.queueMs)}</td>
+              <td className="py-1 pr-4 text-right tabular-nums">{run.runner === null ? "-" : formatDuration(run.durationMs)}</td>
+              <td className="py-1 pr-6 whitespace-nowrap">{run.verdict ? <span className={VERDICT_COLOR[run.verdict]}>{VERDICT_WORDS[run.verdict]}</span> : run.starved ? <span className="text-muted-foreground">no runner came</span> : null}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

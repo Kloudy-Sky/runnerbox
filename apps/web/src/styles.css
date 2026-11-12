@@ -1,18 +1,37 @@
 @import "tailwindcss";
 
+/* One theme, dark. The names follow T3 Code's tokens so its primitives port as they are; the
+   values are runnerbox's: charcoal background, white for what matters, gray only for what's
+   secondary, and color only for state. */
 @theme {
-  --color-bg: #141414;
-  --color-fg: #ffffff;
-  --color-dim: #9a9a9a;
+  --color-background: #141414;
+  --color-foreground: #ffffff;
+  --color-muted-foreground: #a0a0a0;
+  --color-placeholder: #6b6b6b;
   --color-faint: #5c5c5c;
-  --color-surf: #1c1c1c;
-  --color-surf2: #242424;
-  --color-red: #ff6b6b;
-  --color-amber: #e5b454;
-  --color-green: #5fd38a;
-  --color-blue: #5b8cff;
+  --color-surface: #1b1b1b;
+  --color-accent: #242424;
+  --color-popover: #1d1d1d;
+  --color-input: #232323;
+  --color-primary: #ffffff;
+  --color-primary-foreground: #141414;
+  --color-ring: #5b8cff;
+  --color-destructive: #ff6b6b;
+  --color-sidebar: #181818;
+  --color-sidebar-row-hover: #212121;
+  --color-sidebar-row-selected: #272727;
+  --color-success: #5fd38a;
+  --color-warning: #e5b454;
+  --color-info: #5b8cff;
   --font-sans: -apple-system, "Inter", "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root {
+  --control-radius: 0.5rem;
+  --sidebar-width: 15rem;
+  --reading-width: 40rem;
 }
 
 html,
@@ -23,9 +42,28 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-bg);
-  color: var(--color-fg);
-  font: 12.5px/1.5 var(--font-sans);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font: 14px/1.55 var(--font-sans);
   color-scheme: dark;
   -webkit-font-smoothing: antialiased;
+}
+
+/* A list item, or text that streamed in, fades up once when it first renders, then stays still. */
+@utility enter {
+  transition:
+    opacity 180ms ease-out,
+    translate 180ms ease-out;
+  @starting-style {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+  }
 }

@@ -3,7 +3,7 @@ import { formatDuration, jobName } from "../lib/format.ts";
 
 const HEIGHT = 70;
 const color = (run: JobRun) =>
-  run.runner === null ? "var(--color-faint)" : run.conclusion === "failure" || run.conclusion === "timed_out" ? "var(--color-red)" : "var(--color-blue)";
+  run.runner === null ? "var(--color-faint)" : run.conclusion === "failure" || run.conclusion === "timed_out" ? "var(--color-destructive)" : "var(--color-info)";
 
 // Each job as a dot: across by when it started, up by how long it took.
 export function DurationStrip({ runs, days, selectedId, onSelect }: { runs: readonly JobRun[]; days: number; selectedId: number | null; onSelect: (id: number) => void }) {
@@ -24,7 +24,7 @@ export function DurationStrip({ runs, days, selectedId, onSelect }: { runs: read
           );
         })}
       </svg>
-      <div className="flex justify-between text-dim">
+      <div className="flex justify-between text-muted-foreground">
         <span>{days}d ago</span>
         <span>duration by start time, longest {formatDuration(longest)}</span>
         <span>now</span>

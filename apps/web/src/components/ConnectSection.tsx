@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Input } from "./ui/input.tsx";
+import { Button } from "./ui/button.tsx";
 import { useState } from "react";
 import { useStore } from "zustand";
 import { runtime } from "../runtime.ts";
 import { usePreferences } from "../state/preferences.ts";
 import { Heading } from "./Heading.tsx";
 
-const field = "bg-surf px-2 py-0.5 text-fg outline-none placeholder:text-faint";
 
 // Runnerbox Connect: sign in once, then reach any environment linked to the same account through
 // its managed tunnel. Sessions bought this way read and nothing more.
@@ -16,8 +17,8 @@ export function ConnectSection() {
   const setActive = usePreferences((state) => state.setActive);
   const [relayUrl, setRelayUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const status = useQuery({ queryKey: ["connect", "status"], queryFn: () => connect!.status(), enabled: connect !== undefined, refetchInterval: false });
-  const linked = useQuery({ queryKey: ["connect", "environments"], queryFn: () => connect!.environments(), enabled: status.data?.signedIn === true });
+  const status = useQuery({ queryKey: ["connect", "status"], queryFn: () => (connect ? connect.status() : Promise.reject(new Error("Connect isn't available here."))), enabled: connect !== undefined, refetchInterval: false });
+  const linked = useQuery({ queryKey: ["connect", "environments"], queryFn: () => (connect ? connect.environments() : Promise.reject(new Error("Connect isn't available here."))), enabled: status.data?.signedIn === true });
   if (!connect || !status.data) return null;
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["connect"] });
   const attempt = (run: () => Promise<unknown>) => {
@@ -31,10 +32,10 @@ export function ConnectSection() {
       {status.data.signedIn ? (
         <>
           <div className="flex items-baseline gap-3 pb-1">
-            <span className="text-dim">Signed in at {status.data.relayUrl}</span>
-            <button type="button" className="text-dim hover:text-fg" onClick={() => attempt(() => connect.signOut())}>Sign out</button>
+            <span className="text-muted-foreground">Signed in at {status.data.relayUrl}</span>
+            <Button variant="ghost-muted" size="xs" onClick={() => attempt(() => connect.signOut())}>Sign out</Button>
           </div>
-          {linked.data?.length === 0 ? <p className="text-dim">No environments linked to this account. On a machine, run runnerbox link.</p> : null}
+          {linked.data?.length === 0 ? <p className="text-muted-foreground">No environments linked to this account. On a machine, run runnerbox link.</p> : null}
           <table className="border-collapse">
             <tbody>
               {(linked.data ?? []).map((environment) => {
@@ -42,14 +43,14 @@ export function ConnectSection() {
                 return (
                   <tr key={environment.environmentId}>
                     <td className="py-0.5 pr-4">{environment.label}</td>
-                    <td className="py-0.5 pr-4 text-dim">{new URL(environment.httpBaseUrl).host}</td>
+                    <td className="py-0.5 pr-4 text-muted-foreground">{new URL(environment.httpBaseUrl).host}</td>
                     <td className="py-0.5">
                       {added ? (
-                        <span className="text-dim">added</span>
+                        <span className="text-muted-foreground">added</span>
                       ) : (
-                        <button type="button" className="text-fg" onClick={() => attempt(() => runtime.addConnectRoute(environment, status.data.relayUrl!).then((saved) => setActive(saved.environmentId)))}>
+                        <Button variant="secondary" size="xs" onClick={() => attempt(() => runtime.addConnectRoute(environment, status.data.relayUrl!).then((saved) => setActive(saved.environmentId)))}>
                           Add
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>
@@ -66,11 +67,11 @@ export function ConnectSection() {
             attempt(() => connect.signIn(relayUrl.trim()));
           }}
         >
-          <input className={`${field} w-80`} value={relayUrl} placeholder="https://relay.example.com" onChange={(event) => setRelayUrl(event.target.value)} />
-          <button type="submit" className="bg-surf2 px-3 py-0.5">Sign in</button>
+          <Input className="w-80" value={relayUrl} placeholder="https://relay.example.com" onChange={(event) => setRelayUrl(event.target.value)} />
+          <Button type="submit" variant="secondary">Sign in</Button>
         </form>
       )}
-      {error ? <p className="pt-1 text-red">{error}</p> : null}
+      {error ? <p className="pt-1 text-destructive">{error}</p> : null}
     </div>
   );
 }

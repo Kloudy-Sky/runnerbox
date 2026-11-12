@@ -1,4 +1,5 @@
 import type { PairingCode } from "@runnerbox/contracts";
+import { Button } from "./ui/button.tsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
@@ -22,15 +23,15 @@ export function AccessPanel() {
         <tbody>
           {(sessions.data ?? []).map((session) => (
             <tr key={session.id}>
-              <td className="py-0.5 pr-3">{session.label}{session.current ? <span className="text-dim"> this app</span> : null}</td>
-              <td className="py-0.5 pr-3 text-dim">{session.audience === "mcp" ? "agent" : "app"}</td>
-              <td className="py-0.5 pr-3 text-dim">{session.scopes.join(" ")}</td>
-              <td className="py-0.5 pr-3 text-dim">seen {formatAge(session.lastSeenAt ?? session.createdAt)} ago</td>
+              <td className="py-0.5 pr-3">{session.label}{session.current ? <span className="text-muted-foreground"> this app</span> : null}</td>
+              <td className="py-0.5 pr-3 text-muted-foreground">{session.audience === "mcp" ? "agent" : "app"}</td>
+              <td className="py-0.5 pr-3 text-muted-foreground">{session.scopes.join(" ")}</td>
+              <td className="py-0.5 pr-3 text-muted-foreground">seen {formatAge(session.lastSeenAt ?? session.createdAt)} ago</td>
               <td className="py-0.5 text-right">
                 {session.current ? null : (
-                  <button type="button" className="text-dim hover:text-red" onClick={() => void runtime.run(environmentId, (client) => client["access.revokeSession"]({ id: session.id })).then(refresh)}>
+                  <Button variant="destructive" size="xs" onClick={() => void runtime.run(environmentId, (client) => client["access.revokeSession"]({ id: session.id })).then(refresh)}>
                     Revoke
-                  </button>
+                  </Button>
                 )}
               </td>
             </tr>
@@ -38,11 +39,11 @@ export function AccessPanel() {
         </tbody>
       </table>
       <div className="flex items-center gap-3 pt-2">
-        <button type="button" className="bg-surf2 px-3 py-0.5" onClick={() => void runtime.run(environmentId, (client) => client["access.createPairingCode"]({ scopes: ["history:read", "runners:read"] })).then(setCode)}>
+        <Button variant="secondary" onClick={() => void runtime.run(environmentId, (client) => client["access.createPairingCode"]({ scopes: ["history:read", "runners:read"] })).then(setCode)}>
           New read-only pairing code
-        </button>
+        </Button>
         {code ? <span className="font-mono">{code.code}</span> : null}
-        {code ? <span className="text-dim">works once, until {new Date(code.expiresAt).toLocaleTimeString()}</span> : null}
+        {code ? <span className="text-muted-foreground">works once, until {new Date(code.expiresAt).toLocaleTimeString()}</span> : null}
       </div>
     </div>
   );
