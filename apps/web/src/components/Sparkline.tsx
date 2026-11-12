@@ -8,8 +8,8 @@ export function Sparkline({ values, height = 36 }: { values: readonly number[]; 
   const points = values.map((value, index) => `${x(index)},${y(value)}`).join(" ");
   return (
     <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" className="block w-full" style={{ height }}>
-      <polyline points={points} fill="none" stroke="var(--color-blue)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
-      <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="1.6" fill="var(--color-red)" />
+      <polyline points={points} fill="none" stroke="var(--color-info)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+      <circle cx={x(values.length - 1)} cy={y(values.at(-1)!)} r="1.6" fill="var(--color-destructive)" />
     </svg>
   );
 }

@@ -7,7 +7,7 @@ const HEIGHT = 120;
 // the VM's total, so a line near the bottom is a machine near its end.
 export function HeadroomChart({ samples, days }: { samples: readonly MachineSample[]; days: number }) {
   const vm = samples.filter((sample) => sample.vm);
-  if (vm.length < 2) return <p className="text-dim">No VM samples in this range.</p>;
+  if (vm.length < 2) return <p className="text-muted-foreground">No VM samples in this range.</p>;
   const total = Math.max(...vm.map((sample) => sample.vm!.totalMiB));
   const now = Date.now();
   const start = now - days * 24 * 60 * 60_000;
@@ -18,11 +18,11 @@ export function HeadroomChart({ samples, days }: { samples: readonly MachineSamp
   return (
     <div>
       <svg viewBox={`0 0 1000 ${HEIGHT}`} preserveAspectRatio="none" className="block h-[120px] w-full">
-        <polyline points={line((sample) => sample.vm!.availableMiB)} fill="none" stroke="var(--color-blue)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
-        <polyline points={line((sample) => sample.vm!.swapUsedMiB)} fill="none" stroke="var(--color-amber)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+        <polyline points={line((sample) => sample.vm!.availableMiB)} fill="none" stroke="var(--color-info)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+        <polyline points={line((sample) => sample.vm!.swapUsedMiB)} fill="none" stroke="var(--color-warning)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
       </svg>
-      <div className="flex gap-4 text-dim">
-        <span><span className="text-blue">available</span> and <span className="text-amber">swap</span> of {formatMiB(total)}</span>
+      <div className="flex gap-4 text-muted-foreground">
+        <span><span className="text-info">available</span> and <span className="text-warning">swap</span> of {formatMiB(total)}</span>
         <span className="flex-1" />
         <span>lowest {formatMiB(lowest.vm!.availableMiB)} at {new Date(lowest.time).toLocaleString()}</span>
       </div>

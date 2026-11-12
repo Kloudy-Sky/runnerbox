@@ -1,0 +1,57 @@
+import { Link } from "@tanstack/react-router";
+import { Empty } from "../components/ui/empty.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Reading } from "../components/Reading.tsx";
+import { useInbox } from "../hooks/useInbox.ts";
+import { useRepo } from "../hooks/useRepo.ts";
+import type { RootSearch } from "../lib/search.ts";
+
+const keep = (previous: RootSearch) => previous;
+
+// What the app opens on when nothing is selected: one sentence on whether anything needs the
+// owner, each thing that does as a short paragraph with its next step, and the week in four facts.
+export function HomePage() {
+  const inbox = useInbox().data;
+  const { repos, loaded } = useRepo();
+  if (loaded && repos.length === 0) {
+    return (
+      <Empty.Root className="mx-auto">
+        <Empty.Title>No job history on this machine yet</Empty.Title>
+        <Empty.Description>
+          Run <code className="font-mono text-foreground">runnerbox report --repo owner/name</code> on the server's machine to sync one.
+        </Empty.Description>
+      </Empty.Root>
+    );
+  }
+  if (!inbox) return null;
+  const quiet = inbox.quiet.map((group) => group.title.charAt(0).toLowerCase() + group.title.slice(1));
+  return (
+    <Reading.Root className="gap-8">
+      <Reading.Header>
+        <Reading.Title className="text-2xl">{inbox.summary.headline}</Reading.Title>
+        <Reading.Meta>{inbox.summary.facts.join(" ")}</Reading.Meta>
+      </Reading.Header>
+      {inbox.items.length > 0 ? (
+        <div className="flex flex-col gap-6">
+          {inbox.items.map((item) => (
+            <section key={item.id} className="enter flex flex-col gap-1.5">
+              <h2 className="font-medium">
+                <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="hover:underline">
+                  {item.title}
+                </Link>
+              </h2>
+              <p className="text-foreground/90">{item.happened}</p>
+              <p className="text-muted-foreground">{item.action}</p>
+              <div>
+                <Button size="sm" variant="secondary" render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
+                  Look into it
+                </Button>
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : null}
+      {quiet.length > 0 ? <p className="text-muted-foreground">Nothing to do: {quiet.join(", ")}.</p> : null}
+    </Reading.Root>
+  );
+}
