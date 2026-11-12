@@ -30,7 +30,7 @@ export function AppShell() {
   }, []);
   if (!loaded) return null;
   // Pairing comes first: without an environment there's nothing to put in the sidebar.
-  if (!environment && path !== "/settings") return <ConnectPage />;
+  if (!environment && !path.startsWith("/settings")) return <ConnectPage />;
   return (
     <TooltipProvider>
       <ToastProvider>

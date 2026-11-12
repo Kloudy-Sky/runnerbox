@@ -43,8 +43,8 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
 }
 
 // What `claude` needs to find its login and reach the network, and nothing else from the
-// server's environment: no API key, cloud-provider switch or unrelated secret. Turns run on the
-// owner's subscription.
+// server's environment: no API key, cloud-provider switch or unrelated secret. A turn bills the
+// account it runs as: the subscription's login, or a key the owner added in Settings.
 const PASSED = new Set([
   "PATH",
   "HOME",
@@ -75,10 +75,12 @@ const PASSED = new Set([
   "SSL_CERT_DIR",
 ]);
 
-export function claudeEnv(from: Record<string, string | undefined>) {
+// `apiKey` is the turn's account's own key, the only credential that reaches `claude` from runnerbox.
+export function claudeEnv(from: Record<string, string | undefined>, apiKey: string | null = null) {
   const passed = Object.entries(from).filter((entry): entry is [string, string] => entry[1] !== undefined && (PASSED.has(entry[0]) || entry[0].startsWith("LC_")));
   return {
     ...Object.fromEntries(passed),
+    ...(apiKey === null ? {} : { ANTHROPIC_API_KEY: apiKey }),
     // claude.ai connectors are found outside the MCP config, so strict mode doesn't cover them.
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     // A tool result too big for the context is cut, not saved under ~/.claude/projects, which

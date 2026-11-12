@@ -6,6 +6,7 @@ import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, Pairi
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
+import { Account, AccountError, AccountId, SaveAccount } from "./accounts.ts";
 import { CreateThread, MessageText, ProviderStatus, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
@@ -54,6 +55,11 @@ export const RPC_METHODS = {
   threadsStartTurn: "threads.startTurn",
   threadsInterrupt: "threads.interrupt",
   threadsSubscribe: "threads.subscribe",
+  accountsList: "accounts.list",
+  accountsSave: "accounts.save",
+  accountsRemove: "accounts.remove",
+  accountsSetDefault: "accounts.setDefault",
+  serverAbout: "server.about",
 } as const;
 
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
@@ -119,9 +125,16 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.threadsRead, { payload: ThreadId, success: ThreadDetail, error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsCreate, { payload: CreateThread, success: ThreadSummary, error: ThreadFailure }),
   // Returns once the question is logged; the answer arrives on the thread's stream.
-  Rpc.make(RPC_METHODS.threadsStartTurn, { payload: { ...ThreadId, text: MessageText }, success: Schema.Struct({ turnId: Schema.String }), error: ThreadFailure }),
+  // Without `accountId`, the turn runs as the default account.
+  Rpc.make(RPC_METHODS.threadsStartTurn, { payload: { ...ThreadId, text: MessageText, accountId: Schema.optionalKey(AccountId) }, success: Schema.Struct({ turnId: Schema.String }), error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsInterrupt, { payload: ThreadId, error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsSubscribe, { payload: ThreadId, success: ThreadEvent, error: ThreadFailure, stream: true }),
+  Rpc.make(RPC_METHODS.accountsList, { success: Schema.Array(Account), error: Schema.Union([AuthorizationError, AccountError]) }),
+  Rpc.make(RPC_METHODS.accountsSave, { payload: SaveAccount, success: Account, error: Schema.Union([AuthorizationError, AccountError]) }),
+  Rpc.make(RPC_METHODS.accountsRemove, { payload: { id: AccountId }, error: Schema.Union([AuthorizationError, AccountError]) }),
+  Rpc.make(RPC_METHODS.accountsSetDefault, { payload: { id: AccountId }, error: Schema.Union([AuthorizationError, AccountError]) }),
+  // The same version facts the public descriptor gives, over whatever route the client uses.
+  Rpc.make(RPC_METHODS.serverAbout, { success: Schema.Struct({ label: Schema.String, serverVersion: Schema.String, protocolVersion: Schema.Int }), error: AuthorizationError }),
 ).middleware(RpcScopeAuthorization);
 
 export type RpcMethod = RpcGroup.Rpcs<typeof RunnerboxRpcGroup>["_tag"];
@@ -156,4 +169,11 @@ export const RPC_SCOPES = {
   [RPC_METHODS.threadsStartTurn]: THREADS,
   [RPC_METHODS.threadsInterrupt]: THREADS,
   [RPC_METHODS.threadsSubscribe]: THREADS,
+  // Picking an account is part of running threads; changing one, or setting a key, manages access.
+  [RPC_METHODS.accountsList]: THREADS,
+  [RPC_METHODS.accountsSave]: ["access:write", "threads:operate"],
+  [RPC_METHODS.accountsRemove]: ["access:write", "threads:operate"],
+  [RPC_METHODS.accountsSetDefault]: ["access:write", "threads:operate"],
+  // Public already: the descriptor says the same to anyone.
+  [RPC_METHODS.serverAbout]: [],
 } as const satisfies Record<RpcMethod, ReadonlyArray<AuthScope>>;

@@ -41,7 +41,7 @@ export function EnvironmentMenu() {
             </MenuItem>
           ))}
         </MenuGroup>
-        <MenuItem onClick={() => void navigate({ to: "/settings", search: (previous: RootSearch) => previous })}>Add or manage environments</MenuItem>
+        <MenuItem onClick={() => void navigate({ to: "/settings/connections", search: (previous: RootSearch) => previous })}>Add or manage environments</MenuItem>
       </MenuPopup>
     </Menu>
   );

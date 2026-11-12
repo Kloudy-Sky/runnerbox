@@ -47,7 +47,8 @@ export function useThread(subject: ThreadSubject, days: number) {
     );
   }, [enabled, environmentId, threadId, connected]);
 
-  const send = async (text: string) => {
+  // `accountId` picks the account the turn runs as; without it, the default.
+  const send = async (text: string, accountId?: string) => {
     setError(null);
     try {
       let id = threadId;
@@ -57,7 +58,7 @@ export function useThread(subject: ThreadSubject, days: number) {
         void queryClient.invalidateQueries({ queryKey: [environmentId, "threads", key] });
       }
       const target = id;
-      await runtime.run(environmentId, (client) => client["threads.startTurn"]({ id: target, text }));
+      await runtime.run(environmentId, (client) => client["threads.startTurn"]({ id: target, text, ...(accountId ? { accountId } : {}) }));
       return true;
     } catch (cause) {
       setError(errorText(cause));

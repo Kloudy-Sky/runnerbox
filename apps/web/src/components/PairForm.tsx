@@ -1,0 +1,77 @@
+import { useState } from "react";
+import { runtime } from "../runtime.ts";
+import { Button } from "./ui/button.tsx";
+import { Input } from "./ui/input.tsx";
+
+// Pairs this app with a server by address, or over SSH where the desktop app can run ssh.
+export function PairForm({ onPaired }: { onPaired: (environmentId: string) => void }) {
+  const [mode, setMode] = useState<"direct" | "ssh">("direct");
+  const [url, setUrl] = useState("http://127.0.0.1:4517");
+  const [host, setHost] = useState("");
+  const [sshPort, setSshPort] = useState("");
+  const [remotePort, setRemotePort] = useState("4517");
+  const [serverCommand, setServerCommand] = useState("node ~/runnerbox/runnerbox.js");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    const label = "desktop";
+    const paired =
+      mode === "direct"
+        ? runtime.pairDirect(url.trim(), code.trim(), label)
+        : runtime.pairSsh(
+            { kind: "ssh", host: host.trim(), sshPort: sshPort ? Number(sshPort) : null, remotePort: Number(remotePort), serverCommand: serverCommand.trim() },
+            code.trim() || null,
+            label,
+          );
+    await paired.then(
+      (saved) => {
+        setCode("");
+        onPaired(saved.environmentId);
+      },
+      (failure: unknown) => setError(failure instanceof Error ? failure.message : "Pairing failed."),
+    );
+    setBusy(false);
+  }
+
+  return (
+    <form onSubmit={submit}>
+      {runtime.canUseSsh ? (
+        <div className="flex gap-4 pb-2">
+          <Button size="sm" variant={mode === "direct" ? "secondary" : "ghost-muted"} onClick={() => setMode("direct")}>By address</Button>
+          <Button size="sm" variant={mode === "ssh" ? "secondary" : "ghost-muted"} onClick={() => setMode("ssh")}>Over SSH</Button>
+        </div>
+      ) : null}
+      <div className="grid max-w-xl grid-cols-[9rem_1fr] items-center gap-x-3 gap-y-1.5">
+        {mode === "direct" ? (
+          <>
+            <label htmlFor="url" className="text-muted-foreground">Server address</label>
+            <Input id="url" value={url} onChange={(event) => setUrl(event.target.value)} />
+          </>
+        ) : (
+          <>
+            <label htmlFor="host" className="text-muted-foreground">SSH host</label>
+            <Input id="host" value={host} placeholder="example, or user@example" onChange={(event) => setHost(event.target.value)} />
+            <label htmlFor="sshPort" className="text-muted-foreground">SSH port</label>
+            <Input id="sshPort" value={sshPort} placeholder="from ~/.ssh/config, or 22" onChange={(event) => setSshPort(event.target.value)} />
+            <label htmlFor="remotePort" className="text-muted-foreground">Server port there</label>
+            <Input id="remotePort" value={remotePort} onChange={(event) => setRemotePort(event.target.value)} />
+            <label htmlFor="serverCommand" className="text-muted-foreground">Server command</label>
+            <Input id="serverCommand" value={serverCommand} onChange={(event) => setServerCommand(event.target.value)} />
+          </>
+        )}
+        <label htmlFor="code" className="text-muted-foreground">Pairing code</label>
+        <Input id="code" font="mono" value={code} placeholder={mode === "ssh" ? "leave empty to fetch one over SSH" : "XXXXX-XXXXX-XXXXX-XXXXX"} onChange={(event) => setCode(event.target.value)} />
+        <span />
+        <div className="flex items-center gap-3 pt-1">
+          <Button type="submit" disabled={busy}>{busy ? "Pairing" : "Pair"}</Button>
+          {error ? <span className="text-destructive">{error}</span> : null}
+        </div>
+      </div>
+    </form>
+  );
+}

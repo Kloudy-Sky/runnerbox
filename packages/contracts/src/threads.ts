@@ -20,7 +20,8 @@ const at = Schema.String;
 const seq = Schema.Int;
 
 // What a thread's log holds after its first line, in order. `seq` counts from 1 in each thread.
-export const UserMessage = Schema.TaggedStruct("UserMessage", { seq, turnId: Schema.String, text: Schema.String, at });
+// `accountId` is the account the turn ran as; older lines don't have it.
+export const UserMessage = Schema.TaggedStruct("UserMessage", { seq, turnId: Schema.String, text: Schema.String, at, accountId: Schema.optionalKey(Schema.String) });
 export const AgentText = Schema.TaggedStruct("AgentText", { seq, turnId: Schema.String, text: Schema.String, at });
 // `input` is the call's arguments as compact JSON, shown as one dim line.
 export const ToolCall = Schema.TaggedStruct("ToolCall", { seq, turnId: Schema.String, name: Schema.String, input: Schema.String, at });
@@ -74,7 +75,7 @@ export const CreateThread = Schema.Struct({
 });
 
 export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError", {
-  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable"]),
+  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -88,6 +89,8 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
         return "No agent provider is available on this environment.";
       case "log_unreadable":
         return "Couldn't read or write the thread's log on the server.";
+      case "account_not_found":
+        return "That account doesn't exist any more. Pick another in the composer.";
     }
   }
 }

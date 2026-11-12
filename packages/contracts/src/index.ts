@@ -6,3 +6,4 @@ export * from "./rpc.ts";
 export * from "./runners.ts";
 export * from "./connect.ts";
 export * from "./threads.ts";
+export * from "./accounts.ts";

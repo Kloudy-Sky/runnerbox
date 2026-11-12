@@ -9,6 +9,8 @@ import * as Inbox from "../inbox/Inbox.ts";
 import * as LauncherLogs from "../runners/LauncherLogs.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
 import * as Threads from "../threads/Threads.ts";
+import * as AccountStore from "../accounts/AccountStore.ts";
+import * as EnvironmentIdentity from "../environment/EnvironmentIdentity.ts";
 
 const toWire = Effect.mapError((error: LogReadError) => new StateReadError({ what: error.what }));
 
@@ -23,6 +25,8 @@ export const layer = (session: Session) =>
       const inbox = yield* Inbox.Inbox;
       const auth = yield* AuthStore.AuthStore;
       const threads = yield* Threads.Threads;
+      const accounts = yield* AccountStore.AccountStore;
+      const identity = yield* EnvironmentIdentity.EnvironmentIdentity;
       return {
         "history.repos": () => history.repos.pipe(toWire),
         "history.overview": ({ days }) => history.overview(days).pipe(toWire),
@@ -44,9 +48,14 @@ export const layer = (session: Session) =>
         "threads.list": ({ subject }) => threads.list(subject),
         "threads.read": ({ id }) => threads.read(id),
         "threads.create": ({ subject, days }) => threads.create(subject, days),
-        "threads.startTurn": ({ id, text }) => threads.startTurn(id, text),
+        "threads.startTurn": ({ id, text, accountId }) => threads.startTurn(id, text, accountId),
         "threads.interrupt": ({ id }) => threads.interrupt(id),
         "threads.subscribe": ({ id }) => threads.subscribe(id),
+        "accounts.list": () => accounts.list,
+        "accounts.save": (input) => accounts.save(input),
+        "accounts.remove": ({ id }) => accounts.remove(id),
+        "accounts.setDefault": ({ id }) => accounts.setDefault(id),
+        "server.about": () => Effect.succeed({ label: identity.descriptor.label, serverVersion: identity.descriptor.serverVersion, protocolVersion: identity.descriptor.protocolVersion }),
       };
     }),
   );
