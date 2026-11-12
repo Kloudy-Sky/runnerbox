@@ -41,11 +41,33 @@ const input = (overrides: Partial<PlanInput>): PlanInput => ({
   sha: "c".repeat(40),
   runNumber: 50,
   runStartedAt: day("2026-11-14"),
+  channel: "",
+  force: false,
   promote: "",
+  nightlyEnabled: true,
   tags: ["v0.2.0", "v0.2.1-nightly.20261112.41", "v0.2.1-nightly.20261113.42"],
   commitOf: (tag) => (tag === "v0.2.1-nightly.20261113.42" ? "b".repeat(40) : "a".repeat(40)),
   shippedNightly: () => true,
   ...overrides,
+});
+
+test("the schedule publishes nothing until NIGHTLY_ENABLED is set", () => {
+  const off = planRelease(input({ nightlyEnabled: false }));
+  assert.deepEqual(off, { mode: "skip", reason: "scheduled nightlies are off. Set the repository variable NIGHTLY_ENABLED to true to turn them on." });
+});
+
+test("a nightly dispatched by hand follows the schedule's rules, and force runs it on an unchanged main", () => {
+  const dispatched = { event: "workflow_dispatch", channel: "nightly", nightlyEnabled: false } as const;
+  assert.deepEqual(planRelease(input(dispatched)), planRelease(input({})));
+  assert.equal(planRelease(input({ ...dispatched, sha: "b".repeat(40) })).mode, "skip");
+  assert.deepEqual(planRelease(input({ ...dispatched, sha: "b".repeat(40), force: true })), {
+    mode: "nightly",
+    tag: "v0.2.1-nightly.20261114.50",
+    version: "0.2.1-nightly.20261114.50",
+    sha: "b".repeat(40),
+  });
+  assert.throws(() => planRelease(input({ ...dispatched, refName: "feature" })), /from main/);
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", channel: "preview" })), /no preview channel/);
 });
 
 test("a scheduled run ships a nightly only when main moved since the last one", () => {
@@ -54,20 +76,20 @@ test("a scheduled run ships a nightly only when main moved since the last one", 
 });
 
 test("a stable release ships the commit of a nightly, and never one that isn't newer", () => {
-  assert.throws(() => planRelease(input({ event: "workflow_dispatch", refName: "feature" })), /from main/);
-  assert.deepEqual(planRelease(input({ event: "workflow_dispatch" })), { mode: "stable", tag: "v0.2.1", version: "0.2.1", sha: "b".repeat(40) });
-  assert.deepEqual(planRelease(input({ event: "workflow_dispatch", promote: "v0.2.1-nightly.20261112.41" })), { mode: "stable", tag: "v0.2.1", version: "0.2.1", sha: "a".repeat(40) });
-  assert.throws(() => planRelease(input({ event: "workflow_dispatch", tags: ["v0.2.0"] })), /no nightly/);
-  assert.throws(() => planRelease(input({ event: "workflow_dispatch", tags: [...input({}).tags, "v0.2.1"] })), /already released/);
-  assert.throws(() => planRelease(input({ event: "workflow_dispatch", tags: ["v0.3.0", "v0.2.1-nightly.20261113.42"] })), /isn't newer/);
-  assert.throws(() => planRelease(input({ event: "workflow_dispatch", promote: "v0.2.1" })), /isn't a tag|isn't a nightly/);
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", channel: "stable", refName: "feature" })), /from main/);
+  assert.deepEqual(planRelease(input({ event: "workflow_dispatch", channel: "stable" })), { mode: "stable", tag: "v0.2.1", version: "0.2.1", sha: "b".repeat(40) });
+  assert.deepEqual(planRelease(input({ event: "workflow_dispatch", channel: "stable", promote: "v0.2.1-nightly.20261112.41" })), { mode: "stable", tag: "v0.2.1", version: "0.2.1", sha: "a".repeat(40) });
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", channel: "stable", tags: ["v0.2.0"] })), /no nightly/);
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", channel: "stable", tags: [...input({}).tags, "v0.2.1"] })), /already released/);
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", channel: "stable", tags: ["v0.3.0", "v0.2.1-nightly.20261113.42"] })), /isn't newer/);
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", channel: "stable", promote: "v0.2.1" })), /isn't a tag|isn't a nightly/);
 });
 
 test("a tag someone pushed that only looks like a nightly is never promoted or counted", () => {
   // The workflow's own nightly is .41; .42 was pushed by hand, or isn't on main.
   const shippedNightly = (tag: string) => tag === "v0.2.1-nightly.20261112.41";
-  assert.deepEqual(planRelease(input({ event: "workflow_dispatch", shippedNightly })), { mode: "stable", tag: "v0.2.1", version: "0.2.1", sha: "a".repeat(40) });
-  assert.throws(() => planRelease(input({ event: "workflow_dispatch", promote: "v0.2.1-nightly.20261113.42", shippedNightly })), /isn't a nightly this workflow published/);
+  assert.deepEqual(planRelease(input({ event: "workflow_dispatch", channel: "stable", shippedNightly })), { mode: "stable", tag: "v0.2.1", version: "0.2.1", sha: "a".repeat(40) });
+  assert.throws(() => planRelease(input({ event: "workflow_dispatch", channel: "stable", promote: "v0.2.1-nightly.20261113.42", shippedNightly })), /isn't a nightly this workflow published/);
   // Main matching the planted tag's commit doesn't skip a nightly.
   assert.equal(planRelease(input({ sha: "b".repeat(40), shippedNightly })).mode, "nightly");
 });

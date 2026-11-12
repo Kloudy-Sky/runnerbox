@@ -18,8 +18,14 @@ export type PlanInput = {
   readonly sha: string;
   readonly runNumber: number;
   readonly runStartedAt: Date;
-  // The nightly to promote, when the stable dispatch names one; the latest otherwise.
+  // A dispatch's inputs: which channel to release, whether a nightly runs even when `main` hasn't
+  // moved, and for stable, the nightly to promote (empty for the latest).
+  readonly channel: string;
+  readonly force: boolean;
   readonly promote: string;
+  // The repository variable NIGHTLY_ENABLED. The schedule publishes only once the owner sets it,
+  // after the first nightly they ran by hand.
+  readonly nightlyEnabled: boolean;
   readonly tags: ReadonlyArray<string>;
   readonly commitOf: (tag: string) => string;
   // Whether this workflow published the tag's nightly, from a commit on `main`. Anyone who can
@@ -29,27 +35,34 @@ export type PlanInput = {
 
 const latestShipped = (input: PlanInput) => nightlyTagsNewestFirst(input.tags).find(input.shippedNightly) ?? null;
 
+// A nightly from the commit this run is on, unless it's the commit the last nightly shipped.
+function nightly(input: PlanInput, force: boolean): Plan {
+  const last = latestShipped(input);
+  if (!force && last && input.commitOf(last) === input.sha) return { mode: "skip", reason: `main hasn't changed since ${last}.` };
+  const version = nightlyVersion(nextStable(input.tags), input.runStartedAt, input.runNumber);
+  return { mode: "nightly", tag: `v${version}`, version, sha: input.sha };
+}
+
 export function planRelease(input: PlanInput): Plan {
   switch (input.event) {
     case "push":
       return { mode: "cli", tag: input.refName, version: input.refName.replace(/^v/, ""), sha: input.sha };
-    case "schedule": {
-      const last = latestShipped(input);
-      if (last && input.commitOf(last) === input.sha) return { mode: "skip", reason: `main hasn't changed since ${last}.` };
-      const version = nightlyVersion(nextStable(input.tags), input.runStartedAt, input.runNumber);
-      return { mode: "nightly", tag: `v${version}`, version, sha: input.sha };
-    }
+    case "schedule":
+      if (!input.nightlyEnabled) return { mode: "skip", reason: "scheduled nightlies are off. Set the repository variable NIGHTLY_ENABLED to true to turn them on." };
+      return nightly(input, false);
     case "workflow_dispatch": {
-      if (input.refName !== "main") throw new Error(`Stable releases are dispatched from main, not ${input.refName}.`);
-      const nightly = input.promote === "" ? latestShipped(input) : input.promote;
-      if (!nightly) throw new Error("There's no nightly to promote yet. A stable release ships a commit a nightly already shipped.");
-      if (!input.tags.includes(nightly)) throw new Error(`${nightly} isn't a tag in this repository.`);
-      const version = stableOf(nightly);
-      if (!input.shippedNightly(nightly)) throw new Error(`${nightly} isn't a nightly this workflow published from main, so it can't become stable.`);
+      if (input.refName !== "main") throw new Error(`Releases are dispatched from main, not ${input.refName}.`);
+      if (input.channel === "nightly") return nightly(input, input.force);
+      if (input.channel !== "stable") throw new Error(`There's no ${input.channel} channel; pick nightly or stable.`);
+      const promoted = input.promote === "" ? latestShipped(input) : input.promote;
+      if (!promoted) throw new Error("There's no nightly to promote yet. A stable release ships a commit a nightly already shipped.");
+      if (!input.tags.includes(promoted)) throw new Error(`${promoted} isn't a tag in this repository.`);
+      const version = stableOf(promoted);
+      if (!input.shippedNightly(promoted)) throw new Error(`${promoted} isn't a nightly this workflow published from main, so it can't become stable.`);
       if (input.tags.includes(`v${version}`)) throw new Error(`v${version} is already released.`);
       const stable = latestStable(input.tags);
-      if (stable && !semver.gt(version, stable)) throw new Error(`${nightly} previews ${version}, which isn't newer than the latest stable, ${stable}.`);
-      return { mode: "stable", tag: `v${version}`, version, sha: input.commitOf(nightly) };
+      if (stable && !semver.gt(version, stable)) throw new Error(`${promoted} previews ${version}, which isn't newer than the latest stable, ${stable}.`);
+      return { mode: "stable", tag: `v${version}`, version, sha: input.commitOf(promoted) };
     }
     default:
       throw new Error(`The release workflow doesn't run on ${input.event}.`);
@@ -70,7 +83,10 @@ if (import.meta.main) {
     sha: env("GITHUB_SHA"),
     runNumber: Number(env("GITHUB_RUN_NUMBER")),
     runStartedAt: new Date(env("RUN_STARTED_AT")),
+    channel: env("CHANNEL"),
+    force: env("FORCE") === "true",
     promote: env("PROMOTE"),
+    nightlyEnabled: env("NIGHTLY_ENABLED") === "true",
     tags: git("tag", "--list", "v*").split("\n").filter(Boolean),
     commitOf: (tag) => git("rev-list", "-n", "1", tag),
     // Scheduled and stable runs check out main, so HEAD is main.

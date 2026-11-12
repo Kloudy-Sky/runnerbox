@@ -4,9 +4,13 @@ Every release is a GitHub release in this repository, tagged `v<version>`, built
 
 | | How it starts | Version | Desktop app |
 | --- | --- | --- | --- |
-| Nightly | Every day at 06:17 UTC, from `main`, only when `main` changed since the last nightly | `X.Y.Z-nightly.YYYYMMDD.<run>`, a prerelease | yes, `nightly-*.yml` feed |
-| Stable | Run the workflow by hand from `main` (Actions, release, Run workflow) | `X.Y.Z`, marked latest | yes, `latest-*.yml` feed |
+| Nightly | By hand: Actions, release, Run workflow, from `main`, channel `nightly`. Or every day at 06:17 UTC once `NIGHTLY_ENABLED` is set. Either way only when `main` changed since the last nightly, unless `force` is ticked. | `X.Y.Z-nightly.YYYYMMDD.<run>`, a prerelease | yes, `nightly-*.yml` feed |
+| Stable | By hand: Run workflow from `main`, channel `stable` | `X.Y.Z`, marked latest | yes, `latest-*.yml` feed |
 | Tag | Push a `v*` tag yourself | the tag | no: `runnerbox.js` only, as before |
+
+## Turning on the schedule
+
+The schedule releases nothing until the repository variable `NIGHTLY_ENABLED` is `true` (Settings, Secrets and variables, Actions, Variables). Until then each scheduled run stops in its first job and its summary says why. Run the first nightly by hand, check it, then set the variable. Remove it, or set it to anything else, to stop scheduled nightlies again; nightlies by hand keep working.
 
 ## Versions
 
@@ -45,6 +49,8 @@ Without all five, the workflow still succeeds. Linux gets its feed. macOS builds
 
 ### Setting up the `release` environment
 
+Create and restrict the environment before you add any secret to it. If a nightly or stable run starts while it doesn't exist, GitHub creates it on first use with no protection rules, so it would accept any branch until you restrict it. Such a run has no secrets to read and builds macOS unsigned, but the environment stays open until you fix it.
+
 In the repository's Settings:
 
 1. Environments, New environment, named `release`.
@@ -52,8 +58,10 @@ In the repository's Settings:
 3. Add the five secrets above as environment secrets, not repository secrets.
 4. Optionally, add yourself as a required reviewer, so each release waits for your approval before it can sign.
 
-Then, under Actions, General, check that workflows from fork pull requests don't get secrets (the default).
+Then, under Actions, General, check that workflows from fork pull requests don't get secrets (the default), and that the workflow's token may create releases.
+
+Once the first nightly by hand looks right, set `NIGHTLY_ENABLED` to `true` (above).
 
 ## What has and hasn't been exercised
 
-The version rules and the planner are unit-tested. `release-check` packages Linux and unsigned macOS on pull requests and checks which feed each produces. Signing, notarization, publishing a release and installing an update haven't run yet: the first nightly after the secrets are added is their first test.
+The version rules and the planner are unit-tested. `release-check` packages Linux and unsigned macOS on pull requests and checks which feed each produces. Signing, notarization, publishing a release and installing an update haven't run yet: the first nightly run by hand after the secrets are added is their first test.

@@ -2,8 +2,10 @@ name: release
 
 # Every release is tagged v<version> and carries runnerbox.js and its sha256 (docs/release.md):
 #   push of a v* tag    runnerbox.js only, exactly as before, for hosts that install by tag
-#   schedule            a nightly prerelease from main, when main moved since the last nightly
-#   workflow_dispatch   a stable release of the commit a nightly already shipped
+#   schedule            a nightly prerelease from main, when main moved since the last nightly,
+#                       and only once the repository variable NIGHTLY_ENABLED is true
+#   workflow_dispatch   from main: a nightly by hand, or a stable release of the commit a
+#                       nightly already shipped
 # Nightly and stable also carry the desktop app and its update feed. Tags this workflow creates
 # use GITHUB_TOKEN, so they never start it again.
 
@@ -14,8 +16,17 @@ on:
     - cron: "17 6 * * *"
   workflow_dispatch:
     inputs:
+      channel:
+        description: "nightly cuts one from main now; stable promotes a nightly."
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      force:
+        description: "Nightly only: release even if main hasn't changed since the last nightly."
+        type: boolean
+        default: false
       nightly:
-        description: "Nightly tag to release as stable, such as v0.2.1-nightly.20261112.41. Empty for the latest."
+        description: "Stable only: the nightly tag to promote, such as v0.2.1-nightly.20261112.41. Empty for the latest."
         required: false
         default: ""
 
@@ -46,20 +57,23 @@ jobs:
           node-version: 24
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
-      # The input reaches the script as data, never as part of a command line.
       # It asks GitHub when this run started, so a re-run keeps the version, and which releases
-      # this workflow published, since only those count as nightlies.
+      # this workflow published, since only those count as nightlies. The inputs and variable
+      # reach it as data, never as part of a command line.
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+          FORCE: ${{ inputs.force }}
           PROMOTE: ${{ inputs.nightly }}
+          NIGHTLY_ENABLED: ${{ vars.NIGHTLY_ENABLED }}
         run: |
           RUN_STARTED_AT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)" node scripts/release-plan.ts
       - if: steps.plan.outputs.mode == 'skip'
         env:
           REASON: ${{ steps.plan.outputs.reason }}
         run: |
-          echo "No nightly today: $REASON" >> "$GITHUB_STEP_SUMMARY"
+          echo "Nothing released: $REASON" >> "$GITHUB_STEP_SUMMARY"
 
   cli:
     needs: plan
