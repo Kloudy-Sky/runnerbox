@@ -1,35 +1,234 @@
 name: release
 
+# Every release is tagged v<version> and carries runnerbox.js and its sha256 (docs/release.md):
+#   push of a v* tag    runnerbox.js only, exactly as before, for hosts that install by tag
+#   schedule            a nightly prerelease from main, when main moved since the last nightly,
+#                       and only once the repository variable NIGHTLY_ENABLED is true
+#   workflow_dispatch   from main: a nightly by hand, or a stable release of the commit a
+#                       nightly already shipped
+# Nightly and stable also carry the desktop app and its update feed. Tags this workflow creates
+# use GITHUB_TOKEN, so they never start it again.
+
 on:
   push:
     tags: ["v*"]
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "nightly cuts one from main now; stable promotes a nightly."
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      force:
+        description: "Nightly only: release even if main hasn't changed since the last nightly."
+        type: boolean
+        default: false
+      nightly:
+        description: "Stable only: the nightly tag to promote, such as v0.2.1-nightly.20261112.41. Empty for the latest."
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
+# Nightly and stable read and create tags, so they run one at a time. A pushed tag's run is its
+# own group, so a queued one is never cancelled by a newer run.
+concurrency:
+  group: ${{ github.event_name == 'push' && format('release-{0}', github.ref) || 'release' }}
+  cancel-in-progress: false
+
 jobs:
-  release:
+  plan:
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - run: corepack enable
       - run: pnpm install --frozen-lockfile
+      # It asks GitHub when this run started, so a re-run keeps the version, and which releases
+      # this workflow published, since only those count as nightlies. The inputs and variable
+      # reach it as data, never as part of a command line.
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+          FORCE: ${{ inputs.force }}
+          PROMOTE: ${{ inputs.nightly }}
+          NIGHTLY_ENABLED: ${{ vars.NIGHTLY_ENABLED }}
+        run: |
+          RUN_STARTED_AT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)" node scripts/release-plan.ts
+      - if: steps.plan.outputs.mode == 'skip'
+        env:
+          REASON: ${{ steps.plan.outputs.reason }}
+        run: |
+          echo "Nothing released: $REASON" >> "$GITHUB_STEP_SUMMARY"
+
+  cli:
+    needs: plan
+    if: needs.plan.outputs.mode != 'skip'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node scripts/set-version.ts "$VERSION"
       - run: pnpm build
       - run: node --no-experimental-strip-types dist/runnerbox.js --help
       - run: cd dist && sha256sum runnerbox.js > runnerbox.js.sha256
-      # Tags with a hyphen, like v0.1.0-rc.1, become prereleases.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli
+          path: |
+            dist/runnerbox.js
+            dist/runnerbox.js.sha256
+          if-no-files-found: error
+
+  linux:
+    needs: plan
+    if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node scripts/set-version.ts "$VERSION"
+      - run: pnpm --filter @runnerbox/desktop ensure:electron
+      - env:
+          RUNNERBOX_UPDATE_REPO: ${{ github.repository }}
+        run: pnpm desktop:dist --linux
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*-linux.yml
+          if-no-files-found: error
+
+  # The only job that can read the signing secrets: the `release` environment holds them, and only
+  # main may use it, so a pushed tag can't. No workflow a pull request starts names it.
+  mac:
+    needs: plan
+    if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
+    runs-on: macos-15
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node scripts/set-version.ts "$VERSION"
+      - run: pnpm --filter @runnerbox/desktop ensure:electron
+      # electron-builder wants the App Store Connect key as a file.
+      - name: Write the notarization key
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          if [ -n "$APPLE_API_KEY" ]; then
+            umask 077
+            printf '%s' "$APPLE_API_KEY" > "$RUNNER_TEMP/notarize.p8"
+            echo "APPLE_API_KEY_FILE=$RUNNER_TEMP/notarize.p8" >> "$GITHUB_ENV"
+          fi
+      - env:
+          RUNNERBOX_UPDATE_REPO: ${{ github.repository }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ env.APPLE_API_KEY_FILE }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: pnpm desktop:dist --mac
+      - name: Say whether macOS updates ship
+        run: |
+          if ls apps/desktop/release/*-mac.yml >/dev/null 2>&1; then
+            echo "macOS: signed and notarized, with its update feed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::macOS built unsigned: the release environment has no signing secrets, so this release has no macOS update feed."
+            echo "macOS: unsigned, because the release environment has no signing secrets. The dmg and zip are attached, but no macOS update feed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: always()
+        run: rm -f "$RUNNER_TEMP/notarize.p8"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mac
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/*-mac.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, cli, linux, mac]
+    # A pushed tag skips the desktop jobs; nightly and stable need all of them.
+    if: >-
+      always() && needs.cli.result == 'success' &&
+      (needs.plan.outputs.mode == 'cli' || (needs.linux.result == 'success' && needs.mac.result == 'success'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: assets
+          merge-multiple: true
+      # Created as a draft with every file, then published, so a feed never names a missing file.
       - env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
+          MODE: ${{ needs.plan.outputs.mode }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          SHA: ${{ needs.plan.outputs.sha }}
         run: |
-          prerelease=()
-          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
-          gh release create "$TAG" dist/runnerbox.js dist/runnerbox.js.sha256 \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "${prerelease[@]}"
+          case "$MODE" in
+            cli)
+              # As before: tags with a hyphen, like v0.1.0-rc.1, become prereleases.
+              prerelease=()
+              case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+              gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes "${prerelease[@]}"
+              ;;
+            nightly)
+              gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --draft --target "$SHA" \
+                --title "runnerbox $VERSION" --generate-notes --prerelease
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+              ;;
+            stable)
+              gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --draft --target "$SHA" \
+                --title "runnerbox $VERSION" --generate-notes
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+              ;;
+          esac
+          echo "Released $TAG from ${SHA:0:12}." >> "$GITHUB_STEP_SUMMARY"
