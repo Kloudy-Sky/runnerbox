@@ -3,12 +3,12 @@ import { test } from "node:test";
 import * as Context from "effect/Context";
 import { Tool } from "effect/ai";
 import { RunnerboxToolkit } from "../../mcp/tools.ts";
-import { claudeArgs, claudeEnv, MAX_AGENT_STEPS, mcpConfig, promptLine, READ_ONLY_TOOLS } from "./claudeCommand.ts";
+import { claudeArgs, claudeEnv, MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, mcpConfig, promptLine, READ_ONLY_TOOLS, REPRODUCE_TOOL } from "./claudeCommand.ts";
 
 // What a thread's agent can reach is decided entirely by the command that starts `claude`. Each
 // assertion is a boundary the threat model names.
 
-const args = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined });
+const args = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined, reproduce: false });
 
 test("claude runs with no built-in tools, only runnerbox's read-only MCP tools, and none of the user's setup", () => {
   const toolkit = Object.values(RunnerboxToolkit.tools);
@@ -38,7 +38,14 @@ test("claude runs with no built-in tools, only runnerbox's read-only MCP tools, 
     `--max-turns=${MAX_AGENT_STEPS}`,
   ]);
   assert.equal(READ_ONLY_TOOLS.length, toolkit.length);
-  assert.deepEqual(claudeArgs({ mcpConfigPath: "x", systemPrompt: "p", model: "haiku" }).at(-1), "--model=haiku");
+  assert.deepEqual(claudeArgs({ mcpConfigPath: "x", systemPrompt: "p", model: "haiku", reproduce: false }).at(-1), "--model=haiku");
+});
+
+test("only a turn with a reproduce running may use its shell tool, and nothing else changes", () => {
+  const reproducing = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined, reproduce: true });
+  assert.ok(!args.some((arg) => arg.includes(REPRODUCE_TOOL)));
+  const changed = reproducing.filter((arg) => !args.includes(arg));
+  assert.deepEqual(changed, [`--allowedTools=${[...READ_ONLY_TOOLS, REPRODUCE_TOOL].join(",")}`, `--max-turns=${MAX_REPRODUCE_STEPS}`]);
 });
 
 test("claude gets an allow-listed environment, so no API key, provider switch or other secret reaches it", () => {
@@ -74,6 +81,7 @@ test("claude gets an allow-listed environment, so no API key, provider switch or
     ENABLE_MCP_LARGE_OUTPUT_FILES: "false",
     CLAUDE_CODE_AUTO_CONNECT_IDE: "0",
     CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
+    MCP_TOOL_TIMEOUT: "660000",
   });
 });
 

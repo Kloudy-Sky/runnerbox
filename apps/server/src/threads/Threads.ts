@@ -1,5 +1,8 @@
 import {
   type ProviderStatus,
+  type ReproduceCheck,
+  ReproduceError,
+  type ReproduceNetwork,
   subjectKey,
   type ThreadDetail,
   ThreadError,
@@ -26,7 +29,9 @@ import * as ServerPaths from "../config/ServerPaths.ts";
 import type * as StateLogs from "../history/StateLogs.ts";
 import type * as Inbox from "../inbox/Inbox.ts";
 import type * as RunnerState from "../runners/RunnerState.ts";
-import { SYSTEM_PROMPT, turnPrompt } from "./prompt.ts";
+import { Reproduces } from "../reproduce/Reproduces.ts";
+import type { Executed } from "../reproduce/UpSocket.ts";
+import { systemPrompt, turnPrompt } from "./prompt.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
 import { Drivers } from "./provider/Drivers.ts";
 import type { ProviderEvent } from "./provider/ProviderAdapter.ts";
@@ -47,6 +52,13 @@ export class Threads extends Context.Service<
     // Returns once the turn has ended and that's logged. Does nothing when no turn is running.
     readonly interrupt: (id: string) => Effect.Effect<void, ThreadError>;
     readonly subscribe: (id: string) => Stream.Stream<ThreadEvent, ThreadError>;
+    readonly checkReproduce: (id: string) => Effect.Effect<ReproduceCheck, ThreadError>;
+    // The owner's click: starts the thread's reproduce and logs it. Only between turns.
+    readonly startReproduce: (id: string, network: ReproduceNetwork) => Effect.Effect<void, ThreadError | ReproduceError>;
+    readonly stopReproduce: (id: string) => Effect.Effect<void, ThreadError | ReproduceError>;
+    // A command from the agent's `repro_exec`, for the thread its turn token is bound to. Logged
+    // in that turn with the end of its output.
+    readonly reproduceExec: (sessionId: string, command: string, timeoutSec: number) => Effect.Effect<Executed, ReproduceError>;
   }
 >()("runnerbox/server/threads/Threads") {}
 
@@ -62,6 +74,7 @@ const make = Effect.gen(function* () {
   const { serverDir } = yield* ServerPaths.ServerPaths;
   const drivers = yield* Drivers;
   const accounts = yield* AccountStore.AccountStore;
+  const reproduces = yield* Reproduces;
   // Whether the default account can run turns, for a client deciding whether to offer threads.
   const provider = accounts.resolve(undefined).pipe(
     Effect.flatMap((account) => drivers.get(account.driver).status({ hasKey: account.apiKey !== null })),
@@ -94,12 +107,31 @@ const make = Effect.gen(function* () {
   // the lock.
   const loadUnlocked = Effect.fn("Threads.load")(function* (id: string) {
     const file = yield* log.read(id);
-    const last = file.items.at(-1);
-    if (last === undefined || last._tag === "TurnEnded" || running.has(id)) return file;
-    const ended: ThreadItem = { _tag: "TurnEnded", seq: last.seq + 1, turnId: last.turnId, outcome: "interrupted", message: "The server stopped during this turn.", costUsd: null, at: yield* nowIso };
-    yield* appendUnlocked(id, ended);
-    return { ...file, items: [...file.items, ended] };
+    const added: ThreadItem[] = [];
+    const nextSeq = () => (added.at(-1) ?? file.items.at(-1))!.seq + 1;
+    const lastTurn = file.items.findLast((item) => "turnId" in item);
+    if (lastTurn && lastTurn._tag !== "TurnEnded" && !running.has(id)) {
+      added.push({ _tag: "TurnEnded", seq: nextSeq(), turnId: lastTurn.turnId, outcome: "interrupted", message: "The server stopped during this turn.", costUsd: null, at: yield* nowIso });
+    }
+    // A reproduce this server no longer tracks; `up` removes its container once it's idle.
+    const lastReproduce = file.items.findLast((item) => item._tag === "ReproduceStarted" || item._tag === "ReproduceEnded");
+    if (lastReproduce?._tag === "ReproduceStarted" && !reproduces.startedHere(id)) {
+      added.push({ _tag: "ReproduceEnded", seq: nextSeq(), reason: "The server restarted, so this reproduce ended.", at: yield* nowIso });
+    }
+    yield* Effect.forEach(added, (item) => appendUnlocked(id, item));
+    return { ...file, items: [...file.items, ...added] };
   });
+
+  // Logs an item outside a turn's own stream, after whatever the running turn has logged.
+  const appendNow = (id: string, make: (seq: number, at: string) => ThreadItem) =>
+    lock.withPermits(1)(
+      Effect.gen(function* () {
+        const turn = running.get(id);
+        const seq = turn ? turn.nextSeq : ((yield* loadUnlocked(id)).items.at(-1)?.seq ?? 0) + 1;
+        if (turn) turn.nextSeq += 1;
+        yield* appendUnlocked(id, make(seq, yield* nowIso));
+      }),
+    );
 
   const list = Effect.fn("Threads.list")(function* (subject?: ThreadSubject) {
     const files = yield* Effect.forEach(yield* log.ids, (id) => log.read(id).pipe(Effect.option));
@@ -189,17 +221,21 @@ const make = Effect.gen(function* () {
         turn.nextSeq += 1;
         running.set(id, turn);
         const prompt = turnPrompt(file.header.packet, file.items, text);
+        // Only a turn that starts with a reproduce running gets the tool, bound to this thread.
+        const reproducing = reproduces.running(id);
         // The agent's tools are `/mcp` itself, read-only, with a token that lives for this turn.
         // Forked into the service's scope, so stopping the server interrupts it and logs that.
         turn.fiber = yield* Effect.gen(function* () {
           const grant = yield* Effect.acquireRelease(auth.mintMcpToken("agent thread", { ttlMs: TURN_TOKEN_TTL_MS }), ({ session }) =>
             auth.revoke(session.id).pipe(Effect.ignore),
           );
+          if (reproducing) yield* reproduces.bind(grant.session.id, id);
           yield* driver
             .runTurn({
-              systemPrompt: SYSTEM_PROMPT,
+              systemPrompt: systemPrompt(reproducing),
               prompt,
               mcp: { url: `${baseUrl}/mcp`, token: grant.token },
+              reproduce: reproducing,
               account: { label: account.label, model: account.model, apiKey: account.apiKey },
             })
             .pipe(Stream.runForEach(onEvent(id, turn)));
@@ -237,7 +273,54 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  return Threads.of({ provider, list, read, create, startTurn, interrupt, subscribe });
+  const header = (id: string) => log.read(id).pipe(Effect.map((file) => file.header));
+  const jobIdOf = (subject: ThreadSubject) => (subject._tag === "run" ? subject.jobId : null);
+
+  const checkReproduce = Effect.fn("Threads.checkReproduce")(function* (id: string) {
+    const { packet, subject } = yield* header(id);
+    return yield* reproduces.check(packet, jobIdOf(subject));
+  });
+
+  const startReproduce = Effect.fn("Threads.startReproduce")(function* (id: string, network: ReproduceNetwork) {
+    const { packet, subject } = yield* header(id);
+    if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
+    const started = yield* reproduces.start(id, packet, jobIdOf(subject), network);
+    yield* appendNow(id, (seq, at) => ({ _tag: "ReproduceStarted", seq, ...started, network, at }));
+  });
+
+  const ended = (id: string, reason: string) => appendNow(id, (seq, at) => ({ _tag: "ReproduceEnded", seq, reason, at }));
+
+  const stopReproduce = Effect.fn("Threads.stopReproduce")(function* (id: string) {
+    yield* header(id);
+    if (!reproduces.running(id)) return;
+    yield* reproduces.stop(id).pipe(Effect.ensuring(ended(id, "The owner stopped it.").pipe(Effect.ignore)));
+  });
+
+  const OUTPUT_KEPT = 4000;
+  const reproduceExec = Effect.fn("Threads.reproduceExec")(function* (sessionId: string, command: string, timeoutSec: number) {
+    const id = reproduces.boundThread(sessionId);
+    if (id === undefined) return yield* new ReproduceError({ why: "This token can't run commands. Only a thread's turn with a reproduce running can." });
+    const result = yield* reproduces.exec(id, command, timeoutSec).pipe(
+      Effect.tapError((error) => (reproduces.running(id) ? Effect.void : ended(id, error.why).pipe(Effect.ignore))),
+    );
+    const turn = running.get(id);
+    if (turn) {
+      yield* record(id, turn, (seq, at) => ({
+        _tag: "ReproduceCommand",
+        seq,
+        turnId: turn.turnId,
+        command,
+        exitCode: result.exitCode,
+        timedOut: result.timedOut,
+        output: result.output.slice(-OUTPUT_KEPT),
+        truncated: result.truncated || result.output.length > OUTPUT_KEPT,
+        at,
+      })).pipe(Effect.ignore);
+    }
+    return result;
+  });
+
+  return Threads.of({ provider, list, read, create, startTurn, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec });
 });
 
 export const layer = Layer.effect(Threads, make);

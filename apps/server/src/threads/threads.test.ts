@@ -156,7 +156,7 @@ test("threads need threads:operate, which a Connect session never gets", () =>
     const prove = (request: { method: string; url: string }) => createProof(key, request);
     const bound = await Effect.runPromise(server.auth.createPairingCode(ALL_SCOPES, { proofKeyThumbprint: key.thumbprint }));
     const connect = await Effect.runPromise(pairWithCode(server.tunnelBaseUrl, bound.code, "connect", prove));
-    assert.ok(!connect.scopes.includes("threads:operate"));
+    assert.ok(!connect.scopes.includes("threads:operate") && !connect.scopes.includes("threads:reproduce"));
     const viaTunnel = await Effect.runPromise(
       Effect.scoped(Effect.flatMap(openSession(server.tunnelBaseUrl, connect.token, prove), ({ client }) => Effect.flip(client["threads.provider"]()))),
     );

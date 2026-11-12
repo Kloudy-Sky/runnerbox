@@ -125,12 +125,13 @@ export class AuthStore extends Context.Service<
 >()("runnerbox/server/AuthStore") {}
 
 // A client session paired by address or SSH with `access:write` was given everything the server
-// offered, so it also gets scopes added since, which today is `threads:operate`. The owner chose
-// this widening. Stored scopes never change, so an older server reads the file as before; MCP
+// offered, so it also gets scopes added since: `threads:operate` and `threads:reproduce`. The owner
+// chose this widening. Stored scopes never change, so an older server reads the file as before; MCP
 // tokens and Connect (key-bound) sessions get nothing extra.
+const ADDED_SINCE: ReadonlyArray<AuthScope> = ["threads:operate", "threads:reproduce"];
 const effectiveScopes = ({ audience, scopes, proofKeyThumbprint }: typeof StoredSession.Type): ReadonlyArray<AuthScope> =>
-  audience === "client" && proofKeyThumbprint === undefined && scopes.includes("access:write") && !scopes.includes("threads:operate")
-    ? [...scopes, "threads:operate"]
+  audience === "client" && proofKeyThumbprint === undefined && scopes.includes("access:write")
+    ? [...scopes, ...ADDED_SINCE.filter((scope) => !scopes.includes(scope))]
     : scopes;
 
 const toSession = (stored: typeof StoredSession.Type): Session => ({

@@ -34,7 +34,35 @@ export const TurnEnded = Schema.TaggedStruct("TurnEnded", {
   costUsd: Schema.NullOr(Schema.Number),
   at,
 });
-export const ThreadItem = Schema.Union([UserMessage, AgentText, ToolCall, TurnEnded]);
+// A reproduce: a throwaway container on the job's image with its commit's files, which the owner
+// starts and the agent runs commands in. `setup` keeps the network for the first command only.
+export const ReproduceNetwork = Schema.Literals(["on", "setup"]);
+export type ReproduceNetwork = typeof ReproduceNetwork.Type;
+// `imageFallback` is true when the job's own image wasn't recorded or is gone, so the kind's
+// current one is used.
+export const ReproduceStarted = Schema.TaggedStruct("ReproduceStarted", {
+  seq,
+  kind: Schema.String,
+  commit: Schema.String,
+  image: Schema.String,
+  imageFallback: Schema.Boolean,
+  network: ReproduceNetwork,
+  at,
+});
+// One command the agent ran in it, with the end of its output.
+export const ReproduceCommand = Schema.TaggedStruct("ReproduceCommand", {
+  seq,
+  turnId: Schema.String,
+  command: Schema.String,
+  exitCode: Schema.NullOr(Schema.Int),
+  timedOut: Schema.Boolean,
+  output: Schema.String,
+  truncated: Schema.Boolean,
+  at,
+});
+export const ReproduceEnded = Schema.TaggedStruct("ReproduceEnded", { seq, reason: Schema.String, at });
+
+export const ThreadItem = Schema.Union([UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded]);
 export type ThreadItem = typeof ThreadItem.Type;
 
 export const ThreadSummary = Schema.Struct({
@@ -57,7 +85,7 @@ export const ThreadSnapshot = Schema.TaggedStruct("Snapshot", {
   partial: Schema.NullOr(Schema.Struct({ turnId: Schema.String, text: Schema.String })),
 });
 export const AgentTextDelta = Schema.TaggedStruct("AgentTextDelta", { turnId: Schema.String, text: Schema.String });
-export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, UserMessage, AgentText, ToolCall, TurnEnded]);
+export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded]);
 export type ThreadEvent = typeof ThreadEvent.Type;
 
 // Whether the environment can run agent turns. The reason never carries account details.
@@ -92,6 +120,20 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
       case "account_not_found":
         return "That account doesn't exist any more. Pick another in the composer.";
     }
+  }
+}
+
+// Whether a thread's subject can be reproduced: the failed attempt's kind and commit, or why not.
+export const ReproduceCheck = Schema.Union([
+  Schema.TaggedStruct("Ready", { kind: Schema.String, commit: Schema.String, imageRecorded: Schema.Boolean }),
+  Schema.TaggedStruct("NotReady", { why: Schema.String }),
+]);
+export type ReproduceCheck = typeof ReproduceCheck.Type;
+
+// `up` refused or couldn't do what was asked, in words meant for the owner.
+export class ReproduceError extends Schema.TaggedError<ReproduceError>()("ReproduceError", { why: Schema.String }) {
+  override get message() {
+    return this.why;
   }
 }
 

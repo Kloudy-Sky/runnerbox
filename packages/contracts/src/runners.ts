@@ -16,6 +16,8 @@ export const LauncherEvent = Schema.Union([
     runner: Schema.String,
     exitCode: Schema.NullOr(Schema.Number),
     released: Schema.Union([Schema.Literal(false), Schema.Literals(["memory", "image"])]),
+    // The image tag the runner's container ran on, when `up` recorded it.
+    image: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({ ...Base, event: Schema.Literal("memory_wait"), slot: Schema.Number }),
   Schema.Struct({ ...Base, event: Schema.Literal("image_build"), tag: Schema.String, ok: Schema.Boolean }),

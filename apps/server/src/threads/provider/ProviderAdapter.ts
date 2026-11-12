@@ -20,6 +20,8 @@ export type TurnInput = {
   readonly prompt: string;
   // runnerbox's own `/mcp` on loopback, and a read-only token that lasts this turn only.
   readonly mcp: { readonly url: string; readonly token: string };
+  // Whether the thread has a reproduce running, which adds its shell tool to this turn.
+  readonly reproduce: boolean;
   // The account the turn runs as. Its key, if any, is the only credential that reaches the provider.
   readonly account: TurnAccount;
 };
