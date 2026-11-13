@@ -167,3 +167,53 @@ test("a Connect session never gets changes:approve, whatever it asks for", () =>
     const connect = await Effect.runPromise(pairWithCode(server.tunnelBaseUrl, bound.code, "connect", (request) => createProof(key, request)));
     assert.ok(!connect.scopes.includes("changes:approve"));
   }));
+
+test("a proposal out of bounds, or of the wrong kind of value, is refused before it's recorded", () =>
+  withProposals(
+    [
+      [
+        { tool: "propose_change", input: { install: "example", changes: [{ path: "runners.linux.slots", to: 64 }], reason: "x" } },
+        { tool: "propose_change", input: { install: "example", changes: [{ path: "runners.linux.slots", to: "64m" }], reason: "x" } },
+        { tool: "propose_change", input: { install: "example", changes: [{ path: "runners.linux.limits.memory", to: "64g" }], reason: "x" } },
+        { text: "x" },
+      ],
+    ],
+    async (server, _up, fake) => {
+      const token = await session(server);
+      const listed = await withClient(server, token, (client) => Effect.gen(function* () {
+        yield* askInThread(client);
+        return yield* client["proposals.list"]();
+      }));
+      assert.match(fake.toolResults[0]!.text, /runners\.linux\.slots must be between 1 and 2/);
+      assert.match(fake.toolResults[1]!.text, /runners\.linux\.slots takes a number/);
+      assert.match(fake.toolResults[2]!.text, /runners\.linux\.limits\.memory must be between 64m and 16384m/);
+      assert.deepEqual(listed.proposals, []);
+    },
+  ));
+
+test("the agent's three open proposals don't hold back the owner's revert, and a fourth is refused", () =>
+  withProposals(
+    [
+      [PROPOSE, { text: "Proposed." }],
+      [
+        ...[2000, 2500, 3000].map((to): FakeStep => ({ tool: "propose_change", input: { install: "example", changes: [{ path: "memoryFloor.vmMiB", to }], reason: "x" } })),
+        { tool: "propose_change", input: { install: "example", changes: [{ path: "memoryFloor.hostMiB", to: 600 }], reason: "x" } },
+        { text: "x" },
+      ],
+    ],
+    async (server, _up, fake) => {
+      const owner = await session(server);
+      const outcome = await withClient(server, owner, (client) => Effect.gen(function* () {
+        const id = yield* askInThread(client);
+        const first = (yield* client["proposals.list"]()).proposals[0]!;
+        yield* client["proposals.approve"]({ id: first.id, hash: first.hash, when: "now" });
+        const done = yield* client["threads.subscribe"]({ id }).pipe(Stream.drop(1), Stream.takeUntil((event) => event._tag === "TurnEnded"), Stream.runDrain, Effect.forkChild);
+        yield* Effect.sleep(50);
+        yield* client["threads.startTurn"]({ id, text: "More." });
+        yield* Fiber.join(done);
+        return yield* client["proposals.revert"]({ id: first.id });
+      }));
+      assert.match(fake.toolResults.at(-1)!.text, /already has 3 proposals waiting/);
+      assert.deepEqual(outcome.changes, [{ path: "runners.linux.slots", from: 2, to: 1 }]);
+    },
+  ));

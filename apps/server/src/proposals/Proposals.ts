@@ -10,6 +10,7 @@ import * as Semaphore from "effect/Semaphore";
 import { newId, sha256 } from "../auth/secrets.ts";
 import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
+import { refusal } from "runnerbox/src/changes/change-paths.ts";
 import { type Described, UpSocket } from "../reproduce/UpSocket.ts";
 
 // Proposed changes to an install's numbers: the agent records one, and only the owner decides it.
@@ -139,6 +140,9 @@ const make = Effect.gen(function* () {
       if (!field) return yield* new ProposalError({ why: `${change.path} isn't a field a proposal can change. install_settings lists them.` });
       if (changes.some((other) => other.path === change.path)) return yield* new ProposalError({ why: `${change.path} is changed twice.` });
       if (field.value === change.to) return yield* new ProposalError({ why: `${change.path} is already ${show(change.to)}.` });
+      // The same check `up` makes, so the agent hears now what `up` would refuse after approval.
+      const outOfBounds = refusal(field, change.to);
+      if (outOfBounds) return yield* new ProposalError({ why: outOfBounds });
       changes.push({ path: change.path, from: field.value, to: change.to });
     }
     const expected = input.expect;
@@ -149,7 +153,9 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const all = yield* readAll;
         const views = yield* Effect.forEach(all, view);
-        if (input.threadId !== null && views.filter((each) => each.threadId === input.threadId && each.status === "open").length >= MAX_OPEN_PER_THREAD) {
+        // The cap bounds the agent; the owner's reverts neither count nor are held back by it.
+        const agents = (each: Proposal) => each.threadId === input.threadId && each.revertOf === null && each.status === "open";
+        if (input.revertOf === null && input.threadId !== null && views.filter(agents).length >= MAX_OPEN_PER_THREAD) {
           return yield* new ProposalError({ why: `This thread already has ${MAX_OPEN_PER_THREAD} proposals waiting for the owner.` });
         }
         const now = yield* Clock.currentTimeMillis;

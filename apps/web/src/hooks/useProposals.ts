@@ -14,6 +14,7 @@ export function useProposals() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: [environmentId, "proposals"] });
   return {
     proposals: list.data?.proposals ?? [],
+    refresh,
     canApprove: list.data?.canApprove ?? false,
     approve: (id: string, hash: string, when: ApplyWhen) => runtime.run(environmentId, (client) => client["proposals.approve"]({ id, hash, when })).finally(refresh),
     decline: (id: string) => runtime.run(environmentId, (client) => client["proposals.decline"]({ id })).finally(refresh),

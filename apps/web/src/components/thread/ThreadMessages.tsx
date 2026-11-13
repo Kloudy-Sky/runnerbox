@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { ThreadItem } from "@runnerbox/contracts";
 import { ChevronRight } from "lucide-react";
 import type { ThreadView } from "../../lib/threadView.ts";
@@ -91,5 +92,11 @@ function Item({ item }: { item: ThreadItem }) {
 function ThreadProposal({ id }: { id: string }) {
   const actions = useProposals();
   const proposal = actions.proposals.find((candidate) => candidate.id === id);
+  const { refresh } = actions;
+  const missing = proposal === undefined;
+  // A proposal made just now isn't in a list fetched before it, so that list is asked for again.
+  useEffect(() => {
+    if (missing) void refresh();
+  }, [missing, id]);
   return proposal ? <ProposalBlock proposal={proposal} actions={actions} offerRevert={false} /> : null;
 }
