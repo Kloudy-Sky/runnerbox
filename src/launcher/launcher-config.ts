@@ -136,16 +136,27 @@ export const LauncherConfig = VmInstall.or(HostInstall);
 
 export type LauncherConfig = typeof LauncherConfig.infer;
 
-export async function loadLauncherConfig(path: string): Promise<LauncherConfig> {
-  const config = LauncherConfig(JSON.parse(await readFile(path, "utf8")));
-  if (config instanceof type.errors) throw new Error(`Invalid config ${path}:\n${config.summary}`);
+// Everything `up` checks before it starts: the schema, then what the schema can't say. A change
+// applied to the file is checked the same way, so it can't write one `up` would refuse.
+export function parseLauncherConfig(value: unknown): LauncherConfig {
+  const config = LauncherConfig(value);
+  if (config instanceof type.errors) throw new Error(config.summary);
   for (const field of ["name", "label"] as const) {
     const values = config.runners.map((runner) => runner[field]);
-    const repeated = values.find((value, index) => values.indexOf(value) !== index);
-    if (repeated) throw new Error(`Invalid config ${path}: two runners have the ${field} "${repeated}".`);
+    const repeated = values.find((each, index) => values.indexOf(each) !== index);
+    if (repeated) throw new Error(`two runners have the ${field} "${repeated}".`);
   }
-  if ("vm" in config) checkJobVms(config, (problem) => new Error(`Invalid config ${path}: ${problem}`));
+  if ("vm" in config) checkJobVms(config, (problem) => new Error(problem));
   return config;
+}
+
+export async function loadLauncherConfig(path: string): Promise<LauncherConfig> {
+  const value: unknown = JSON.parse(await readFile(path, "utf8"));
+  try {
+    return parseLauncherConfig(value);
+  } catch (error) {
+    throw new Error(`Invalid config ${path}: ${error instanceof Error ? error.message : error}`);
+  }
 }
 
 // What the schema can't say about an install's job VMs. Throws what `fail` makes of the first problem.

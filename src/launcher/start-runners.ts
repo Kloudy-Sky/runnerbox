@@ -134,9 +134,12 @@ export async function startRunners(configPath: string) {
     console.log(`${why}: draining. Busy jobs finish first.`);
     void removeWaitingRunners();
   }
+  // Counted apart from `stopping`, so a signal during a change's drain still drains.
+  let signalled = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
-      if (stopping) process.exit(1);
+      if (signalled) process.exit(1);
+      signalled = true;
       drain(signal);
       console.log("Send it again to exit now.");
     });

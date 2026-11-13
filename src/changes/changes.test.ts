@@ -211,3 +211,63 @@ test("a change applied now answers with what happened, as the log does", async (
     await done();
   }
 });
+
+test("a change up would refuse to start with is refused, judged as up loads it", async () => {
+  const { changes, done } = await setup({ file: "runnerbox.jobvms.example.json" });
+  try {
+    // 2 addresses already hold the kind's 2 slots, and job VMs need every vmMiB floor at 0.
+    await assert.rejects(changes.apply(request([{ path: "runners.linux.slots", from: 2, to: 3 }])), /wouldn't load: 3 slots need 3 jobVms.addresses/);
+    await assert.rejects(changes.apply(request([{ path: "memoryFloor.vmMiB", from: 0, to: 1500 }])), /wouldn't load: with `jobVms`, set every memoryFloor.vmMiB to 0/);
+  } finally {
+    await done();
+  }
+});
+
+test("with job VMs, a kind's limits are bounded by its own VM, not the one up measured", async () => {
+  const { changes, done } = await setup({ file: "runnerbox.jobvms.example.json" });
+  try {
+    const fields = (await changes.describe()).fields;
+    assert.deepEqual(
+      fields.filter((field) => field.path.startsWith("runners.linux.limits.")).map((field) => [field.path, field.max]),
+      [
+        ["runners.linux.limits.memory", 4608],
+        ["runners.linux.limits.memoryReservation", 4608],
+        ["runners.linux.limits.memorySwap", 9216],
+        ["runners.linux.limits.cpus", 4],
+      ],
+    );
+    await assert.rejects(changes.apply(request([{ path: "runners.linux.limits.cpus", from: 4, to: 6 }])), /between 0.25 and 4/);
+  } finally {
+    await done();
+  }
+});
+
+test("memory limits that Docker would refuse together are refused, though each is in bounds", async () => {
+  const { changes, done } = await setup();
+  try {
+    await assert.rejects(changes.apply(request([{ path: "runners.linux.limits.memory", from: "3600m", to: "6g" }])), /memoryReservation ≤ memory ≤ memorySwap/);
+    await assert.rejects(changes.apply(request([{ path: "runners.linux.limits.memoryReservation", from: "1500m", to: "4g" }])), /memoryReservation ≤ memory ≤ memorySwap/);
+    await changes.apply(request([{ path: "runners.linux.limits.memory", from: "3600m", to: "6g" }, { path: "runners.linux.limits.memorySwap", from: "5g", to: "8g" }]));
+  } finally {
+    await done();
+  }
+});
+
+test("two approvals arriving together: one waits, the other is refused and the first isn't lost", async () => {
+  const { changes, state, config, log, done } = await setup();
+  try {
+    state.busy = true;
+    const results = await Promise.allSettled([
+      changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }], "idle", "0000000000000001")),
+      changes.apply(request([{ path: "memoryFloor.vmMiB", from: 1500, to: 2000 }], "idle", "0000000000000002")),
+    ]);
+    assert.deepEqual(results.map((result) => result.status), ["fulfilled", "rejected"]);
+    assert.equal((await changes.describe()).pending?.proposalId, "0000000000000001");
+    assert.deepEqual((await log()).map((entry) => entry.proposalId), ["0000000000000001"]);
+    state.busy = false;
+    await changes.check();
+    assert.equal((await config()).runners[0].slots, 2);
+  } finally {
+    await done();
+  }
+});

@@ -130,10 +130,12 @@ An install with `"changes": true` lets you approve, in the desktop app, a change
 
 - A change can only set a kind's `slots`, the install's or a kind's `memoryFloor`, and a kind's `limits.memory`, `memoryReservation`, `memorySwap` and `cpus`. A kind's own floor can only be changed if it already has one. Nothing else, including tokens, scope, `allowedWorkflows`, `reproduce`, images, `env`, the VM and the list of kinds, is reachable.
 - `up` checks each change itself, whatever the request says.
-  - Bounds: slots from 1 to double the current count, at most 64. Floors up to the machine's memory. Memory limits up to the VM's memory, and swap up to twice that. CPUs up to the VM's.
-  - The changed file must load with the same schema as at startup.
+  - Bounds: slots from 1 to double the current count, at most 64. Floors up to the machine's memory. Memory limits up to the memory of the VM the kind's containers run in, and swap up to twice that. CPUs up to that VM's. That's the VM `up` measures, or with `jobVms`, the kind's own `vm`.
+  - A kind's memory limits must keep `memoryReservation` ≤ `memory` ≤ `memorySwap`, which Docker requires.
+  - The changed file must pass every check `up` makes when it starts, including the `jobVms` rules, so a change can't leave `up` unable to start.
   - Every field must still hold the value the proposal was based on, so a hand edit since then makes it refuse.
-- By default a change waits for a moment when none of this install's runners is running a job, which it asks GitHub with the install's own token, for up to 6 hours. If no such moment comes, the change is dropped and logged as not applied. "Now" applies it at once. Either way `up` drains: busy jobs finish, then it exits, and its service manager starts it again on the new file.
+  - One change waits at a time, and approvals that arrive together are taken one after another.
+- By default a change waits for a moment when none of this install's runners is running a job, which it asks GitHub with the install's own token, for up to 6 hours. If no such moment comes, the change is dropped and logged as not applied. "Now" applies it at once. Either way `up` drains: busy jobs finish, then it exits, and its service manager starts it again on the new file. A stop signal during that drain still drains; only a second signal exits at once. If anything fails while applying, such as reading the VM's size, the change is logged as not applied and `up` carries on.
 - Before writing, `up` keeps the old file beside it as `<config>.<time>.bak`, owner-only, the newest five. It logs every change, applied or not, with who approved it, in `<state>/<install>/changes.ndjson`.
 - VM installs only. A host install's schema has no `changes`, and `up` refuses a change to one.
 

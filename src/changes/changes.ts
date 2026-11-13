@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { type } from "arktype";
-import { LauncherConfig } from "../launcher/launcher-config.ts";
+import { parseLauncherConfig } from "../launcher/launcher-config.ts";
+import { memoryMiB } from "../launcher/memory-size.ts";
 import type { Accepted, ApplyRequest, Described } from "../control/protocol.ts";
 import { fieldsOf, type Machine, refusal, type Value, withField } from "./change-paths.ts";
 
@@ -38,9 +38,26 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 const iso = (ms: number) => new Date(ms).toISOString();
 const show = (value: Value) => (typeof value === "string" ? value : String(value));
 
+// The config as `up` would load it, or a refusal saying why not.
+function loads(value: unknown, what: string) {
+  try {
+    return parseLauncherConfig(structuredClone(value));
+  } catch (error) {
+    throw new ChangeRefused(`${what}: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
 export function createChanges(actions: ChangesActions) {
   const { configPath, now } = actions;
   let waiting: Waiting | null = null;
+  // Requests and the idle check run one at a time, so two approvals arriving together can't both
+  // pass "nothing is waiting", and a check can't apply a change while another request reads it.
+  let turn: Promise<unknown> = Promise.resolve();
+  const exclusive = <A>(work: () => Promise<A>) => {
+    const run = turn.then(work);
+    turn = run.catch(() => {});
+    return run;
+  };
 
   const record = async (entry: Record<string, unknown>) => {
     await mkdir(dirname(actions.logPath), { recursive: true, mode: 0o700 });
@@ -53,8 +70,7 @@ export function createChanges(actions: ChangesActions) {
   async function current() {
     const text = await readFile(configPath, "utf8");
     const raw: unknown = JSON.parse(text);
-    const config = LauncherConfig(structuredClone(raw));
-    if (config instanceof type.errors) throw new ChangeRefused(`The config doesn't load: ${config.summary}`);
+    const config = loads(raw, "The config doesn't load");
     if (!("vm" in config)) throw new ChangeRefused("Proposals change VM installs only.");
     if (config.changes !== true) throw new ChangeRefused('This install doesn\'t take proposals: its config has no "changes": true.');
     return { text, raw, fields: fieldsOf(config, await actions.machine()) };
@@ -75,8 +91,15 @@ export function createChanges(actions: ChangesActions) {
       if (why) throw new ChangeRefused(why);
       next = withField(next, change.path, change.to);
     }
-    const loaded = LauncherConfig(structuredClone(next));
-    if (loaded instanceof type.errors) throw new ChangeRefused(`The changed config wouldn't load: ${loaded.summary}`);
+    const loaded = loads(next, "The changed config wouldn't load");
+    // Docker refuses a reservation above the limit, or swap below it, which no single bound sees.
+    for (const runner of "vm" in loaded ? loaded.runners : []) {
+      if (!request.changes.some((change) => change.path.startsWith(`runners.${runner.name}.limits.`))) continue;
+      const { memoryReservation, memory, memorySwap } = runner.limits;
+      if (memoryMiB(memoryReservation) > memoryMiB(memory) || memoryMiB(memory) > memoryMiB(memorySwap)) {
+        throw new ChangeRefused(`${runner.name}'s limits must keep memoryReservation ≤ memory ≤ memorySwap.`);
+      }
+    }
     return { before: text, after: `${JSON.stringify(next, null, 2)}\n` };
   }
 
@@ -128,7 +151,8 @@ export function createChanges(actions: ChangesActions) {
     return { install: basename(configPath, ".json"), fields, pending };
   }
 
-  async function apply(request: ApplyRequest): Promise<Accepted> {
+  const apply = (request: ApplyRequest) => exclusive(() => accept(request));
+  async function accept(request: ApplyRequest): Promise<Accepted> {
     if (waiting) throw new ChangeRefused("Another change is already waiting to apply.");
     await plan(request);
     await record({ outcome: "accepted", proposalId: request.proposalId, hash: request.hash, approvedBy: request.approvedBy, when: request.when, changes: request.changes });
@@ -144,7 +168,8 @@ export function createChanges(actions: ChangesActions) {
 
   // Applies a waiting change at the first moment no job is running, or drops it after 6 hours.
   // It never throws: `every` runs it unwatched, and a fault here must not stop `up`.
-  async function check() {
+  const check = () => exclusive(idleCheck);
+  async function idleCheck() {
     const change = waiting;
     if (!change) return;
     if (now() - change.since > IDLE_LIMIT_MS) {

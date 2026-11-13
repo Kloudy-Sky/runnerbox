@@ -27,14 +27,17 @@ export function fieldsOf(config: VmInstall, machine: Machine): Field[] {
     floor("memoryFloor.vmMiB", config.memoryFloor.vmMiB, "vmMiB"),
     ...config.runners.flatMap((runner) => {
       const at = `runners.${runner.name}`;
+      // With job VMs, a kind's containers run in its own VM, not the one `up` measured, which then
+      // only builds images.
+      const runsIn = config.jobVms && runner.vm ? { memoryMiB: runner.vm.memoryMiB, cpus: runner.vm.cpus } : { memoryMiB: machine.vmMiB, cpus: machine.vmCpus };
       return [
         // At most double, so one approval can't turn a kind up without limit.
         { path: `${at}.slots`, value: runner.slots, min: 1, max: Math.min(MAX_SLOTS, runner.slots * 2), unit: "slots" as const },
         ...(runner.memoryFloor ? [floor(`${at}.memoryFloor.hostMiB`, runner.memoryFloor.hostMiB, "hostMiB"), floor(`${at}.memoryFloor.vmMiB`, runner.memoryFloor.vmMiB, "vmMiB")] : []),
-        { path: `${at}.limits.memory`, value: runner.limits.memory, min: MIN_MEMORY_MIB, max: machine.vmMiB, unit: "size" as const },
-        { path: `${at}.limits.memoryReservation`, value: runner.limits.memoryReservation, min: MIN_MEMORY_MIB, max: machine.vmMiB, unit: "size" as const },
-        { path: `${at}.limits.memorySwap`, value: runner.limits.memorySwap, min: MIN_MEMORY_MIB, max: machine.vmMiB * 2, unit: "size" as const },
-        { path: `${at}.limits.cpus`, value: runner.limits.cpus, min: MIN_CPUS, max: machine.vmCpus, unit: "cpus" as const },
+        { path: `${at}.limits.memory`, value: runner.limits.memory, min: MIN_MEMORY_MIB, max: runsIn.memoryMiB, unit: "size" as const },
+        { path: `${at}.limits.memoryReservation`, value: runner.limits.memoryReservation, min: MIN_MEMORY_MIB, max: runsIn.memoryMiB, unit: "size" as const },
+        { path: `${at}.limits.memorySwap`, value: runner.limits.memorySwap, min: MIN_MEMORY_MIB, max: runsIn.memoryMiB * 2, unit: "size" as const },
+        { path: `${at}.limits.cpus`, value: runner.limits.cpus, min: MIN_CPUS, max: runsIn.cpus, unit: "cpus" as const },
       ];
     }),
   ];
