@@ -158,6 +158,23 @@ test("a restart remembers what was seen, so nothing is looked into twice", async
   }
 });
 
+test("a look the server stopped with it is shown as stopped after a restart", async () => {
+  const first = await startTestServer({ provider: makeFakeProvider({ turns: [[{ text: "Looking" }, { hang: true }]] }) });
+  const token = await session(first);
+  await withClient(first, token, (client) => client["monitors.save"](ON));
+  await arrive(first, [ITEM]);
+  void first.checkMonitors();
+  while ((await withClient(first, token, (client) => client["monitors.status"]())).runs.length === 0) await new Promise((resolve) => setTimeout(resolve, 20));
+  await first.close(false);
+  const again = await startTestServer({ stateDir: first.stateDir, provider: makeFakeProvider({ turns: [] }) });
+  try {
+    const status = await withClient(again, token, (client) => client["monitors.status"]());
+    assert.deepEqual(status.runs.map((run) => run.outcome), ["interrupted"]);
+  } finally {
+    await again.close();
+  }
+});
+
 test("turning monitors off stops a look in progress", async () => {
   const fake = makeFakeProvider({ turns: [[{ text: "Looking" }, { hang: true }]] });
   const server = await startTestServer({ provider: fake });
