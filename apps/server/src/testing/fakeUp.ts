@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { loadLauncherConfig } from "runnerbox/src/launcher/launcher-config.ts";
 import type { ReproduceRequest } from "runnerbox/src/reproduce/protocol.ts";
 import { createReproducer } from "runnerbox/src/reproduce/reproducer.ts";
-import { listenForReproduce } from "runnerbox/src/reproduce/socket.ts";
+import { listenForControl } from "runnerbox/src/control/socket.ts";
 
 const EXAMPLE_CONFIG = fileURLToPath(new URL("../../../../runnerbox.example.json", import.meta.url));
 
@@ -41,6 +41,6 @@ export async function startFakeUp(
     start: (request: Extract<ReproduceRequest, { op: "start" }>) => (requests.push(request), reproducer.start(request)),
     exec: (request: Extract<ReproduceRequest, { op: "exec" }>) => (requests.push(request), reproducer.exec(request)),
   };
-  const server = await listenForReproduce(installStateDir, recorded);
-  return { requests, reproducer, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
+  const control = await listenForControl(installStateDir, { reproducer: recorded, changes: null });
+  return { requests, reproducer, close: async () => control.close() };
 }

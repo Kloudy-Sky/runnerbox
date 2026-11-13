@@ -117,8 +117,27 @@ An install with a `reproduce` block lets `runnerbox serve`, on the same machine 
 - One reproduce runs at a time. It starts only while no slot waits for memory and the VM has the kind's floor plus its memory limit available. It's removed as soon as a slot has to wait for memory, after 5 minutes idle, after 30 minutes, or after 40 commands. Each command gets at most 10 minutes. `up` removes any left over when it starts and when it drains.
 - It refuses public repositories, since their commits can come from anyone's pull request and the container shares the VM with your jobs. It doesn't run with `jobVms` yet.
 - The network can be kept for the first command only, which installs dependencies, and cut after it.
-- The socket is `<state>/<install>/reproduce/up.sock`. Its directory must belong to the user running `up` and be closed to everyone else.
+- `up` answers on `<state>/<install>/control/up.sock`. Its directory must belong to the user running `up` and be closed to everyone else. For one release it also answers reproduce requests at the old `<state>/<install>/reproduce/up.sock`, for a `serve` that's older than it.
 - In a thread, Reproduce asks before it starts one, and needs `threads:reproduce`, which pairing by address or SSH grants and Connect never does. The container runs on the image the job's runner recorded. While it runs, that thread's turns get one more tool, `repro_exec`, to run a shell command in it; each command and the end of its output show in the thread. Stop container removes it. When `up` removes it on its own, the thread says why within a minute, or before the next question.
+
+## Approved changes
+
+An install with `"changes": true` lets you approve, in the desktop app, a change to its numbers that the agent in a thread proposed. Without it, nothing changes the file but you.
+
+```json
+"changes": true
+```
+
+- A change can only set a kind's `slots`, the install's or a kind's `memoryFloor`, and a kind's `limits.memory`, `memoryReservation`, `memorySwap` and `cpus`. A kind's own floor can only be changed if it already has one. Nothing else, including tokens, scope, `allowedWorkflows`, `reproduce`, images, `env`, the VM and the list of kinds, is reachable.
+- `up` checks each change itself, whatever the request says.
+  - Bounds: slots from 1 to double the current count, at most 64. Floors up to the machine's memory. Memory limits up to the memory of the VM the kind's containers run in, and swap up to twice that. CPUs up to that VM's. That's the VM `up` measures, or with `jobVms`, the kind's own `vm`.
+  - A kind's memory limits must keep `memoryReservation` ≤ `memory` ≤ `memorySwap`, which Docker requires.
+  - The changed file must pass every check `up` makes when it starts, including the `jobVms` rules, so a change can't leave `up` unable to start.
+  - Every field must still hold the value the proposal was based on, so a hand edit since then makes it refuse.
+  - One change waits at a time, and approvals that arrive together are taken one after another.
+- By default a change waits for a moment when none of this install's runners is running a job, which it asks GitHub with the install's own token, for up to 6 hours. If no such moment comes, the change is dropped and logged as not applied. "Now" applies it at once. Either way `up` drains: busy jobs finish, then it exits, and its service manager starts it again on the new file. A stop signal during that drain still drains; only a second signal exits at once. If anything fails while applying, such as reading the VM's size, the change is logged as not applied and `up` carries on.
+- Before writing, `up` keeps the old file beside it as `<config>.<time>.bak`, owner-only, the newest five. It logs every change, applied or not, with who approved it, in `<state>/<install>/changes.ndjson`.
+- VM installs only. A host install's schema has no `changes`, and `up` refuses a change to one.
 
 ## Jobs on a Mac's own OS
 

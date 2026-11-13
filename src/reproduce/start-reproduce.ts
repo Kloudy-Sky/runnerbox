@@ -1,16 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
 import { every } from "../launcher/every.ts";
 import type { MemoryFloor, RunnerType, VmInstall } from "../launcher/launcher-config.ts";
-import { stateDir } from "../tracking/state-dir.ts";
 import { execInVm } from "../vm/exec-in-vm.ts";
 import { createReproducer } from "./reproducer.ts";
-import { listenForReproduce } from "./socket.ts";
+import { memoryMiB } from "../launcher/memory-size.ts";
 import { checkPrivateRepo, commitTarball, readSourceToken } from "./source.ts";
-
-const UNIT_MIB = { b: 1 / 1024 ** 2, k: 1 / 1024, m: 1, g: 1024 } as const;
-// A docker memory size, such as `3600m`, in MiB.
-export const memoryMiB = (size: string) => Math.ceil(Number(size.slice(0, -1)) * UNIT_MIB[size.at(-1) as keyof typeof UNIT_MIB]);
 
 type FromUp = {
   // What `up` checks before a slot registers, for a given floor.
@@ -20,8 +14,8 @@ type FromUp = {
   slotsWaiting: () => number;
 };
 
-// Starts an install's reproduce socket, after removing any container an earlier `up` left. Only
-// called for an install with a `reproduce` block, so one without it has no socket at all.
+// Starts an install's reproducer, after removing any container an earlier `up` left, for the
+// control socket to answer. Only called for an install with a `reproduce` block.
 export async function startReproduce(config: VmInstall & { reproduce: { sourceTokenFile: string } }, up: FromUp) {
   const reproducer = createReproducer({
     install: config.name,
@@ -48,12 +42,11 @@ export async function startReproduce(config: VmInstall & { reproduce: { sourceTo
     log: (line) => console.log(line),
   });
   const stopChecking = await reproducer.begin();
-  const server = await listenForReproduce(join(stateDir(), config.name), reproducer);
   return {
-    // Stops taking requests and removes the running reproduce, as `up` drains.
+    reproducer,
+    // Removes the running reproduce, as `up` drains.
     async close() {
       stopChecking();
-      server.close();
       await reproducer.end();
     },
   };

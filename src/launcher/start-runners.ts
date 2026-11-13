@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { setTimeout as wait } from "node:timers/promises";
 import { promisify } from "node:util";
 import { refusePublicScope } from "../github/public-scope.ts";
-import { mintRegistration, removeRunner } from "../github/runner-registration.ts";
+import { anyRunnerBusy, mintRegistration, removeRunner } from "../github/runner-registration.ts";
 import { installPaths } from "../host/install-paths.ts";
 import { buildInVm } from "../image/build-in-vm.ts";
 import { hashContext } from "../image/context-hash.ts";
@@ -12,6 +12,8 @@ import { createImageKeeper } from "../image/image-keeper.ts";
 import type { InTurn } from "../jobvm/in-turn.ts";
 import { startJobVms } from "../jobvm/start-job-vms.ts";
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
+import { startChanges } from "../changes/start-changes.ts";
+import { listenForControl } from "../control/socket.ts";
 import { startReproduce } from "../reproduce/start-reproduce.ts";
 import { createRotatingLog } from "../tracking/rotating-log.ts";
 import { createSampler, VM_SAMPLE_COMMAND } from "../tracking/sampler.ts";
@@ -92,6 +94,18 @@ export async function startRunners(configPath: string) {
         )
       : null;
 
+  // Approved changes to this file's numbers, when it has `"changes": true`. Applying one drains.
+  const changes =
+    "vm" in config && config.changes
+      ? startChanges(config, configPath, {
+          busy: async () =>
+            anyRunnerBusy({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerIds: registered.flatMap((slots) => [...slots.values()]) }),
+          drain,
+        })
+      : null;
+  // `runnerbox serve`'s way in, only when the config turns on something it can ask for.
+  const control = reproduce || changes ? await listenForControl(join(stateDir(), config.name), { reproducer: reproduce?.reproducer ?? null, changes }) : null;
+
   // A runner still waiting for a job would otherwise stay listed until GitHub notices it's gone.
   async function removeWaitingRunners() {
     const runnerIds = registered.flatMap((slots) => [...slots.values()]);
@@ -106,17 +120,28 @@ export async function startRunners(configPath: string) {
       }),
     );
   }
-  // The first signal drains: no new runners, waiting ones removed, and `up` exits once every busy
-  // job has finished. A second signal exits at once, leaving busy containers to finish in the VM.
+  // Draining: no new runners, waiting ones removed, and `up` exits once every busy job has finished,
+  // for its service manager to start it again. The first signal does it, and so does an applied
+  // change. A second signal exits at once, leaving busy containers to finish in the VM.
   let stopping = false;
+  function drain(why: string) {
+    if (stopping) return;
+    stopping = true;
+    void slotState.stopping();
+    control?.close();
+    void reproduce?.close();
+    void changes?.close();
+    console.log(`${why}: draining. Busy jobs finish first.`);
+    void removeWaitingRunners();
+  }
+  // Counted apart from `stopping`, so a signal during a change's drain still drains.
+  let signalled = false;
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
-      if (stopping) process.exit(1);
-      stopping = true;
-      void slotState.stopping();
-      void reproduce?.close();
-      console.log(`${signal}: draining. Busy jobs finish first; send it again to exit now.`);
-      void removeWaitingRunners();
+      if (signalled) process.exit(1);
+      signalled = true;
+      drain(signal);
+      console.log("Send it again to exit now.");
     });
   }
 

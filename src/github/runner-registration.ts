@@ -42,3 +42,20 @@ export async function removeRunner({ scope, token, runnerId }: { scope: RunnerSc
   const response = await fetch(`${runnersPath(scope)}/${runnerId}`, { method: "DELETE", headers: githubHeaders(token) });
   if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
 }
+
+const RunnerPage = type({ runners: type({ id: "number", busy: "boolean" }).array() });
+
+// Whether GitHub says any of these runners is running a job. Fails when GitHub can't say, which
+// callers take as busy.
+export async function anyRunnerBusy({ scope, token, runnerIds }: { scope: RunnerScope; token: string; runnerIds: ReadonlyArray<number> }) {
+  const wanted = new Set(runnerIds);
+  for (let page = 1; wanted.size > 0 && page <= 10; page++) {
+    const response = await fetch(`${runnersPath(scope)}?per_page=100&page=${page}`, { headers: githubHeaders(token) });
+    if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+    const body = RunnerPage(await response.json());
+    if (body instanceof type.errors) throw new Error("GitHub's response had no runners");
+    if (body.runners.some((runner) => wanted.has(runner.id) && runner.busy)) return true;
+    if (body.runners.length < 100) break;
+  }
+  return false;
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { mintRegistration, removeRunner } from "./runner-registration.ts";
+import { anyRunnerBusy, mintRegistration, removeRunner } from "./runner-registration.ts";
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -50,4 +50,15 @@ test("removes a runner by id in the same scope it was minted in", async () => {
   const { urls } = captureRequests(204);
   await removeRunner({ token: "t", scope: { repo: "acme/app" }, runnerId: 7 });
   assert.deepEqual(urls, ["DELETE https://api.github.com/repos/acme/app/actions/runners/7"]);
+});
+
+test("a change waiting for idle sees only this install's runners as busy, and an unanswered question as busy", async () => {
+  const runners = [{ id: 1, busy: false }, { id: 2, busy: true }, { id: 3, busy: false }];
+  globalThis.fetch = async () => new Response(JSON.stringify({ total_count: 3, runners }), { status: 200 });
+  const scope = { repo: "owner/name" };
+  assert.equal(await anyRunnerBusy({ scope, token: "t", runnerIds: [1, 3] }), false, "another install's busy runner doesn't count");
+  assert.equal(await anyRunnerBusy({ scope, token: "t", runnerIds: [1, 2] }), true);
+  assert.equal(await anyRunnerBusy({ scope, token: "t", runnerIds: [] }), false);
+  globalThis.fetch = async () => new Response("", { status: 502 });
+  await assert.rejects(anyRunnerBusy({ scope, token: "t", runnerIds: [1] }), /502/);
 });

@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import type { ReproduceRequest } from "runnerbox/src/reproduce/protocol.ts";
-import { socketPath } from "runnerbox/src/reproduce/socket.ts";
+import { legacyReproduceSocketPath as socketPath } from "runnerbox/src/control/socket.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 
 // `up`'s answers, checked like any other input, though only this user can write the socket.
