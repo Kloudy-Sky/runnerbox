@@ -8,8 +8,8 @@ import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogPopup, Dial
 type Actions = ReturnType<typeof useProposals>;
 
 const WHEN: ReadonlyArray<readonly [ApplyWhen, string, string]> = [
-  ["idle", "When no job is running", "up applies it at the first moment none of this install's runners is busy, within 6 hours, or drops it."],
-  ["now", "Now", "up applies it at once. Busy jobs finish first; new jobs wait until up has restarted."],
+  ["idle", "When no job is running", "Applies at the first moment no job is running. Dropped if that doesn't come within 6 hours."],
+  ["now", "Now", "Applies at once. Running jobs finish first; new jobs wait until the runners are back."],
 ];
 
 // Every field the proposal changes, before and after, one row each. Shown in full, the same in
@@ -63,9 +63,10 @@ export function ProposalBlock({ proposal, actions, offerRevert }: { proposal: Pr
       </p>
       <p className={proposal.status === "not_applied" ? "text-destructive" : "text-muted-foreground"}>{statusWords(proposal)}</p>
       {proposal.runUrl ? (
-        <p className="text-muted-foreground">
-          To rerun the job, open its run on GitHub: <span className="select-all font-mono text-[12px]">{proposal.runUrl}</span>
-        </p>
+        // The desktop app opens it in the system browser.
+        <a href={proposal.runUrl} target="_blank" rel="noreferrer" className="w-fit text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+          Open the run on GitHub to rerun it
+        </a>
       ) : null}
       {error ? <p className="text-destructive">{error}</p> : null}
       {decidable || (offerRevert && proposal.status === "applied" && actions.canApprove) ? (
@@ -89,7 +90,7 @@ export function ProposalBlock({ proposal, actions, offerRevert }: { proposal: Pr
       <Dialog open={confirming} onOpenChange={(next) => !busy && setConfirming(next)}>
         <DialogPopup>
           <DialogTitle>Change {proposal.install}?</DialogTitle>
-          <DialogDescription>up writes these values to its config, keeps the old file, and restarts.</DialogDescription>
+          <DialogDescription>Runnerbox saves these values on the machine, keeps the previous ones, and restarts its runners.</DialogDescription>
           <Changes proposal={proposal} />
           <div className="flex flex-col gap-1 pt-1">
             {WHEN.map(([option, label, detail]) => (

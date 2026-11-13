@@ -34,12 +34,12 @@ export function statusWords(proposal: Proposal, now = Date.now()) {
     case "declined":
       return `Declined by ${by}, ${formatAge(proposal.decidedAt, now)} ago.`;
     case "approved":
-      return `Approved by ${by}. up is applying it.`;
+      return `Approved by ${by}. Applying it now.`;
     case "waiting":
-      return `Approved by ${by}. up applies it when no job is running, within 6 hours.`;
+      return `Approved by ${by}. Applies when no job is running, within 6 hours.`;
     case "applied":
       return `Applied, approved by ${by}.`;
     case "not_applied":
-      return `Not applied: ${proposal.outcome ?? "up didn't say why."}`;
+      return `Not applied: ${proposal.outcome ?? "no reason was given."}`;
   }
 }

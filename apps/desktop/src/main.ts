@@ -9,6 +9,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import { createCatalog, type TokenCipher } from "./catalog.ts";
 import { createConnect } from "./connect.ts";
+import { opensInBrowser } from "./externalLinks.ts";
 import { CHANNELS } from "./ipc/channels.ts";
 import { createTunnels } from "./ssh/tunnels.ts";
 import { DesktopUpdates, layer as desktopUpdatesLayer } from "./updates/DesktopUpdates.ts";
@@ -184,11 +185,16 @@ function createWindow() {
     backgroundColor: "#141414",
     webPreferences: { preload: join(__dirname, "preload.cjs"), sandbox: true, contextIsolation: true, nodeIntegration: false },
   });
-  // The UI never navigates away or opens windows; a link that tries is refused.
+  // The UI never navigates away or opens windows; a link that tries is refused, except a GitHub
+  // page opened in a new window, which goes to the system browser.
   window.webContents.on("will-navigate", (event, url) => {
     if (!url.startsWith(ORIGIN) && !(DEV_URL && url.startsWith(DEV_URL))) event.preventDefault();
   });
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // A link to a GitHub page, such as a run to rerun, opens in the system browser instead.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (opensInBrowser(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
   void window.loadURL(DEV_URL ?? `${ORIGIN}/index.html`);
 }
 
