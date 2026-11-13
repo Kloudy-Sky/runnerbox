@@ -1,11 +1,12 @@
 import * as Schema from "effect/Schema";
 
 // What a session may do. Reading history and runners is separate from managing who has access,
-// from running agent turns, and from starting a container the agent can run commands in.
-export const AuthScope = Schema.Literals(["history:read", "runners:read", "access:write", "threads:operate", "threads:reproduce"]);
+// from running agent turns, from starting a container the agent can run commands in, and from
+// approving a change to how an install's runners run.
+export const AuthScope = Schema.Literals(["history:read", "runners:read", "access:write", "threads:operate", "threads:reproduce", "changes:approve"]);
 export type AuthScope = typeof AuthScope.Type;
 
-export const ALL_SCOPES: ReadonlyArray<AuthScope> = ["history:read", "runners:read", "access:write", "threads:operate", "threads:reproduce"];
+export const ALL_SCOPES: ReadonlyArray<AuthScope> = ["history:read", "runners:read", "access:write", "threads:operate", "threads:reproduce", "changes:approve"];
 // What an outside agent and a Connect session get: everything it can read, nothing that changes
 // access or spends the environment's Claude subscription.
 export const MCP_SCOPES: ReadonlyArray<AuthScope> = ["history:read", "runners:read"];

@@ -8,6 +8,7 @@ import type { LogReadError } from "../history/StateLogs.ts";
 import * as Inbox from "../inbox/Inbox.ts";
 import * as LauncherLogs from "../runners/LauncherLogs.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
+import * as Proposals from "../proposals/Proposals.ts";
 import * as Threads from "../threads/Threads.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
 import * as EnvironmentIdentity from "../environment/EnvironmentIdentity.ts";
@@ -25,6 +26,9 @@ export const layer = (session: Session) =>
       const inbox = yield* Inbox.Inbox;
       const auth = yield* AuthStore.AuthStore;
       const threads = yield* Threads.Threads;
+      const proposals = yield* Proposals.Proposals;
+      // Who approved, as `up` logs it: the session, never its token.
+      const approver = { id: session.id, label: session.label };
       const accounts = yield* AccountStore.AccountStore;
       const identity = yield* EnvironmentIdentity.EnvironmentIdentity;
       return {
@@ -54,6 +58,10 @@ export const layer = (session: Session) =>
         "threads.checkReproduce": ({ id }) => threads.checkReproduce(id),
         "threads.startReproduce": ({ id, network }) => threads.startReproduce(id, network),
         "threads.stopReproduce": ({ id }) => threads.stopReproduce(id),
+        "proposals.list": () => proposals.list.pipe(Effect.map((all) => ({ proposals: all, canApprove: session.scopes.includes("changes:approve") }))),
+        "proposals.approve": ({ id, hash, when }) => proposals.approve(id, hash, when, approver),
+        "proposals.decline": ({ id }) => proposals.decline(id, approver),
+        "proposals.revert": ({ id }) => proposals.revert(id, approver),
         "accounts.list": () => accounts.list,
         "accounts.save": (input) => accounts.save(input),
         "accounts.remove": ({ id }) => accounts.remove(id),

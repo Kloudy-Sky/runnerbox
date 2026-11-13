@@ -10,6 +10,8 @@ export const SERVER_NAME = "runnerbox";
 export const toolName = (name: string) => `mcp__${SERVER_NAME}__${name}`;
 export const READ_ONLY_TOOLS = Object.keys(RunnerboxToolkit.tools).map(toolName);
 export const REPRODUCE_TOOL = toolName("repro_exec");
+// Every thread turn may propose a change; it only records one for the owner to decide.
+export const PROPOSE_TOOL = toolName("propose_change");
 export const MAX_AGENT_STEPS = 12;
 // Rerunning a step and narrowing it down takes more steps than reading.
 export const MAX_REPRODUCE_STEPS = 30;
@@ -29,9 +31,9 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
     "--mcp-config",
     turn.mcpConfigPath,
     "--strict-mcp-config",
-    // Its tools run without asking. Anything else is refused, and nothing ever prompts. A turn
-    // with a reproduce running also gets its shell tool; every other turn can only read.
-    `--allowedTools=${[...READ_ONLY_TOOLS, ...(turn.reproduce ? [REPRODUCE_TOOL] : [])].join(",")}`,
+    // Its tools run without asking. Anything else is refused, and nothing ever prompts. Every turn
+    // may also record a proposed change; a turn with a reproduce running also gets its shell tool.
+    `--allowedTools=${[...READ_ONLY_TOOLS, PROPOSE_TOOL, ...(turn.reproduce ? [REPRODUCE_TOOL] : [])].join(",")}`,
     "--permission-mode=dontAsk",
     "--permission-prompts=none",
     // No user, project or local settings, so no hooks, permission rules, plugins or CLAUDE.md.

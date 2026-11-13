@@ -144,7 +144,7 @@ test("stopping a reproduce up already removed logs up's reason, not the owner's"
 
 test("the server won't talk to a socket whose directory other users can open", () =>
   withReproduce([], async (server) => {
-    await chmod(join(server.stateDir, "example", "reproduce"), 0o755);
+    await chmod(join(server.stateDir, "example", "control"), 0o755);
     const token = await session(server);
     const refused = await withClient(server, token, (client) =>
       Effect.gen(function* () {
@@ -226,4 +226,18 @@ test("after up removes a reproduce on its own, the next check logs why and the n
     const ended = (await threadLog(server, id)).filter((item) => item._tag === "ReproduceEnded");
     assert.deepEqual(ended.map((item) => item._tag === "ReproduceEnded" && item.reason), ["This reproduce ended: stopped."]);
     assert.deepEqual(fake.inputs.map((input) => input.reproduce), [false]);
+  }));
+
+test("an up from before the control socket still reaches reproduce at the old path, for one release", () =>
+  withReproduce([], async (server, up) => {
+    // As an older `up` would have it: no control directory, only reproduce/up.sock.
+    await rm(join(server.stateDir, "example", "control"), { recursive: true, force: true });
+    const token = await session(server);
+    await withClient(server, token, (client) =>
+      Effect.gen(function* () {
+        const thread = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: ITEM }, days: 14 });
+        yield* client["threads.startReproduce"]({ id: thread.id, network: "on" });
+      }),
+    );
+    assert.equal(up.requests[0]?.op, "start");
   }));

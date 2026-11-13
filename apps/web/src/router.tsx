@@ -10,6 +10,7 @@ import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { AboutSettings } from "./pages/settings/AboutSettings.tsx";
 import { AccessSettings } from "./pages/settings/AccessSettings.tsx";
 import { AccountsSettings } from "./pages/settings/AccountsSettings.tsx";
+import { ChangesSettings } from "./pages/settings/ChangesSettings.tsx";
 import { ConnectionsSettings } from "./pages/settings/ConnectionsSettings.tsx";
 import { SpeedPage } from "./pages/SpeedPage.tsx";
 
@@ -30,6 +31,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => settingsRoute, path: "/accounts", component: AccountsSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/connections", component: ConnectionsSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/access", component: AccessSettings }),
+    createRoute({ getParentRoute: () => settingsRoute, path: "/changes", component: ChangesSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/about", component: AboutSettings }),
   ]),
   // Earlier names, so saved links still land somewhere.

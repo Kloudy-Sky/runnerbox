@@ -33,8 +33,17 @@ const fake = makeFakeProvider({
       { text: "Checking the samples and launcher events around that attempt." },
       { tool: "machine_samples", input: { days: 7, maxPoints: 200 } },
       { tool: "launcher_events", input: { days: 7 } },
+      { tool: "install_settings", input: { install: "example" } },
       {
-        text: "Confirmed: the machine. The VM's available memory fell to about a tenth of its total during the failed attempt, and its runner's container exited 137, the kernel's out-of-memory kill. The retry on the same commit passed with plenty free.\n\nGive the VM more memory, or raise memoryFloor.vmMiB to at least one job's memoryReservation so a second job can't start while it's short. Press Reproduce if you want me to rerun the test step on its own.",
+        tool: "propose_change",
+        input: {
+          install: "example",
+          changes: [{ path: "memoryFloor.vmMiB", to: 4000 }],
+          reason: "The VM fell to a tenth of its memory while two jobs ran, and the test container was killed for it. A floor of 4000 MiB keeps a second job from starting until there's room.",
+        },
+      },
+      {
+        text: "Confirmed: the machine. The VM's available memory fell to about a tenth of its total during the failed attempt, and its runner's container exited 137, the kernel's out-of-memory kill. The retry on the same commit passed with plenty free.\n\nI proposed raising the VM's memory floor from 1500 to 4000 MiB, so a second job waits until there's room. It changes nothing until you approve it. Press Reproduce if you want me to rerun the test step on its own.",
       },
     ],
     [

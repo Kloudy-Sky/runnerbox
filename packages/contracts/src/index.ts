@@ -7,3 +7,4 @@ export * from "./runners.ts";
 export * from "./connect.ts";
 export * from "./threads.ts";
 export * from "./accounts.ts";
+export * from "./proposals.ts";
