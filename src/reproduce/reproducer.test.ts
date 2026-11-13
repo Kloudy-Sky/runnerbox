@@ -132,7 +132,7 @@ test("two starts at once run one container, and a drain mid-start leaves none be
   const starting = slow.reproducer.start({ ...start, kind: slow.kind });
   await slow.reproducer.end();
   release();
-  await assert.rejects(starting, /up is stopping/);
+  await assert.rejects(starting, /Runnerbox on the machine is stopping/);
   assert.match(slow.vmCalls[0]!.command, /label=runnerbox\.reproduce=example/, "drain sweeps every labelled container");
   assert.equal(slow.vmCalls.at(-1)!.command, "docker rm -f 'example-repro-0a1b2c3d' >/dev/null 2>&1; true");
 });
