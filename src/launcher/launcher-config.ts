@@ -93,6 +93,10 @@ export const VmInstall = type({
   // to rerun a failing step in. `sourceTokenFile` holds a token that can only read the code
   // (Contents: read), never the token that mints runners. Without this block there's no socket.
   "reproduce?": { "+": "reject", sourceTokenFile: AbsolutePath },
+  // Lets the owner approve, in the desktop app, a change to this install's numbers that an agent
+  // proposed: a kind's slots and limits, and memory floors. `up` checks each one itself and writes
+  // this file. Without it, nothing can change it but the owner.
+  "changes?": "true",
 });
 
 export type VmInstall = typeof VmInstall.infer;
