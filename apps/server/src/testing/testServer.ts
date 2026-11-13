@@ -10,6 +10,7 @@ import * as Scope from "effect/Scope";
 import type { AuthScope } from "@runnerbox/contracts";
 import * as AuthStore from "../auth/AuthStore.ts";
 import * as CloudLink from "../cloud/CloudLink.ts";
+import * as Monitors from "../monitors/Monitors.ts";
 import { layerApp } from "../server.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
 import { writeFixtures } from "./fixtures.ts";
@@ -39,6 +40,7 @@ export async function startTestServer(options: { fixtures?: boolean; stateDir?: 
   const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port, tunnelPort, stateDir, provider: provider.layer }), scope));
   const auth = Context.get(context, AuthStore.AuthStore);
   const cloudLink = Context.get(context, CloudLink.CloudLink);
+  const monitors = Context.get(context, Monitors.Monitors);
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     port,
@@ -46,6 +48,8 @@ export async function startTestServer(options: { fixtures?: boolean; stateDir?: 
     tunnelBaseUrl: `http://127.0.0.1:${tunnelPort}`,
     tunnelPort,
     cloudLink,
+    // Runs a monitor pass now, instead of waiting for the next 15 minutes.
+    checkMonitors: () => Effect.runPromise(monitors.check),
     auth,
     stateDir,
     now,

@@ -17,12 +17,19 @@ const READ_ONLY = `Apart from proposing, you can only read: your tools are runne
 const REPRODUCING = `The owner started a reproduce: a throwaway container on the job's image, with the job's commit's files in /work. repro_exec runs one shell command there and returns its exit code and the end of its output. Use it to rerun the failing step and see whether it fails the same way, then say what that shows. It isn't a runner: no actions from the marketplace, no job secrets, no GITHUB_TOKEN, no service containers, and the network may be cut after the first command. It's removed after 40 commands, 30 minutes, 5 idle minutes, or when real jobs need the memory. Your other tools still only read; you can't change runners, re-run jobs or reach GitHub.`;
 
 // The system prompt for a turn; a turn with a reproduce running is told about its one shell tool.
-export const systemPrompt = (reproducing: boolean) => `${BASE}\n\n${reproducing ? REPRODUCING : READ_ONLY}\n\n${PROPOSING}`;
+const MONITORING = `Nobody asked this turn: a monitor started it because the item just appeared in the inbox, and the owner will read your answer later in this thread. You can only read: your tools are runnerbox's read-only history and runner tools, and you can't propose changes, re-run jobs or reach GitHub. Say what you found and what the owner might do. If one of an install's numbers would fix it (how many jobs a kind runs at once, a memory floor, or a kind's memory or CPU limits), say which and suggest they ask you in this thread to propose it.`;
+
+export type TurnMode = "owner" | "reproduce" | "monitor";
+
+// The system prompt for a turn: one the owner asked, one with a reproduce's shell tool too, or a
+// monitor's, which only reads.
+export const systemPrompt = (mode: TurnMode) =>
+  mode === "monitor" ? `${BASE}\n\n${MONITORING}` : `${BASE}\n\n${mode === "reproduce" ? REPRODUCING : READ_ONLY}\n\n${PROPOSING}`;
 
 const describe = (item: ThreadItem) => {
   switch (item._tag) {
     case "UserMessage":
-      return [`Owner: ${item.text}`];
+      return [`${item.source === "monitor" ? "Monitor" : "Owner"}: ${item.text}`];
     case "AgentText":
       return [`You: ${item.text}`];
     case "ReproduceStarted":

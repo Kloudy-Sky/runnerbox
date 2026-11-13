@@ -55,7 +55,9 @@ export class Threads extends Context.Service<
     // Logs the question and starts the turn in the background; it ends on the thread's stream.
     // `scopes` are the asking session's: only one holding `threads:reproduce` gives the turn the
     // reproduce's shell tool, whoever started the reproduce.
-    readonly startTurn: (id: string, text: string, options: { readonly accountId?: string | undefined; readonly scopes: ReadonlyArray<AuthScope> }) => Effect.Effect<{ readonly turnId: string }, ThreadError>;
+    // `monitor` marks a turn a monitor started: logged as the monitor's, on its model, and read-only,
+    // with no proposals and no reproduce.
+    readonly startTurn: (id: string, text: string, options: TurnOptions) => Effect.Effect<{ readonly turnId: string }, ThreadError>;
     // Returns once the turn has ended and that's logged. Does nothing when no turn is running.
     readonly interrupt: (id: string) => Effect.Effect<void, ThreadError>;
     readonly subscribe: (id: string) => Stream.Stream<ThreadEvent, ThreadError>;
@@ -70,6 +72,12 @@ export class Threads extends Context.Service<
     readonly proposeChange: (sessionId: string, input: { readonly install: string; readonly changes: ProposeInput["changes"]; readonly reason: string }) => Effect.Effect<Proposal, ProposalError>;
   }
 >()("runnerbox/server/threads/Threads") {}
+
+export type TurnOptions = {
+  readonly accountId?: string | undefined;
+  readonly scopes: ReadonlyArray<AuthScope>;
+  readonly monitor?: { readonly model: string } | undefined;
+};
 
 type Running = { readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
 
@@ -223,7 +231,7 @@ const make = Effect.gen(function* () {
   const settleReproduce = (id: string) =>
     reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
 
-  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, scopes }: { readonly accountId?: string | undefined; readonly scopes: ReadonlyArray<AuthScope> }) {
+  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, scopes, monitor }: TurnOptions) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
@@ -238,31 +246,35 @@ const make = Effect.gen(function* () {
         const file = yield* loadUnlocked(id);
         const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
         // The account's ID only: its key never goes in a thread's log.
-        yield* appendUnlocked(id, { _tag: "UserMessage", seq: turn.nextSeq, turnId: turn.turnId, text, at: yield* nowIso, accountId: account.id });
+        yield* appendUnlocked(id, { _tag: "UserMessage", seq: turn.nextSeq, turnId: turn.turnId, text, at: yield* nowIso, accountId: account.id, ...(monitor ? { source: "monitor" as const } : {}) });
         turn.nextSeq += 1;
         running.set(id, turn);
         const prompt = turnPrompt(file.header.packet, file.items, text);
         // Only a turn that starts with a reproduce running, asked by a session that may reproduce,
         // gets the tool, bound to this thread.
-        const reproducing = reproduces.running(id) && scopes.includes("threads:reproduce");
+        const reproducing = !monitor && reproduces.running(id) && scopes.includes("threads:reproduce");
         // The agent's tools are `/mcp` itself, read-only, with a token that lives for this turn.
         // Forked into the service's scope, so stopping the server interrupts it and logs that.
         turn.fiber = yield* Effect.gen(function* () {
           const grant = yield* Effect.acquireRelease(auth.mintMcpToken("agent thread", { ttlMs: TURN_TOKEN_TTL_MS }), ({ session }) =>
             auth.revoke(session.id).pipe(Effect.ignore),
           );
-          yield* Effect.acquireRelease(
-            Effect.sync(() => turnSessions.set(grant.session.id, id)),
-            () => Effect.sync(() => turnSessions.delete(grant.session.id)),
-          );
+          // A monitor's token isn't bound to the thread, so `propose_change` refuses it too.
+          if (!monitor) {
+            yield* Effect.acquireRelease(
+              Effect.sync(() => turnSessions.set(grant.session.id, id)),
+              () => Effect.sync(() => turnSessions.delete(grant.session.id)),
+            );
+          }
           if (reproducing) yield* reproduces.bind(grant.session.id, id);
           yield* driver
             .runTurn({
-              systemPrompt: systemPrompt(reproducing),
+              systemPrompt: systemPrompt(monitor ? "monitor" : reproducing ? "reproduce" : "owner"),
               prompt,
               mcp: { url: `${baseUrl}/mcp`, token: grant.token },
               reproduce: reproducing,
-              account: { label: account.label, model: account.model, apiKey: account.apiKey },
+              propose: !monitor,
+              account: { label: account.label, model: monitor?.model ?? account.model, apiKey: account.apiKey },
             })
             .pipe(Stream.runForEach(onEvent(id, turn)));
         }).pipe(

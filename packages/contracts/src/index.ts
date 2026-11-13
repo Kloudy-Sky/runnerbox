@@ -8,3 +8,4 @@ export * from "./connect.ts";
 export * from "./threads.ts";
 export * from "./accounts.ts";
 export * from "./proposals.ts";
+export * from "./monitors.ts";

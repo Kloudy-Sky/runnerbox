@@ -27,7 +27,7 @@ function Item({ item }: { item: ThreadItem }) {
     case "UserMessage":
       return (
         <div className="enter">
-          <div className="text-muted-foreground text-xs">You</div>
+          <div className="text-muted-foreground text-xs">{item.source === "monitor" ? "Monitor" : "You"}</div>
           <p className="whitespace-pre-wrap">{item.text}</p>
         </div>
       );

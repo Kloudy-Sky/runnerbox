@@ -47,7 +47,7 @@ after(async () => {
 const turn = (account: TurnAccount) =>
   Effect.gen(function* () {
     const adapter = yield* ProviderAdapter;
-    return yield* adapter.runTurn({ systemPrompt: "prompt", prompt: "Why?", mcp: { url: "http://127.0.0.1:9/mcp", token: "rbx_turn" }, reproduce: false, account }).pipe(Stream.runCollect);
+    return yield* adapter.runTurn({ systemPrompt: "prompt", prompt: "Why?", mcp: { url: "http://127.0.0.1:9/mcp", token: "rbx_turn" }, reproduce: false, propose: true, account }).pipe(Stream.runCollect);
   }).pipe(
     Effect.provide(ClaudeAdapter.layer.pipe(Layer.provide(ServerPaths.layer(dir)), Layer.provideMerge(NodeServices.layer))),
     Effect.scoped,

@@ -22,6 +22,8 @@ export type TurnInput = {
   readonly mcp: { readonly url: string; readonly token: string };
   // Whether the thread has a reproduce running, which adds its shell tool to this turn.
   readonly reproduce: boolean;
+  // Whether the turn may record a proposed change: one the owner asked, not a monitor's.
+  readonly propose: boolean;
   // The account the turn runs as. Its key, if any, is the only credential that reaches the provider.
   readonly account: TurnAccount;
 };

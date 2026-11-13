@@ -1,4 +1,4 @@
-import { RunnerboxRpcGroup, StateReadError } from "@runnerbox/contracts";
+import { RPC_METHODS, RPC_SCOPES, RunnerboxRpcGroup, StateReadError } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { Session } from "../auth/AuthStore.ts";
@@ -8,6 +8,7 @@ import type { LogReadError } from "../history/StateLogs.ts";
 import * as Inbox from "../inbox/Inbox.ts";
 import * as LauncherLogs from "../runners/LauncherLogs.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
+import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
 import * as Threads from "../threads/Threads.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
@@ -27,6 +28,9 @@ export const layer = (session: Session) =>
       const auth = yield* AuthStore.AuthStore;
       const threads = yield* Threads.Threads;
       const proposals = yield* Proposals.Proposals;
+      const monitors = yield* Monitors.Monitors;
+      // The same scopes the server checks on monitors.save, so the switch is never offered when saving would be refused.
+      const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
       // Who approved, as `up` logs it: the session, never its token.
       const approver = { id: session.id, label: session.label };
       const accounts = yield* AccountStore.AccountStore;
@@ -62,6 +66,9 @@ export const layer = (session: Session) =>
         "proposals.approve": ({ id, hash, when }) => proposals.approve(id, hash, when, approver),
         "proposals.decline": ({ id }) => proposals.decline(id, approver),
         "proposals.revert": ({ id }) => proposals.revert(id, approver),
+        "monitors.status": () => monitors.status(canConfigureMonitors),
+        "monitors.save": (settings) => monitors.save(settings),
+        "monitors.markRead": ({ itemId }) => monitors.markRead(itemId),
         "accounts.list": () => accounts.list,
         "accounts.save": (input) => accounts.save(input),
         "accounts.remove": ({ id }) => accounts.remove(id),

@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Eye, Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import type { RootSearch } from "../lib/search.ts";
 import { cn } from "../lib/utils.ts";
 
@@ -8,6 +8,7 @@ const SECTIONS = [
   { to: "/settings/connections", label: "Connections", icon: Plug },
   { to: "/settings/access", label: "Access", icon: ShieldCheck },
   { to: "/settings/changes", label: "Changes", icon: SlidersHorizontal },
+  { to: "/settings/monitors", label: "Monitors", icon: Eye },
   { to: "/settings/about", label: "About", icon: Info },
 ] as const;
 

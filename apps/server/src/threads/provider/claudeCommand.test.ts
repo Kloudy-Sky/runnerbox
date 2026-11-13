@@ -8,7 +8,7 @@ import { claudeArgs, claudeEnv, MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, mcpConfig,
 // What a thread's agent can reach is decided entirely by the command that starts `claude`. Each
 // assertion is a boundary the threat model names.
 
-const args = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined, reproduce: false });
+const args = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined, reproduce: false, propose: true });
 
 test("claude runs with no built-in tools, only runnerbox's read-only MCP tools, and none of the user's setup", () => {
   const toolkit = Object.values(RunnerboxToolkit.tools);
@@ -39,11 +39,17 @@ test("claude runs with no built-in tools, only runnerbox's read-only MCP tools, 
     `--max-turns=${MAX_AGENT_STEPS}`,
   ]);
   assert.equal(READ_ONLY_TOOLS.length, toolkit.length);
-  assert.deepEqual(claudeArgs({ mcpConfigPath: "x", systemPrompt: "p", model: "haiku", reproduce: false }).at(-1), "--model=haiku");
+  assert.deepEqual(claudeArgs({ mcpConfigPath: "x", systemPrompt: "p", model: "haiku", reproduce: false, propose: true }).at(-1), "--model=haiku");
+});
+
+test("a monitor's turn may only read: no proposals and no shell", () => {
+  const monitor = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: "haiku", reproduce: false, propose: false });
+  assert.ok(monitor.includes(`--allowedTools=${READ_ONLY_TOOLS.join(",")}`));
+  assert.ok(!monitor.some((arg) => arg.includes(PROPOSE_TOOL) || arg.includes(REPRODUCE_TOOL)));
 });
 
 test("only a turn with a reproduce running may use its shell tool, and nothing else changes", () => {
-  const reproducing = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined, reproduce: true });
+  const reproducing = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined, reproduce: true, propose: true });
   assert.ok(!args.some((arg) => arg.includes(REPRODUCE_TOOL)));
   const changed = reproducing.filter((arg) => !args.includes(arg));
   assert.deepEqual(changed, [`--allowedTools=${[...READ_ONLY_TOOLS, PROPOSE_TOOL, REPRODUCE_TOOL].join(",")}`, `--max-turns=${MAX_REPRODUCE_STEPS}`]);

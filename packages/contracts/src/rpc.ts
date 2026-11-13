@@ -8,6 +8,7 @@ import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { Account, AccountError, AccountId, SaveAccount } from "./accounts.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
+import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
 import { CreateThread, MessageText, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
@@ -71,6 +72,9 @@ export const RPC_METHODS = {
   proposalsApprove: "proposals.approve",
   proposalsDecline: "proposals.decline",
   proposalsRevert: "proposals.revert",
+  monitorsStatus: "monitors.status",
+  monitorsSave: "monitors.save",
+  monitorsMarkRead: "monitors.markRead",
 } as const;
 
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
@@ -155,6 +159,10 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.proposalsDecline, { payload: ProposalId, success: Proposal, error: ProposalFailure }),
   // Makes a new proposal that puts an applied one's previous values back, to approve like any other.
   Rpc.make(RPC_METHODS.proposalsRevert, { payload: ProposalId, success: Proposal, error: ProposalFailure }),
+  Rpc.make(RPC_METHODS.monitorsStatus, { success: MonitorStatus, error: Schema.Union([AuthorizationError, MonitorError]) }),
+  Rpc.make(RPC_METHODS.monitorsSave, { payload: MonitorSettings, success: MonitorStatus, error: Schema.Union([AuthorizationError, MonitorError]) }),
+  // The owner opened the item's thread, so its "Looked into" mark goes.
+  Rpc.make(RPC_METHODS.monitorsMarkRead, { payload: { itemId: Schema.String }, error: Schema.Union([AuthorizationError, MonitorError]) }),
   // The same version facts the public descriptor gives, over whatever route the client uses.
   Rpc.make(RPC_METHODS.serverAbout, { success: Schema.Struct({ label: Schema.String, serverVersion: Schema.String, protocolVersion: Schema.Int }), error: AuthorizationError }),
 ).middleware(RpcScopeAuthorization);
@@ -207,4 +215,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.proposalsApprove]: [...THREADS, "changes:approve"],
   [RPC_METHODS.proposalsDecline]: [...THREADS, "changes:approve"],
   [RPC_METHODS.proposalsRevert]: [...THREADS, "changes:approve"],
+  // Turning monitors on decides what the owner's subscription or key is spent on, as accounts do.
+  [RPC_METHODS.monitorsStatus]: THREADS,
+  [RPC_METHODS.monitorsSave]: ["access:write", "threads:operate"],
+  [RPC_METHODS.monitorsMarkRead]: THREADS,
 } as const satisfies Record<RpcMethod, ReadonlyArray<AuthScope>>;
