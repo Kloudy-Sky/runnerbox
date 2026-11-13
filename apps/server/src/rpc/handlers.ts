@@ -1,4 +1,4 @@
-import { RunnerboxRpcGroup, StateReadError } from "@runnerbox/contracts";
+import { RPC_METHODS, RPC_SCOPES, RunnerboxRpcGroup, StateReadError } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { Session } from "../auth/AuthStore.ts";
@@ -29,7 +29,8 @@ export const layer = (session: Session) =>
       const threads = yield* Threads.Threads;
       const proposals = yield* Proposals.Proposals;
       const monitors = yield* Monitors.Monitors;
-      const canConfigureMonitors = session.scopes.includes("access:write") && session.scopes.includes("threads:operate");
+      // The same scopes the server checks on monitors.save, so the switch is never offered when saving would be refused.
+      const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
       // Who approved, as `up` logs it: the session, never its token.
       const approver = { id: session.id, label: session.label };
       const accounts = yield* AccountStore.AccountStore;
