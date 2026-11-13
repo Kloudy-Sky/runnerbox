@@ -191,7 +191,7 @@ test("a fault while applying an idle change logs it as not applied, and doesn't 
     assert.deepEqual(await config(), JSON.parse(original));
     assert.deepEqual(state.drains, []);
     const last = (await log()).at(-1);
-    assert.deepEqual([last.outcome, last.reason], ["not_applied", "up couldn't apply it; its log says why"]);
+    assert.deepEqual([last.outcome, last.reason], ["not_applied", "Runnerbox on the machine couldn't apply it; its log there says why"]);
     assert.equal((await changes.describe().catch(() => null))?.pending ?? null, null);
   } finally {
     await done();
@@ -203,7 +203,7 @@ test("a change applied now answers with what happened, as the log does", async (
   try {
     // The check on arrival reads the machine once; the read just before the write fails.
     state.machineReads = 1;
-    await assert.rejects(changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }])), /Not applied: up couldn't apply it/);
+    await assert.rejects(changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }])), /Not applied: Runnerbox on the machine couldn't apply it/);
     assert.deepEqual(await config(), JSON.parse(original));
     assert.deepEqual(state.drains, []);
     assert.deepEqual((await log()).map((entry) => entry.outcome), ["accepted", "not_applied"]);

@@ -59,7 +59,7 @@ export function createReproducer(actions: ReproducerActions) {
 
   async function start(request: Extract<ReproduceRequest, { op: "start" }>): Promise<Started> {
     if (actions.jobVms) throw new ReproduceRefused("Reproduce doesn't run on an install with jobVms yet.");
-    if (closed) throw new ReproduceRefused("up is stopping.");
+    if (closed) throw new ReproduceRefused("Runnerbox on the machine is stopping.");
     if (session || starting) throw new ReproduceRefused("A reproduce is already running on this install. Stop it first.");
     const runner = actions.runners.find((candidate) => candidate.name === request.kind);
     if (!runner) throw new ReproduceRefused(`This install has no runner kind named ${request.kind}.`);
@@ -90,7 +90,7 @@ export function createReproducer(actions: ReproducerActions) {
       if (unpacked.exitCode !== 0) return await fail("The commit's files didn't unpack", unpacked);
       if (closed) {
         await vm(removeCommand(install, id), { timeoutMs: QUICK_MS, maxOutput: 1024 });
-        throw new ReproduceRefused("up is stopping.");
+        throw new ReproduceRefused("Runnerbox on the machine is stopping.");
       }
       const at = now();
       session = { id, kind: runner.name, startedAt: at, usedAt: at, commands: 0, cutNetwork: request.network === "setup", busy: false };
@@ -170,7 +170,7 @@ export function createReproducer(actions: ReproducerActions) {
     // Removes the running reproduce, and any other this install has, as `up` drains.
     async end() {
       closed = true;
-      if (session) await remove(session, "up stopped");
+      if (session) await remove(session, "Runnerbox stopped on the machine");
       await vm(sweepCommand(install), { timeoutMs: QUICK_MS, maxOutput: 1024 });
     },
   };

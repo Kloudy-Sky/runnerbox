@@ -69,7 +69,7 @@ const uid = () => process.getuid?.() ?? -1;
 export async function checkOwnership(path: string) {
   for (const [what, entry, kind] of [["Its directory", dirname(path), "directory"], ["The socket", path, "socket"]] as const) {
     const found = await lstat(entry).catch(() => null);
-    if (!found) throw new Error("That install's up has no control socket. Turn on reproduce or changes in its config and restart it.");
+    if (!found) throw new Error("Runnerbox on that machine isn't taking these requests. Turn on reproduce or changes in its config, then restart it.");
     if (kind === "directory" ? !found.isDirectory() : !found.isSocket()) throw new Error(`${what} isn't a ${kind}, so the server won't use it.`);
     if (found.uid !== uid()) throw new Error(`${what} belongs to another user, so the server won't use it.`);
     if ((found.mode & 0o077) !== 0) throw new Error(`${what} is open to other users, so the server won't use it.`);
@@ -87,11 +87,11 @@ function ask(path: string, request: ControlRequest | ({ op: "apply" } & Approved
     const socket = connect(path);
     let received = "";
     socket.setEncoding("utf8");
-    socket.setTimeout(timeoutMs, () => socket.destroy(new Error("up didn't answer in time.")));
+    socket.setTimeout(timeoutMs, () => socket.destroy(new Error("Runnerbox on the machine didn't answer in time.")));
     socket.on("connect", () => socket.write(`${JSON.stringify(request)}\n`));
     socket.on("data", (chunk: string) => {
       received += chunk;
-      if (received.length > MAX_ANSWER_BYTES) socket.destroy(new Error("up's answer was too large."));
+      if (received.length > MAX_ANSWER_BYTES) socket.destroy(new Error("Runnerbox on the machine sent too long an answer."));
       const newline = received.indexOf("\n");
       if (newline >= 0) {
         socket.end();
@@ -99,7 +99,7 @@ function ask(path: string, request: ControlRequest | ({ op: "apply" } & Approved
       }
     });
     socket.on("error", (error) => reject(error));
-    socket.on("close", () => reject(new Error("up closed the socket without answering.")));
+    socket.on("close", () => reject(new Error("Runnerbox on the machine closed the connection without answering.")));
   });
 }
 
@@ -118,14 +118,14 @@ const make = Effect.gen(function* () {
         await checkOwnership(path);
         return await ask(path, request, timeoutMs);
       },
-      catch: (error) => new ReproduceError({ why: error instanceof Error ? error.message : "Couldn't reach up." }),
+      catch: (error) => new ReproduceError({ why: error instanceof Error ? error.message : "Couldn't reach Runnerbox on the machine." }),
     });
-    const answer = yield* decodeAnswer(line).pipe(Effect.mapError(() => new ReproduceError({ why: "up's answer wasn't one the server understands." })));
+    const answer = yield* decodeAnswer(line).pipe(Effect.mapError(() => new ReproduceError({ why: "Runnerbox on the machine sent an answer the server doesn't understand." })));
     if (!answer.ok) return yield* new ReproduceError({ why: answer.error });
     return answer;
   });
 
-  const unexpected = new ReproduceError({ why: "up's answer wasn't one the server understands." });
+  const unexpected = new ReproduceError({ why: "Runnerbox on the machine sent an answer the server doesn't understand." });
   return UpSocket.of({
     start: (install, request) => send(install, request, START_MS).pipe(Effect.flatMap((answer) => ("id" in answer ? Effect.succeed(answer) : Effect.fail(unexpected)))),
     exec: (install, request) =>

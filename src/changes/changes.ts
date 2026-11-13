@@ -126,7 +126,7 @@ export function createChanges(actions: ChangesActions) {
       await writeFile(temporary, planned.after, { mode: mode & 0o777 });
       await rename(temporary, configPath);
     } catch (error) {
-      const reason = error instanceof ChangeRefused ? error.message : "up couldn't apply it; its log says why";
+      const reason = error instanceof ChangeRefused ? error.message : "Runnerbox on the machine couldn't apply it; its log there says why";
       if (!(error instanceof ChangeRefused)) actions.log(`change ${proposalId}: ${error instanceof Error ? error.message : error}`);
       await rm(temporary, { force: true }).catch(() => {});
       await note({ outcome: "not_applied", proposalId, hash, approvedBy, changes, reason });
@@ -193,7 +193,7 @@ export function createChanges(actions: ChangesActions) {
       stopChecking?.();
       const change = waiting;
       waiting = null;
-      if (change) await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "up stopped before it could apply" });
+      if (change) await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "Runnerbox stopped on the machine before it could apply it" });
     },
   };
 }
