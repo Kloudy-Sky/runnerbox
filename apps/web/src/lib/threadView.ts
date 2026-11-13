@@ -29,6 +29,7 @@ export function foldThread(view: ThreadView, event: ThreadEvent): ThreadView {
     case "ReproduceStarted":
     case "ReproduceCommand":
     case "ReproduceEnded":
+    case "ChangeProposed":
       return { ...view, items: [...view.items, event] };
     case "TurnEnded":
       return { ...view, items: [...view.items, event], partial: null, running: false };

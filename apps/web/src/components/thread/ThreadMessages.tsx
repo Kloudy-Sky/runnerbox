@@ -1,7 +1,10 @@
+import { useEffect } from "react";
 import type { ThreadItem } from "@runnerbox/contracts";
 import { ChevronRight } from "lucide-react";
 import type { ThreadView } from "../../lib/threadView.ts";
 import { toolPhrase } from "../../lib/toolPhrases.ts";
+import { useProposals } from "../../hooks/useProposals.ts";
+import { ProposalBlock } from "../proposals/ProposalBlock.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
 
 // The thread under an item: the owner's questions, the agent's answers, and each tool call as one
@@ -31,8 +34,9 @@ function Item({ item }: { item: ThreadItem }) {
     case "AgentText":
       return <p className="enter whitespace-pre-wrap">{item.text}</p>;
     case "ToolCall":
-      // Its command and result are the ReproduceCommand line that follows.
-      if (item.name === "repro_exec") return null;
+      // Its command and result are the ReproduceCommand line that follows, and a proposal's the
+      // block that follows.
+      if (item.name === "repro_exec" || item.name === "propose_change") return null;
       return (
         <Collapsible className="enter -my-1.5 text-[13px]">
           <CollapsibleTrigger className="group/tool flex items-center gap-1 text-muted-foreground hover:text-foreground">
@@ -71,6 +75,8 @@ function Item({ item }: { item: ThreadItem }) {
           </CollapsiblePanel>
         </Collapsible>
       );
+    case "ChangeProposed":
+      return <ThreadProposal id={item.proposalId} />;
     case "ReproduceEnded":
       return <p className="enter text-[13px] text-muted-foreground">Container removed. {item.reason}</p>;
     case "TurnEnded":
@@ -80,4 +86,17 @@ function Item({ item }: { item: ThreadItem }) {
         <p className="text-destructive">{item.message}</p>
       ) : null;
   }
+}
+
+// A proposal the agent made in this thread, as it stands now. Revert lives in Settings, Changes.
+function ThreadProposal({ id }: { id: string }) {
+  const actions = useProposals();
+  const proposal = actions.proposals.find((candidate) => candidate.id === id);
+  const { refresh } = actions;
+  const missing = proposal === undefined;
+  // A proposal made just now isn't in a list fetched before it, so that list is asked for again.
+  useEffect(() => {
+    if (missing) void refresh();
+  }, [missing, id]);
+  return proposal ? <ProposalBlock proposal={proposal} actions={actions} offerRevert={false} /> : null;
 }

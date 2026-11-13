@@ -75,7 +75,7 @@ export function Composer({ thread, placeholder }: { thread: Thread; placeholder:
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <span className="flex flex-1 items-center gap-1">
           {picker}
-          <span>{thread.reproduce.running ? "reads, and runs commands in the container" : "read-only"}</span>
+          <span>{thread.reproduce.running ? "reads, runs commands in the container, proposes changes for you" : "reads, proposes changes for you"}</span>
         </span>
         <ReproduceControl thread={thread} />
         {view.items.length > 0 && !view.running ? (

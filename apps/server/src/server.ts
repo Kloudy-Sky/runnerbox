@@ -21,6 +21,7 @@ import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
 import * as ClaudeAdapter from "./threads/provider/ClaudeAdapter.ts";
 import type { ProviderAdapter } from "./threads/provider/ProviderAdapter.ts";
+import * as Proposals from "./proposals/Proposals.ts";
 import * as Reproduces from "./reproduce/Reproduces.ts";
 import * as UpSocket from "./reproduce/UpSocket.ts";
 import * as Threads from "./threads/Threads.ts";
@@ -38,7 +39,7 @@ export const layerServices = (input: { stateDir: string; host: string; port: num
   Threads.layer.pipe(
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
-    Layer.provideMerge(Reproduces.layer.pipe(Layer.provide(UpSocket.layer))),
+    Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer).pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(LocalEndpoint.layer(input.host, input.port)),
     Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer)),

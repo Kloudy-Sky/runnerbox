@@ -9,6 +9,8 @@ import * as AuthStore from "../auth/AuthStore.ts";
 import { bearerToken } from "../http/bearer.ts";
 import * as Handlers from "./handlers.ts";
 import { McpSession } from "./McpSession.ts";
+import * as ProposeHandler from "./proposeHandler.ts";
+import { ProposeToolkit } from "./proposeTool.ts";
 import * as ReproduceHandler from "./reproduceHandler.ts";
 import { ReproduceToolkit } from "./reproduceTool.ts";
 import { RunnerboxToolkit } from "./tools.ts";
@@ -38,10 +40,11 @@ const layerTransport = McpServer.layerHttp({
   version: packageJson.version,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
-  instructions: "Read-only CI history and runner state for one machine running runnerbox. Start with ci_inbox. repro_exec only works inside a runnerbox thread's reproduce.",
+  instructions: "Read-only CI history and runner state for one machine running runnerbox. Start with ci_inbox. repro_exec only works inside a runnerbox thread's reproduce, and propose_change only inside a thread's turn.",
 }).pipe(Layer.provide(layerAuth));
 
 export const layer = Layer.mergeAll(
   McpServer.toolkit(RunnerboxToolkit).pipe(Layer.provide(Handlers.layer)),
   McpServer.toolkit(ReproduceToolkit).pipe(Layer.provide(ReproduceHandler.layer)),
+  McpServer.toolkit(ProposeToolkit).pipe(Layer.provide(ProposeHandler.layer)),
 ).pipe(Layer.provideMerge(layerTransport));

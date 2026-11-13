@@ -62,7 +62,10 @@ export const ReproduceCommand = Schema.TaggedStruct("ReproduceCommand", {
 });
 export const ReproduceEnded = Schema.TaggedStruct("ReproduceEnded", { seq, reason: Schema.String, at });
 
-export const ThreadItem = Schema.Union([UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded]);
+// The agent proposed a change in this turn; the proposal itself, and its fate, are in proposals.list.
+export const ChangeProposed = Schema.TaggedStruct("ChangeProposed", { seq, turnId: Schema.String, proposalId: Schema.String, at });
+
+export const ThreadItem = Schema.Union([UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded, ChangeProposed]);
 export type ThreadItem = typeof ThreadItem.Type;
 
 export const ThreadSummary = Schema.Struct({
@@ -85,7 +88,7 @@ export const ThreadSnapshot = Schema.TaggedStruct("Snapshot", {
   partial: Schema.NullOr(Schema.Struct({ turnId: Schema.String, text: Schema.String })),
 });
 export const AgentTextDelta = Schema.TaggedStruct("AgentTextDelta", { turnId: Schema.String, text: Schema.String });
-export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded]);
+export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded, ChangeProposed]);
 export type ThreadEvent = typeof ThreadEvent.Type;
 
 // Whether the environment can run agent turns. The reason never carries account details.

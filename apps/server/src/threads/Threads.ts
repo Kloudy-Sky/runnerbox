@@ -1,5 +1,7 @@
 import {
   type AuthScope,
+  type Proposal,
+  ProposalError,
   type ProviderStatus,
   type ReproduceCheck,
   ReproduceError,
@@ -30,6 +32,8 @@ import * as ServerPaths from "../config/ServerPaths.ts";
 import type * as StateLogs from "../history/StateLogs.ts";
 import type * as Inbox from "../inbox/Inbox.ts";
 import type * as RunnerState from "../runners/RunnerState.ts";
+import { type ProposeInput, Proposals } from "../proposals/Proposals.ts";
+import { runUrlOf } from "../proposals/runUrl.ts";
 import { Reproduces } from "../reproduce/Reproduces.ts";
 import type { Executed } from "../reproduce/UpSocket.ts";
 import { systemPrompt, turnPrompt } from "./prompt.ts";
@@ -62,6 +66,8 @@ export class Threads extends Context.Service<
     // A command from the agent's `repro_exec`, for the thread its turn token is bound to. Logged
     // in that turn with the end of its output.
     readonly reproduceExec: (sessionId: string, command: string, timeoutSec: number) => Effect.Effect<Executed, ReproduceError>;
+    // The agent's `propose_change`, for the thread its turn token is bound to. It only records.
+    readonly proposeChange: (sessionId: string, input: { readonly install: string; readonly changes: ProposeInput["changes"]; readonly reason: string }) => Effect.Effect<Proposal, ProposalError>;
   }
 >()("runnerbox/server/threads/Threads") {}
 
@@ -78,6 +84,9 @@ const make = Effect.gen(function* () {
   const drivers = yield* Drivers;
   const accounts = yield* AccountStore.AccountStore;
   const reproduces = yield* Reproduces;
+  const proposals = yield* Proposals;
+  // Every turn's MCP token, mapped to its thread for the turn, so a tool knows whose thread it's in.
+  const turnSessions = new Map<string, string>();
   // Whether the default account can run turns, for a client deciding whether to offer threads.
   const provider = accounts.resolve(undefined).pipe(
     Effect.flatMap((account) => drivers.get(account.driver).status({ hasKey: account.apiKey !== null })),
@@ -242,6 +251,10 @@ const make = Effect.gen(function* () {
           const grant = yield* Effect.acquireRelease(auth.mintMcpToken("agent thread", { ttlMs: TURN_TOKEN_TTL_MS }), ({ session }) =>
             auth.revoke(session.id).pipe(Effect.ignore),
           );
+          yield* Effect.acquireRelease(
+            Effect.sync(() => turnSessions.set(grant.session.id, id)),
+            () => Effect.sync(() => turnSessions.delete(grant.session.id)),
+          );
           if (reproducing) yield* reproduces.bind(grant.session.id, id);
           yield* driver
             .runTurn({
@@ -334,7 +347,17 @@ const make = Effect.gen(function* () {
     return result;
   });
 
-  return Threads.of({ provider, list, read, create, startTurn, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec });
+  const proposeChange = Effect.fn("Threads.proposeChange")(function* (sessionId: string, input: { readonly install: string; readonly changes: ProposeInput["changes"]; readonly reason: string }) {
+    const id = turnSessions.get(sessionId);
+    if (id === undefined) return yield* new ProposalError({ why: "Only a thread's turn can propose a change." });
+    const { packet, subject } = yield* header(id).pipe(Effect.mapError(() => new ProposalError({ why: "Couldn't read this thread." })));
+    const proposal = yield* proposals.propose({ ...input, threadId: id, runUrl: runUrlOf(packet, jobIdOf(subject)) });
+    const turn = running.get(id);
+    if (turn) yield* record(id, turn, (seq, at) => ({ _tag: "ChangeProposed", seq, turnId: turn.turnId, proposalId: proposal.id, at })).pipe(Effect.ignore);
+    return proposal;
+  });
+
+  return Threads.of({ provider, list, read, create, startTurn, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

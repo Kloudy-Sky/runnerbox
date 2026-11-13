@@ -11,6 +11,7 @@ const PHRASES: Record<string, string> = {
   launcher_events: "Read the launcher's events",
   machine_samples: "Read the machine's memory samples",
   runner_state: "Read what the runners are doing now",
+  install_settings: "Read the install's numbers and their bounds",
 };
 
 export const toolPhrase = (name: string) => PHRASES[name] ?? `Used ${name}`;

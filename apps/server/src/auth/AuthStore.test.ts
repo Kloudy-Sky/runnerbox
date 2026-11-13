@@ -63,7 +63,7 @@ test("a socket that starts watching after its session was revoked still hears of
   }
 });
 
-test("a full session paired before threads or reproduce gets them; narrow, MCP and Connect sessions don't, and the file stays as it was", async () => {
+test("a full session paired before threads, reproduce or changes gets them; narrow, MCP and Connect sessions don't, and the file stays as it was", async () => {
   const stateDir = await mkdtemp(join(tmpdir(), "runnerbox-auth-"));
   try {
     const full = ["history:read", "runners:read", "access:write"];
@@ -99,9 +99,9 @@ test("a full session paired before threads or reproduce gets them; narrow, MCP a
         };
       }).pipe(Effect.provide(AuthStore.layer.pipe(Layer.provideMerge(ServerPaths.layer(stateDir)), Layer.provideMerge(NodeServices.layer)))),
     );
-    assert.deepEqual(outcome.full, [...full, "threads:operate", "threads:reproduce"]);
-    assert.deepEqual(outcome.threads, [...full, "threads:operate", "threads:reproduce"]);
-    assert.deepEqual(outcome.listed, [...full, "threads:operate", "threads:reproduce"]);
+    assert.deepEqual(outcome.full, [...full, "threads:operate", "threads:reproduce", "changes:approve"]);
+    assert.deepEqual(outcome.threads, [...full, "threads:operate", "threads:reproduce", "changes:approve"]);
+    assert.deepEqual(outcome.listed, [...full, "threads:operate", "threads:reproduce", "changes:approve"]);
     assert.deepEqual(outcome.narrow, ["history:read", "runners:read"]);
     assert.deepEqual(outcome.agent, full);
     assert.deepEqual(outcome.connect, full);

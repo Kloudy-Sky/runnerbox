@@ -3,7 +3,7 @@ import { test } from "node:test";
 import * as Context from "effect/Context";
 import { Tool } from "effect/ai";
 import { RunnerboxToolkit } from "../../mcp/tools.ts";
-import { claudeArgs, claudeEnv, MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, mcpConfig, promptLine, READ_ONLY_TOOLS, REPRODUCE_TOOL } from "./claudeCommand.ts";
+import { claudeArgs, claudeEnv, MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, mcpConfig, PROPOSE_TOOL, promptLine, READ_ONLY_TOOLS, REPRODUCE_TOOL } from "./claudeCommand.ts";
 
 // What a thread's agent can reach is decided entirely by the command that starts `claude`. Each
 // assertion is a boundary the threat model names.
@@ -25,8 +25,9 @@ test("claude runs with no built-in tools, only runnerbox's read-only MCP tools, 
     "--mcp-config",
     "/state/.server/agent/mcp/turn.json",
     "--strict-mcp-config",
-    // Exactly the read-only tools run; anything else is refused without a prompt.
-    `--allowedTools=${toolkit.map((tool) => `mcp__runnerbox__${tool.name}`).join(",")}`,
+    // Exactly the read-only tools run, and the tool that records a proposal; anything else is
+    // refused without a prompt.
+    `--allowedTools=${[...toolkit.map((tool) => `mcp__runnerbox__${tool.name}`), "mcp__runnerbox__propose_change"].join(",")}`,
     "--permission-mode=dontAsk",
     "--permission-prompts=none",
     // No settings files, so no CLAUDE.md, hooks, permission rules or plugins; no memory or connectors.
@@ -45,7 +46,7 @@ test("only a turn with a reproduce running may use its shell tool, and nothing e
   const reproducing = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: undefined, reproduce: true });
   assert.ok(!args.some((arg) => arg.includes(REPRODUCE_TOOL)));
   const changed = reproducing.filter((arg) => !args.includes(arg));
-  assert.deepEqual(changed, [`--allowedTools=${[...READ_ONLY_TOOLS, REPRODUCE_TOOL].join(",")}`, `--max-turns=${MAX_REPRODUCE_STEPS}`]);
+  assert.deepEqual(changed, [`--allowedTools=${[...READ_ONLY_TOOLS, PROPOSE_TOOL, REPRODUCE_TOOL].join(",")}`, `--max-turns=${MAX_REPRODUCE_STEPS}`]);
 });
 
 test("claude gets an allow-listed environment, so no API key, provider switch or other secret reaches it", () => {

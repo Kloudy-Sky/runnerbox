@@ -7,6 +7,7 @@ import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, 
 import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { Account, AccountError, AccountId, SaveAccount } from "./accounts.ts";
+import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { CreateThread, MessageText, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
@@ -31,6 +32,8 @@ export class AccessError extends Schema.TaggedError<AccessError>()("AccessError"
 const ReadError = Schema.Union([AuthorizationError, StateReadError]);
 const ThreadFailure = Schema.Union([AuthorizationError, ThreadError]);
 const ReproduceFailure = Schema.Union([AuthorizationError, ThreadError, ReproduceError]);
+const ProposalFailure = Schema.Union([AuthorizationError, ProposalError]);
+const ProposalId = { id: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)) };
 const ThreadId = { id: Schema.String };
 const Window = { repo: RepoName, days: Days };
 
@@ -64,6 +67,10 @@ export const RPC_METHODS = {
   accountsRemove: "accounts.remove",
   accountsSetDefault: "accounts.setDefault",
   serverAbout: "server.about",
+  proposalsList: "proposals.list",
+  proposalsApprove: "proposals.approve",
+  proposalsDecline: "proposals.decline",
+  proposalsRevert: "proposals.revert",
 } as const;
 
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
@@ -142,6 +149,12 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.accountsSave, { payload: SaveAccount, success: Account, error: Schema.Union([AuthorizationError, AccountError]) }),
   Rpc.make(RPC_METHODS.accountsRemove, { payload: { id: AccountId }, error: Schema.Union([AuthorizationError, AccountError]) }),
   Rpc.make(RPC_METHODS.accountsSetDefault, { payload: { id: AccountId }, error: Schema.Union([AuthorizationError, AccountError]) }),
+  Rpc.make(RPC_METHODS.proposalsList, { success: ProposalList, error: ProposalFailure }),
+  // The owner's approval of one exact proposal: `hash` is what the screen showed, and must match.
+  Rpc.make(RPC_METHODS.proposalsApprove, { payload: { ...ProposalId, hash: Schema.String, when: ApplyWhen }, success: Proposal, error: ProposalFailure }),
+  Rpc.make(RPC_METHODS.proposalsDecline, { payload: ProposalId, success: Proposal, error: ProposalFailure }),
+  // Makes a new proposal that puts an applied one's previous values back, to approve like any other.
+  Rpc.make(RPC_METHODS.proposalsRevert, { payload: ProposalId, success: Proposal, error: ProposalFailure }),
   // The same version facts the public descriptor gives, over whatever route the client uses.
   Rpc.make(RPC_METHODS.serverAbout, { success: Schema.Struct({ label: Schema.String, serverVersion: Schema.String, protocolVersion: Schema.Int }), error: AuthorizationError }),
 ).middleware(RpcScopeAuthorization);
@@ -189,4 +202,9 @@ export const RPC_SCOPES = {
   [RPC_METHODS.accountsSetDefault]: ["access:write", "threads:operate"],
   // Public already: the descriptor says the same to anyone.
   [RPC_METHODS.serverAbout]: [],
+  // Reading proposals is part of threads; deciding one changes how runners run.
+  [RPC_METHODS.proposalsList]: THREADS,
+  [RPC_METHODS.proposalsApprove]: [...THREADS, "changes:approve"],
+  [RPC_METHODS.proposalsDecline]: [...THREADS, "changes:approve"],
+  [RPC_METHODS.proposalsRevert]: [...THREADS, "changes:approve"],
 } as const satisfies Record<RpcMethod, ReadonlyArray<AuthScope>>;

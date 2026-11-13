@@ -48,5 +48,6 @@ export const SCOPE_WORDS: Record<AuthScope, string> = {
   "runners:read": "see runners",
   "threads:operate": "ask the agent",
   "threads:reproduce": "start a container the agent can run commands in",
+  "changes:approve": "approve changes to how runners run",
   "access:write": "manage access and accounts",
 };

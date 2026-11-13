@@ -9,6 +9,21 @@ import { Tool, Toolkit } from "effect/ai";
 
 export const ToolFailure = Schema.Struct({ message: Schema.String });
 
+// What `up` says a proposal may change on an install: each field's value now and the bounds it enforces.
+export const InstallSettings = Schema.Struct({
+  install: Schema.String,
+  fields: Schema.Array(
+    Schema.Struct({
+      path: Schema.String,
+      value: Schema.Union([Schema.Number, Schema.String]),
+      min: Schema.Number,
+      max: Schema.Number,
+      unit: Schema.Literals(["slots", "MiB", "size", "cpus"]),
+    }),
+  ),
+  pending: Schema.NullOr(Schema.Struct({ proposalId: Schema.String, when: Schema.Literals(["idle", "now"]), since: Schema.String })),
+});
+
 const days = Days.pipe(Schema.withDecodingDefault(Effect.succeed(7))).annotate({ description: "How many days back, 1 to 90. Default 7." });
 const by = GroupBy.pipe(Schema.withDecodingDefault(Effect.succeed("labels" as const))).annotate({
   description: "`labels` groups by the runs-on labels a job asked for; `runner` by runner name without its trailing numbers, which tells two launchers on one label apart.",
@@ -53,6 +68,13 @@ export const RunnerboxToolkit = Toolkit.make(
       description: "Host and VM memory, swap, load and CPU, thinned to at most `maxPoints` per install, keeping each stretch's lowest available memory.",
       parameters: Schema.Struct({ days, maxPoints: Schema.Int.check(Schema.isBetween({ minimum: 10, maximum: 2000 })).pipe(Schema.withDecodingDefault(Effect.succeed(200))) }),
       success: Schema.Array(MachineSample),
+    }).annotateMerge(READ_ONLY),
+  Tool.make("install_settings", {
+      ...shared,
+      description:
+        "The numbers a proposed change may set on one install, with each one's value now and the bounds up enforces: a kind's slots (`runners.<kind>.slots`), memory floors in MiB, and a kind's memory limits (sizes such as 3600m) and CPUs. Only installs whose config turns proposals on answer. `install` is a name from runner_state.",
+      parameters: Schema.Struct({ install: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)) }),
+      success: InstallSettings,
     }).annotateMerge(READ_ONLY),
   Tool.make("runner_state", { ...shared, description: "What each slot of each running `up` is doing now, and each kind's image. `stale` means `up` stopped updating it.", success: Schema.Array(InstallState) }).annotateMerge(READ_ONLY),
 );
