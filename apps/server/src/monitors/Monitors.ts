@@ -228,6 +228,11 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.catch((error) => Effect.logWarning(`monitor: ${error.message}`))),
   );
 
+  // No look runs in a server that just started; one left "running" was stopped with the last one,
+  // as its thread's turn was.
+  if ((yield* read.pipe(Effect.orElseSucceed(() => fresh(0)))).runs.some((run) => run.outcome === "running")) {
+    yield* update((state) => [{ ...state, runs: state.runs.map((run) => (run.outcome === "running" ? { ...run, outcome: "interrupted" as const } : run)) }, undefined]).pipe(Effect.ignore);
+  }
   yield* Effect.forkScoped(check.pipe(Effect.repeat(Schedule.spaced(CHECK_EVERY))));
   return Monitors.of({ status, save, markRead, check });
 });
