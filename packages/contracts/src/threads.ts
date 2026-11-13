@@ -21,7 +21,15 @@ const seq = Schema.Int;
 
 // What a thread's log holds after its first line, in order. `seq` counts from 1 in each thread.
 // `accountId` is the account the turn ran as; older lines don't have it.
-export const UserMessage = Schema.TaggedStruct("UserMessage", { seq, turnId: Schema.String, text: Schema.String, at, accountId: Schema.optionalKey(Schema.String) });
+// `source` is "monitor" when a monitor asked, not the owner; older lines don't have it.
+export const UserMessage = Schema.TaggedStruct("UserMessage", {
+  seq,
+  turnId: Schema.String,
+  text: Schema.String,
+  at,
+  accountId: Schema.optionalKey(Schema.String),
+  source: Schema.optionalKey(Schema.Literal("monitor")),
+});
 export const AgentText = Schema.TaggedStruct("AgentText", { seq, turnId: Schema.String, text: Schema.String, at });
 // `input` is the call's arguments as compact JSON, shown as one dim line.
 export const ToolCall = Schema.TaggedStruct("ToolCall", { seq, turnId: Schema.String, name: Schema.String, input: Schema.String, at });

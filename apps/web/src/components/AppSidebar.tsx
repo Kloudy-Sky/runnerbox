@@ -4,6 +4,7 @@ import { Link, useParams, useRouterState } from "@tanstack/react-router";
 import { ChevronRight, Gauge, ListTree, Server, Settings } from "lucide-react";
 import { useDesktopUpdates } from "../hooks/useDesktopUpdates.ts";
 import { useInbox } from "../hooks/useInbox.ts";
+import { useMonitors } from "../hooks/useMonitors.ts";
 import { useRunnerState } from "../hooks/useRunnerState.ts";
 import { formatAge } from "../lib/format.ts";
 import type { RootSearch } from "../lib/search.ts";
@@ -31,6 +32,7 @@ const keep = (previous: RootSearch) => previous;
 export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
   const inbox = useInbox().data;
   const updates = useDesktopUpdates();
+  const unread = new Set(useMonitors().status?.unread ?? []);
   const path = useRouterState({ select: (state) => state.location.pathname });
   const installs = useRunnerState();
   const slots = installs?.filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots)) ?? [];
@@ -82,6 +84,7 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
                       <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive" />
                       <span className="line-clamp-2">{item.title}</span>
                     </span>
+                    {unread.has(item.id) ? <span className="block pl-3.5 text-muted-foreground text-xs">Looked into</span> : null}
                   </span>
                   <span className="shrink-0 pt-px text-muted-foreground text-xs">{formatAge(item.at)}</span>
                 </SidebarMenuButton>

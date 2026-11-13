@@ -12,6 +12,7 @@ import { AccessSettings } from "./pages/settings/AccessSettings.tsx";
 import { AccountsSettings } from "./pages/settings/AccountsSettings.tsx";
 import { ChangesSettings } from "./pages/settings/ChangesSettings.tsx";
 import { ConnectionsSettings } from "./pages/settings/ConnectionsSettings.tsx";
+import { MonitorsSettings } from "./pages/settings/MonitorsSettings.tsx";
 import { SpeedPage } from "./pages/SpeedPage.tsx";
 
 // The time range and repo live in the URL, so a view can be reloaded or linked as it is.
@@ -32,6 +33,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => settingsRoute, path: "/connections", component: ConnectionsSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/access", component: AccessSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/changes", component: ChangesSettings }),
+    createRoute({ getParentRoute: () => settingsRoute, path: "/monitors", component: MonitorsSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/about", component: AboutSettings }),
   ]),
   // Earlier names, so saved links still land somewhere.

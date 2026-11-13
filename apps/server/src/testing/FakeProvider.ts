@@ -24,7 +24,13 @@ export type FakeStep =
   // Never finishes, so the turn can be interrupted mid-stream.
   | { readonly hang: true };
 
-export function makeFakeProvider(options: { readonly turns: ReadonlyArray<ReadonlyArray<FakeStep>>; readonly available?: boolean; readonly delayMs?: number }) {
+// `monitor`, when given, answers turns that may not propose (a monitor's), with its own cost.
+export function makeFakeProvider(options: {
+  readonly turns: ReadonlyArray<ReadonlyArray<FakeStep>>;
+  readonly available?: boolean;
+  readonly delayMs?: number;
+  readonly monitor?: { readonly steps: ReadonlyArray<FakeStep>; readonly costUsd: number };
+}) {
   const inputs: TurnInput[] = [];
   const toolResults: ToolResult[] = [];
   const pause = Effect.sleep(options.delayMs ?? 0);
@@ -53,11 +59,12 @@ export function makeFakeProvider(options: { readonly turns: ReadonlyArray<Readon
     status: () => Effect.succeed(options.available === false ? { provider: "Fake", available: false, fix: "Install Claude Code on this machine and run `claude` once to sign in." } : { provider: "Fake", available: true, fix: null }),
     runTurn: (input) =>
       Stream.suspend(() => {
-        const script = options.turns[inputs.length % options.turns.length] ?? [];
+        const monitor = !input.propose ? options.monitor : undefined;
+        const script = monitor?.steps ?? options.turns[inputs.length % options.turns.length] ?? [];
         inputs.push(input);
         return Stream.fromIterable(script).pipe(
           Stream.flatMap((step) => play(step, input)),
-          Stream.concat(Stream.succeed<ProviderEvent>({ _tag: "Done", costUsd: 0 })),
+          Stream.concat(Stream.succeed<ProviderEvent>({ _tag: "Done", costUsd: monitor?.costUsd ?? 0 })),
         );
       }),
   });

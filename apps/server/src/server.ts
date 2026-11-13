@@ -21,6 +21,7 @@ import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
 import * as ClaudeAdapter from "./threads/provider/ClaudeAdapter.ts";
 import type { ProviderAdapter } from "./threads/provider/ProviderAdapter.ts";
+import * as Monitors from "./monitors/Monitors.ts";
 import * as Proposals from "./proposals/Proposals.ts";
 import * as Reproduces from "./reproduce/Reproduces.ts";
 import * as UpSocket from "./reproduce/UpSocket.ts";
@@ -36,7 +37,8 @@ type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
 // see the same instances.
 export const layerServices = (input: { stateDir: string; host: string; port: number; label?: string | undefined; provider?: Provider | undefined }) =>
-  Threads.layer.pipe(
+  Monitors.layer.pipe(
+    Layer.provideMerge(Threads.layer),
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
     Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer).pipe(Layer.provideMerge(UpSocket.layer))),

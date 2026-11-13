@@ -1,7 +1,7 @@
 import { inboxItems } from "@runnerbox/contracts";
 import { useParams } from "@tanstack/react-router";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ItemEvidence } from "../components/ItemEvidence.tsx";
 import { Reading } from "../components/Reading.tsx";
 import { ThreadColumn } from "../components/ThreadColumn.tsx";
@@ -9,6 +9,7 @@ import { Button } from "../components/ui/button.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible.tsx";
 import { Empty } from "../components/ui/empty.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
+import { useMonitors } from "../hooks/useMonitors.ts";
 import { formatAge } from "../lib/format.ts";
 
 const FIRST_QUESTION = "Is this right, and what should I do about it?";
@@ -19,6 +20,13 @@ export function ItemPage() {
   const inbox = useInbox();
   const [evidenceOpen, setEvidenceOpen] = useState(false);
   const item = inbox.data ? inboxItems(inbox.data).find((candidate) => candidate.id === itemId) : undefined;
+  const monitors = useMonitors();
+  const unread = itemId !== undefined && (monitors.status?.unread.includes(itemId) ?? false);
+  const { markRead } = monitors;
+  // Opening an item a monitor looked into reads what it left, so the sidebar's mark goes.
+  useEffect(() => {
+    if (unread && itemId) void markRead(itemId);
+  }, [unread, itemId]);
   if (!item) {
     return inbox.data ? (
       <Empty.Root className="mx-auto">

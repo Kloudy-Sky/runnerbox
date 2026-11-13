@@ -28,6 +28,14 @@ await writeFixtures(stateDir, Date.now());
 const fake = makeFakeProvider({
   available: !values["no-provider"],
   delayMs: 120,
+  monitor: {
+    costUsd: 0.006,
+    steps: [
+      { tool: "machine_samples", input: { days: 7, maxPoints: 200 } },
+      { tool: "launcher_events", input: { days: 7 } },
+      { text: "The machine, not the code. The VM's memory fell to about a tenth while two jobs ran, and the job's container was stopped for it. Raising the VM's memory floor would make a second job wait for room. Ask me here to propose it if you want that." },
+    ],
+  },
   turns: [
     [
       { text: "Checking the samples and launcher events around that attempt." },
