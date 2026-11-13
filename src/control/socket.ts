@@ -97,6 +97,6 @@ async function answer({ reproducer, changes }: ControlHandlers, line: string): P
     // Refusals are meant for the user. Anything else is a fault, and its details stay in up's log.
     if (error instanceof ReproduceRefused || error instanceof ChangeRefused) return { ok: false, error: error.message };
     console.log(`control: ${error instanceof Error ? error.message : error}`);
-    return { ok: false, error: "up couldn't do that. Its log says why." };
+    return { ok: false, error: "Runnerbox on the machine couldn't do that. Its log there says why." };
   }
 }

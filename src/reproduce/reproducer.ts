@@ -170,7 +170,7 @@ export function createReproducer(actions: ReproducerActions) {
     // Removes the running reproduce, and any other this install has, as `up` drains.
     async end() {
       closed = true;
-      if (session) await remove(session, "up stopped");
+      if (session) await remove(session, "Runnerbox stopped on the machine");
       await vm(sweepCommand(install), { timeoutMs: QUICK_MS, maxOutput: 1024 });
     },
   };
