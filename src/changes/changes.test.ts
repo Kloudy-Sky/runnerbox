@@ -17,11 +17,15 @@ async function setup(options: { file?: string; changes?: boolean } = {}) {
   const original = `${JSON.stringify(options.changes === false ? example : { ...example, changes: true }, null, 2)}\n`;
   await writeFile(configPath, original, { mode: 0o600 });
   const clock = { now: Date.parse("2026-11-12T10:00:00Z") };
-  const state = { busy: false, drains: [] as string[] };
+  // `machineReads` counts down to a failed SSH read of the VM, as when the VM drops off mid-change.
+  const state = { busy: false, drains: [] as string[], machineReads: Infinity };
   const changes = createChanges({
     configPath,
     logPath: join(dir, "state", "changes.ndjson"),
-    machine: async () => MACHINE,
+    machine: async () => {
+      if (state.machineReads-- <= 0) throw new Error("ssh: connect to host 192.168.122.10 port 22: Connection timed out");
+      return MACHINE;
+    },
     busy: async () => state.busy,
     drain: (why) => void state.drains.push(why),
     every: () => () => {},
@@ -173,6 +177,36 @@ test("a revert puts the previous values back, and only five old files are kept",
     }
     assert.deepEqual(await config(), JSON.parse(original));
     assert.equal((await readdir(dir)).filter((name) => name.endsWith(".bak")).length, KEEP_BACKUPS);
+  } finally {
+    await done();
+  }
+});
+
+test("a fault while applying an idle change logs it as not applied, and doesn't stop up or drain", async () => {
+  const { changes, state, config, original, log, done } = await setup();
+  try {
+    await changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }], "idle"));
+    state.machineReads = 0;
+    await changes.check();
+    assert.deepEqual(await config(), JSON.parse(original));
+    assert.deepEqual(state.drains, []);
+    const last = (await log()).at(-1);
+    assert.deepEqual([last.outcome, last.reason], ["not_applied", "up couldn't apply it; its log says why"]);
+    assert.equal((await changes.describe().catch(() => null))?.pending ?? null, null);
+  } finally {
+    await done();
+  }
+});
+
+test("a change applied now answers with what happened, as the log does", async () => {
+  const { changes, state, config, original, log, done } = await setup();
+  try {
+    // The check on arrival reads the machine once; the read just before the write fails.
+    state.machineReads = 1;
+    await assert.rejects(changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }])), /Not applied: up couldn't apply it/);
+    assert.deepEqual(await config(), JSON.parse(original));
+    assert.deepEqual(state.drains, []);
+    assert.deepEqual((await log()).map((entry) => entry.outcome), ["accepted", "not_applied"]);
   } finally {
     await done();
   }

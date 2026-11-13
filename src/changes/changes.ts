@@ -46,6 +46,8 @@ export function createChanges(actions: ChangesActions) {
     await mkdir(dirname(actions.logPath), { recursive: true, mode: 0o700 });
     await appendFile(actions.logPath, `${JSON.stringify({ time: iso(now()), ...entry })}\n`, { mode: 0o600 });
   };
+  // For outcomes nobody is waiting on an answer for: a failed write goes to `up`'s log instead.
+  const note = (entry: Record<string, unknown>) => record(entry).catch((cause: unknown) => actions.log(`couldn't log a change: ${cause}`));
 
   // The config on disk, which is what `up` will start with next, and only if it takes proposals.
   async function current() {
@@ -86,35 +88,38 @@ export function createChanges(actions: ChangesActions) {
     for (const old of backups.slice(0, -KEEP_BACKUPS)) await rm(join(dirname(configPath), old), { force: true });
   }
 
-  // Writes the change and drains. A config that changed by hand since the approval stops it.
-  async function commit(request: ApplyRequest) {
+  // Writes the change and drains, or says why it didn't: a config changed by hand since the
+  // approval, or a fault such as an SSH read or a write that failed. It never throws, so a fault
+  // can't take `up` down, and every outcome is logged. Returns why it wasn't applied, or null.
+  async function commit(request: ApplyRequest): Promise<string | null> {
     waiting = null;
+    const { proposalId, hash, approvedBy, changes } = request;
+    const temporary = `${configPath}.${process.pid}.tmp`;
     let planned: Awaited<ReturnType<typeof plan>>;
     try {
       planned = await plan(request);
+      await keepBackup(planned.before);
+      const { mode } = await stat(configPath);
+      await writeFile(temporary, planned.after, { mode: mode & 0o777 });
+      await rename(temporary, configPath);
     } catch (error) {
-      if (!(error instanceof ChangeRefused)) throw error;
-      await record({ outcome: "not_applied", proposalId: request.proposalId, hash: request.hash, approvedBy: request.approvedBy, changes: request.changes, reason: error.message });
-      actions.log(`change ${request.proposalId}: not applied, ${error.message}`);
-      return;
+      const reason = error instanceof ChangeRefused ? error.message : "up couldn't apply it; its log says why";
+      if (!(error instanceof ChangeRefused)) actions.log(`change ${proposalId}: ${error instanceof Error ? error.message : error}`);
+      await rm(temporary, { force: true }).catch(() => {});
+      await note({ outcome: "not_applied", proposalId, hash, approvedBy, changes, reason });
+      actions.log(`change ${proposalId}: not applied, ${reason}`);
+      return reason;
     }
-    await keepBackup(planned.before);
-    const { mode } = await stat(configPath);
-    const temporary = `${configPath}.${process.pid}.tmp`;
-    await writeFile(temporary, planned.after, { mode: mode & 0o777 });
-    await rename(temporary, configPath);
-    await record({
-      outcome: "applied",
-      proposalId: request.proposalId,
-      hash: request.hash,
-      approvedBy: request.approvedBy,
-      when: request.when,
-      changes: request.changes,
-      configSha256Before: sha256(planned.before),
-      configSha256After: sha256(planned.after),
-    });
-    actions.log(`change ${request.proposalId}: written, restarting once busy jobs finish`);
-    actions.drain(`applying change ${request.proposalId}`);
+    // The file on disk has changed, so `up` drains even if the log line can't be written.
+    try {
+      await record({ outcome: "applied", proposalId, hash, approvedBy, when: request.when, changes, configSha256Before: sha256(planned.before), configSha256After: sha256(planned.after) });
+    } catch (cause) {
+      actions.log(`change ${proposalId}: written, but couldn't log it: ${cause}`);
+    } finally {
+      actions.log(`change ${proposalId}: written, restarting once busy jobs finish`);
+      actions.drain(`applying change ${proposalId}`);
+    }
+    return null;
   }
 
   async function describe(): Promise<Described> {
@@ -127,18 +132,24 @@ export function createChanges(actions: ChangesActions) {
     if (waiting) throw new ChangeRefused("Another change is already waiting to apply.");
     await plan(request);
     await record({ outcome: "accepted", proposalId: request.proposalId, hash: request.hash, approvedBy: request.approvedBy, when: request.when, changes: request.changes });
-    if (request.when === "now") await commit(request);
-    else waiting = { ...request, since: now() };
-    return { accepted: true, when: request.when };
+    if (request.when === "idle") {
+      waiting = { ...request, since: now() };
+      return { accepted: true, when: "idle" };
+    }
+    // Applied now, so the answer says what happened, as the log does.
+    const notApplied = await commit(request);
+    if (notApplied !== null) throw new ChangeRefused(`Not applied: ${notApplied}`);
+    return { accepted: true, when: "now" };
   }
 
   // Applies a waiting change at the first moment no job is running, or drops it after 6 hours.
+  // It never throws: `every` runs it unwatched, and a fault here must not stop `up`.
   async function check() {
     const change = waiting;
     if (!change) return;
     if (now() - change.since > IDLE_LIMIT_MS) {
       waiting = null;
-      await record({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "no moment without a running job came in 6 hours" });
+      await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "no moment without a running job came in 6 hours" });
       return;
     }
     if (!(await actions.busy().catch(() => true))) await commit(change);
@@ -157,7 +168,7 @@ export function createChanges(actions: ChangesActions) {
       stopChecking?.();
       const change = waiting;
       waiting = null;
-      if (change) await record({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "up stopped before it could apply" });
+      if (change) await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "up stopped before it could apply" });
     },
   };
 }
