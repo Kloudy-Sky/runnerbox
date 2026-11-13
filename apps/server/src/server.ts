@@ -34,11 +34,15 @@ export type ServeOptions = { readonly host: string; readonly port: number; reado
 // Which agent provider threads use. Tests swap in a scripted one.
 type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
 
+type ServicesInput = { stateDir: string; host: string; port: number; label?: string | undefined; provider?: Provider | undefined };
+
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
 // see the same instances.
-export const layerServices = (input: { stateDir: string; host: string; port: number; label?: string | undefined; provider?: Provider | undefined }) =>
-  Monitors.layer.pipe(
-    Layer.provideMerge(Threads.layer),
+export const layerServices = (input: ServicesInput) => Monitors.layer.pipe(Layer.provideMerge(layerCore(input)));
+
+// Everything but the monitor, which sits on top so a test can run it on a fake clock.
+export const layerCore = (input: ServicesInput) =>
+  Threads.layer.pipe(
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
     Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer).pipe(Layer.provideMerge(UpSocket.layer))),
