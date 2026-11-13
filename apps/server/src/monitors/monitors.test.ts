@@ -23,14 +23,25 @@ const session = async (server: Server, scopes: ReadonlyArray<AuthScope> = ALL_SC
 const withClient = <A, E>(server: Server, token: string, use: (client: Client) => Effect.Effect<A, E>) =>
   Effect.runPromise(Effect.scoped(Effect.flatMap(openSession(server.baseUrl, token), ({ client }) => use(client))));
 
-// As though these items had just appeared: the monitor forgets it saw them. `day` rewrites today's counts.
-async function arrive(server: Server, ids: ReadonlyArray<string>, day?: { date: string; looks: number }) {
+const editState = async (server: Server, edit: (state: { seen: Record<string, string>; day: object }) => void) => {
   const path = join(server.stateDir, ".server", "monitor.json");
   const state = JSON.parse(await readFile(path, "utf8"));
-  for (const id of ids) delete state.seen[id];
-  if (day) state.day = { ...state.day, ...day };
+  edit(state);
   await writeFile(path, JSON.stringify(state));
-}
+};
+
+// As though these items had just appeared: the monitor forgets it saw them. `day` rewrites today's counts.
+const arrive = (server: Server, ids: ReadonlyArray<string>, day?: { date: string; looks: number }) =>
+  editState(server, (state) => {
+    for (const id of ids) delete state.seen[id];
+    if (day) state.day = { ...state.day, ...day };
+  });
+
+// As though `days` had passed since every item was last seen.
+const age = (server: Server, days: number) =>
+  editState(server, (state) => {
+    for (const [id, at] of Object.entries(state.seen)) state.seen[id] = new Date(Date.parse(at) - days * 24 * 60 * 60_000).toISOString();
+  });
 
 const threadItems = async (server: Server) => {
   const dir = join(server.stateDir, ".server", "threads");
@@ -93,6 +104,38 @@ test("at the limit, new items are skipped, not queued, and the next day starts f
     await server.checkMonitors();
     const next = await withClient(server, token, (client) => client["monitors.status"]());
     assert.deepEqual([fake.inputs.length, next.today.looks, next.today.skipped], [2, 1, 0]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("an item that stays in the inbox past 14 days isn't new again", async () => {
+  const fake = makeFakeProvider({ turns: [[{ text: "Looked." }]] });
+  const server = await startTestServer({ provider: fake });
+  try {
+    const token = await session(server);
+    await withClient(server, token, (client) => client["monitors.save"](ON));
+    await age(server, 13);
+    await server.checkMonitors();
+    await age(server, 2);
+    await server.checkMonitors();
+    assert.equal(fake.inputs.length, 0);
+  } finally {
+    await server.close();
+  }
+});
+
+test("a look that can't start is shown with why, and isn't counted", async () => {
+  const fake = makeFakeProvider({ turns: [[{ text: "Looked." }]] });
+  const server = await startTestServer({ provider: fake });
+  try {
+    const token = await session(server);
+    await withClient(server, token, (client) => client["monitors.save"]({ ...ON, accountId: "removed" }));
+    await arrive(server, [ITEM]);
+    await server.checkMonitors();
+    const status = await withClient(server, token, (client) => client["monitors.status"]());
+    assert.deepEqual([fake.inputs.length, status.today.looks, status.runs[0]?.outcome, status.unread], [0, 0, "failed", []]);
+    assert.match(status.runs[0]?.why ?? "", /doesn't exist any more/);
   } finally {
     await server.close();
   }

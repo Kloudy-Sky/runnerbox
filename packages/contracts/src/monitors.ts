@@ -25,6 +25,8 @@ export const MonitorRun = Schema.Struct({
   startedAt: Schema.String,
   outcome: Schema.Literals(["running", "completed", "failed", "interrupted"]),
   costUsd: Schema.NullOr(Schema.Number),
+  // Why a look couldn't start, such as the account picked for it having been removed.
+  why: Schema.optionalKey(Schema.String),
 });
 export type MonitorRun = typeof MonitorRun.Type;
 

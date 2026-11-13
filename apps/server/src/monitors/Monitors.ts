@@ -7,6 +7,7 @@ import {
   MonitorRun,
   MonitorSettings,
   type MonitorStatus,
+  type ThreadError,
   type ThreadSubject,
 } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
@@ -138,13 +139,25 @@ const make = Effect.gen(function* () {
 
   const markRead = (itemId: string) => update((state) => [{ ...state, unread: state.unread.filter((id) => id !== itemId) }, undefined]);
 
-  // One look: the item's latest thread, or a new one, and a monitor turn in it, followed to its end.
+  // One look: the item's latest thread, or a new one, and a monitor turn in it.
   const look = Effect.fn("Monitors.look")(function* (item: InboxItem, settings: MonitorSettings) {
     const subject: ThreadSubject = { _tag: "inbox", itemId: item.id };
     const thread = (yield* threads.list(subject))[0] ?? (yield* threads.create(subject, 14));
     const { turnId } = yield* threads.startTurn(thread.id, QUESTION, { accountId: settings.accountId ?? undefined, scopes: [], monitor: { model: settings.model ?? DEFAULT_MONITOR_MODEL } });
     return { threadId: thread.id, turnId };
   });
+
+  // Why a look couldn't start, in the words Settings shows beside it.
+  const refusal = (error: ThreadError) => {
+    switch (error.reason) {
+      case "account_not_found":
+        return "the account picked here doesn't exist any more";
+      case "provider_unavailable":
+        return "no agent could run on this machine";
+      default:
+        return error.message;
+    }
+  };
 
   const ended = (threadId: string, turnId: string) =>
     threads.subscribe(threadId).pipe(
@@ -154,13 +167,14 @@ const make = Effect.gen(function* () {
       Effect.map((found) => (Option.isSome(found) && found.value._tag === "TurnEnded" ? found.value : null)),
     );
 
-  const record = (run: typeof MonitorRun.Type, costUsd: number) =>
+  const record = (run: MonitorRun, costUsd: number) =>
     update((state) => [
       {
         ...state,
         runs: [run, ...state.runs.filter((each) => !(each.threadId === run.threadId && each.startedAt === run.startedAt))].slice(0, MAX_RUNS_KEPT),
         day: { ...state.day, costUsd: state.day.costUsd + costUsd },
-        unread: run.outcome === "running" || state.unread.includes(run.itemId) ? state.unread : [...state.unread, run.itemId],
+        // A look that never started left nothing in the thread to read.
+        unread: run.outcome === "running" || run.why !== undefined || state.unread.includes(run.itemId) ? state.unread : [...state.unread, run.itemId],
       },
       undefined,
     ]);
@@ -173,7 +187,8 @@ const make = Effect.gen(function* () {
       const arrived = yield* update((state) => {
         const kept = Object.fromEntries(Object.entries(state.seen).filter(([, at]) => now - Date.parse(at) < SEEN_FOR_MS));
         const added = items.filter((item) => !(item.id in kept));
-        return [{ ...state, seen: { ...kept, ...Object.fromEntries(added.map((item) => [item.id, new Date(now).toISOString()])) } }, added] as const;
+        // Every item still there is seen again now, so 14 days count from when it was last there.
+        return [{ ...state, seen: { ...kept, ...Object.fromEntries(items.map((item) => [item.id, new Date(now).toISOString()])) } }, added] as const;
       });
       for (const item of arrived) {
         const { settings, day } = yield* read;
@@ -183,17 +198,32 @@ const make = Effect.gen(function* () {
           yield* update((state) => [{ ...state, day: { ...state.day, skipped: state.day.skipped + 1 } }, undefined]);
           continue;
         }
-        // A thread already running a turn, or an account that can't run, isn't a look and isn't counted.
-        const started = yield* look(item, settings).pipe(Effect.option);
-        if (Option.isNone(started)) continue;
-        const { threadId, turnId } = started.value;
         const startedAt = new Date(yield* Clock.currentTimeMillis).toISOString();
-        const run = { itemId: item.id, title: item.title, threadId, startedAt, outcome: "running" as const, costUsd: null };
-        yield* update((state) => [{ ...state, day: { ...state.day, looks: state.day.looks + 1 } }, undefined]);
-        yield* record(run, 0);
+        const started = yield* look(item, settings).pipe(
+          Effect.map((ids) => ({ _tag: "Started", ...ids }) as const),
+          Effect.catchTag("ThreadError", (error) => Effect.succeed({ _tag: "Refused", error } as const)),
+        );
+        if (started._tag === "Refused") {
+          // The owner already has a turn running in that thread; it isn't a look and isn't counted.
+          if (started.error.reason === "turn_running") continue;
+          // Anything else is shown, so a removed account or a signed-out agent doesn't look like a quiet inbox.
+          const why = refusal(started.error);
+          yield* Effect.logWarning(`monitor: couldn't look into ${item.id}: ${why}`);
+          yield* record({ itemId: item.id, title: item.title, threadId: "", startedAt, outcome: "failed", costUsd: null, why }, 0);
+          continue;
+        }
+        const { threadId, turnId } = started;
+        // Set before anything else, so turning monitors off from here on stops this turn.
         active = threadId;
-        const end = yield* ended(threadId, turnId).pipe(Effect.ensuring(Effect.sync(() => (active = null))));
-        yield* record({ ...run, outcome: end?.outcome ?? "interrupted", costUsd: end?.costUsd ?? null }, end?.costUsd ?? 0);
+        const run: MonitorRun = { itemId: item.id, title: item.title, threadId, startedAt, outcome: "running", costUsd: null };
+        yield* Effect.gen(function* () {
+          // Turned off while the turn was starting, before `active` was set.
+          if (!(yield* read).settings.enabled) yield* threads.interrupt(threadId).pipe(Effect.ignore);
+          yield* update((state) => [{ ...state, day: { ...state.day, looks: state.day.looks + 1 } }, undefined]);
+          yield* record(run, 0);
+          const end = yield* ended(threadId, turnId);
+          yield* record({ ...run, outcome: end?.outcome ?? "interrupted", costUsd: end?.costUsd ?? null }, end?.costUsd ?? 0);
+        }).pipe(Effect.ensuring(Effect.sync(() => (active = null))));
       }
     }).pipe(Effect.catch((error) => Effect.logWarning(`monitor: ${error.message}`))),
   );

@@ -96,7 +96,7 @@ export function MonitorsSettings() {
                   {run.title}
                 </Link>
               }
-              description={`${formatAge(run.startedAt)} ago, ${OUTCOME[run.outcome]}${run.costUsd === null ? "" : `, ${cost(run.costUsd)}`}`}
+              description={`${formatAge(run.startedAt)} ago, ${run.why === undefined ? OUTCOME[run.outcome] : `couldn't start: ${run.why}`}${run.costUsd === null ? "" : `, ${cost(run.costUsd)}`}`}
             />
           ))}
         </SettingsPanel.Group>
