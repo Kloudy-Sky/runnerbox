@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { Attachment } from "./attachments.ts";
 import { Days, RepoName } from "./history.ts";
 
 // What a thread is about: one inbox item, or one job attempt from the run list.
@@ -23,6 +24,7 @@ const seq = Schema.Int;
 // `accountId` is the account the turn ran as; older lines don't have it.
 // `source` is "monitor" when a monitor asked, not the owner; older lines don't have it.
 // `model` is the model the turn picked in the composer, when it picked one.
+// `attachments` are the files sent with it; the bytes are in the thread's attachments directory.
 export const UserMessage = Schema.TaggedStruct("UserMessage", {
   seq,
   turnId: Schema.String,
@@ -30,6 +32,7 @@ export const UserMessage = Schema.TaggedStruct("UserMessage", {
   at,
   accountId: Schema.optionalKey(Schema.String),
   model: Schema.optionalKey(Schema.String),
+  attachments: Schema.optionalKey(Schema.Array(Attachment)),
   source: Schema.optionalKey(Schema.Literal("monitor")),
 });
 export const AgentText = Schema.TaggedStruct("AgentText", { seq, turnId: Schema.String, text: Schema.String, at });
@@ -98,7 +101,9 @@ export const ThreadSnapshot = Schema.TaggedStruct("Snapshot", {
   partial: Schema.NullOr(Schema.Struct({ turnId: Schema.String, text: Schema.String })),
 });
 export const AgentTextDelta = Schema.TaggedStruct("AgentTextDelta", { turnId: Schema.String, text: Schema.String });
-export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded, ChangeProposed]);
+// The thread was deleted; its stream ends after this.
+export const ThreadDeleted = Schema.TaggedStruct("ThreadDeleted", {});
+export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, ThreadDeleted, UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded, ChangeProposed]);
 export type ThreadEvent = typeof ThreadEvent.Type;
 
 // Whether the environment can run agent turns. The reason never carries account details.
@@ -116,7 +121,7 @@ export const CreateThread = Schema.Struct({
 });
 
 export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError", {
-  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered"]),
+  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -132,6 +137,8 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
         return "Couldn't read or write the thread's log on the server.";
       case "account_not_found":
         return "That account doesn't exist any more. Pick another in the composer.";
+      case "reproduce_running":
+        return "Stop this thread's reproduce first.";
       case "model_not_offered":
         return "That model isn't offered for this account's harness. Pick another in the composer.";
     }

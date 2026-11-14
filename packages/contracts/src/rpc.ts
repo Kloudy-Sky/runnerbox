@@ -6,6 +6,7 @@ import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, Pairi
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
+import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, ChunkReceived, StageAttachment } from "./attachments.ts";
 import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
@@ -32,6 +33,8 @@ export class AccessError extends Schema.TaggedError<AccessError>()("AccessError"
 
 const ReadError = Schema.Union([AuthorizationError, StateReadError]);
 const ThreadFailure = Schema.Union([AuthorizationError, ThreadError]);
+const TurnFailure = Schema.Union([AuthorizationError, ThreadError, AttachmentError]);
+const AttachmentFailure = Schema.Union([AuthorizationError, AttachmentError]);
 const ReproduceFailure = Schema.Union([AuthorizationError, ThreadError, ReproduceError]);
 const ProposalFailure = Schema.Union([AuthorizationError, ProposalError]);
 const ProposalId = { id: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)) };
@@ -60,6 +63,11 @@ export const RPC_METHODS = {
   threadsCreate: "threads.create",
   threadsStartTurn: "threads.startTurn",
   threadsInterrupt: "threads.interrupt",
+  threadsDelete: "threads.delete",
+  threadsStageAttachment: "threads.stageAttachment",
+  threadsAttachmentChunk: "threads.attachmentChunk",
+  threadsDiscardAttachment: "threads.discardAttachment",
+  threadsAttachment: "threads.attachment",
   threadsSubscribe: "threads.subscribe",
   threadsCheckReproduce: "threads.checkReproduce",
   threadsStartReproduce: "threads.startReproduce",
@@ -144,11 +152,28 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.threadsCreate, { payload: CreateThread, success: ThreadSummary, error: ThreadFailure }),
   // Returns once the question is logged; the answer arrives on the thread's stream.
   // Without `accountId`, the turn runs as the default account. Without `model`, on the account's.
+  // `attachments` are files this session staged; the turn claims them into the thread.
   Rpc.make(RPC_METHODS.threadsStartTurn, {
-    payload: { ...ThreadId, text: MessageText, accountId: Schema.optionalKey(AccountId), model: Schema.optionalKey(ModelName) },
+    payload: {
+      ...ThreadId,
+      text: MessageText,
+      accountId: Schema.optionalKey(AccountId),
+      model: Schema.optionalKey(ModelName),
+      attachments: Schema.optionalKey(Schema.Array(AttachmentId).check(Schema.isMaxLength(ATTACHMENT_LIMITS.perMessage))),
+    },
     success: Schema.Struct({ turnId: Schema.String }),
-    error: ThreadFailure,
+    error: TurnFailure,
   }),
+  // Removes the thread's log and attachments. Refused while a turn or a reproduce runs. Proposals
+  // it made stay, naming it as history.
+  Rpc.make(RPC_METHODS.threadsDelete, { payload: ThreadId, error: ThreadFailure }),
+  // A file is staged in chunks of at most `ATTACHMENT_LIMITS.chunkBytes`, one call each, so a big
+  // file never holds up the socket's other calls. The server reads its type from the bytes.
+  Rpc.make(RPC_METHODS.threadsStageAttachment, { payload: StageAttachment, success: Schema.Struct({ id: Schema.String }), error: AttachmentFailure }),
+  Rpc.make(RPC_METHODS.threadsAttachmentChunk, { payload: AttachmentChunk, success: ChunkReceived, error: AttachmentFailure }),
+  Rpc.make(RPC_METHODS.threadsDiscardAttachment, { payload: { id: AttachmentId }, error: AttachmentFailure }),
+  // A sent file's bytes, as base64 chunks, for showing it in the thread.
+  Rpc.make(RPC_METHODS.threadsAttachment, { payload: { threadId: Schema.String, id: AttachmentId }, success: Schema.String, error: AttachmentFailure, stream: true }),
   Rpc.make(RPC_METHODS.threadsInterrupt, { payload: ThreadId, error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsSubscribe, { payload: ThreadId, success: ThreadEvent, error: ThreadFailure, stream: true }),
   Rpc.make(RPC_METHODS.threadsCheckReproduce, { payload: ThreadId, success: ReproduceCheck, error: ReproduceFailure }),
@@ -207,6 +232,12 @@ export const RPC_SCOPES = {
   [RPC_METHODS.threadsCreate]: THREADS,
   [RPC_METHODS.threadsStartTurn]: THREADS,
   [RPC_METHODS.threadsInterrupt]: THREADS,
+  [RPC_METHODS.threadsDelete]: THREADS,
+  // Storing files on the machine is part of running threads, which Connect and MCP never reach.
+  [RPC_METHODS.threadsStageAttachment]: THREADS,
+  [RPC_METHODS.threadsAttachmentChunk]: THREADS,
+  [RPC_METHODS.threadsDiscardAttachment]: THREADS,
+  [RPC_METHODS.threadsAttachment]: THREADS,
   [RPC_METHODS.threadsSubscribe]: THREADS,
   [RPC_METHODS.threadsCheckReproduce]: REPRODUCE,
   [RPC_METHODS.threadsStartReproduce]: REPRODUCE,

@@ -1,5 +1,6 @@
 import { MAX_COMMAND_SECONDS } from "runnerbox/src/reproduce/protocol.ts";
 import { RunnerboxToolkit } from "../../mcp/tools.ts";
+import type { TurnImage } from "./ProviderAdapter.ts";
 
 // How a thread's turn runs the environment's own `claude`: headless, streaming JSON in and out,
 // with runnerbox's `/mcp` endpoint as its only tools. Every flag that bounds what the agent can
@@ -109,6 +110,12 @@ export const mcpConfig = (url: string, token: string) =>
   JSON.stringify({ mcpServers: { [SERVER_NAME]: { type: "http", url, headers: { Authorization: `Bearer ${token}` } } } });
 
 // One user message on stdin, in the shape `--input-format=stream-json` reads. The prompt stays
-// off the command line, since it holds job and branch names.
-export const promptLine = (prompt: string) =>
-  `${JSON.stringify({ type: "user", message: { role: "user", content: prompt }, parent_tool_use_id: null, session_id: "" })}\n`;
+// off the command line, since it holds job and branch names, and images go as base64 blocks in the
+// same message, never as a path the agent could open.
+export const promptLine = (prompt: string, images: ReadonlyArray<TurnImage> = []) => {
+  const content =
+    images.length === 0
+      ? prompt
+      : [...images.map((image) => ({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.base64 } })), { type: "text", text: prompt }];
+  return `${JSON.stringify({ type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: "" })}\n`;
+};

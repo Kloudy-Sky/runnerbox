@@ -117,7 +117,7 @@ const make = Effect.gen(function* () {
           stderr = (stderr + chunk.toString()).slice(-STDERR_KEPT);
         });
         child.stdin?.on("error", () => {});
-        child.stdin?.end(promptLine(input.prompt));
+        child.stdin?.end(promptLine(input.prompt, input.images));
 
         let finished = false;
         const lines = Stream.fromAsyncIterable(createInterface({ input: child.stdout! }), () => failed("Couldn't read Claude Code's output."));

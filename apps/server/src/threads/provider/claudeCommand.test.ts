@@ -103,4 +103,9 @@ test("the turn's MCP config names one HTTP server, and the prompt goes on stdin"
   });
   assert.ok(!args.some((arg) => arg.includes("rbx_")), "the token stays off the command line");
   assert.deepEqual(JSON.parse(promptLine("Why?")).message, { role: "user", content: "Why?" });
+  // An attached image rides in the same stdin message as a base64 block, never as a path.
+  assert.deepEqual(JSON.parse(promptLine("What's this?", [{ mimeType: "image/png", base64: "iVBORw0KGgo=" }])).message.content, [
+    { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } },
+    { type: "text", text: "What's this?" },
+  ]);
 });

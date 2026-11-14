@@ -58,5 +58,7 @@ export const make = (fs: FileSystem.FileSystem, serverDir: string) => {
     Effect.catchTag("PlatformError", (error) => (error.reason._tag === "NotFound" ? Effect.succeed([]) : Effect.fail(unreadable()))),
   );
 
-  return { create, append, read, ids };
+  const remove = (id: string) => (ID.test(id) ? fs.remove(pathOf(id), { force: true }).pipe(Effect.mapError(unreadable)) : Effect.fail(new ThreadError({ reason: "thread_not_found" })));
+
+  return { create, append, read, ids, remove };
 };

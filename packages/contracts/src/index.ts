@@ -9,3 +9,4 @@ export * from "./threads.ts";
 export * from "./accounts.ts";
 export * from "./proposals.ts";
 export * from "./monitors.ts";
+export * from "./attachments.ts";

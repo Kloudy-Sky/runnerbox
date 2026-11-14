@@ -12,6 +12,7 @@ import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
 import * as Threads from "../threads/Threads.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
+import * as Attachments from "../attachments/Attachments.ts";
 import * as EnvironmentIdentity from "../environment/EnvironmentIdentity.ts";
 
 const toWire = Effect.mapError((error: LogReadError) => new StateReadError({ what: error.what }));
@@ -34,6 +35,7 @@ export const layer = (session: Session) =>
       // Who approved, as `up` logs it: the session, never its token.
       const approver = { id: session.id, label: session.label };
       const accounts = yield* AccountStore.AccountStore;
+      const attachments = yield* Attachments.Attachments;
       const identity = yield* EnvironmentIdentity.EnvironmentIdentity;
       return {
         "history.repos": () => history.repos.pipe(toWire),
@@ -57,7 +59,13 @@ export const layer = (session: Session) =>
         "threads.read": ({ id }) => threads.read(id),
         "threads.create": ({ subject, days }) => threads.create(subject, days),
         "threads.harnesses": () => threads.harnesses,
-        "threads.startTurn": ({ id, text, accountId, model }) => threads.startTurn(id, text, { accountId, model, scopes: session.scopes }),
+        "threads.startTurn": ({ id, text, accountId, model, attachments: ids }) =>
+          threads.startTurn(id, text, { accountId, model, attachments: ids ? { sessionId: session.id, ids } : undefined, scopes: session.scopes }),
+        "threads.delete": ({ id }) => threads.remove(id),
+        "threads.stageAttachment": (file) => attachments.stage(session.id, file),
+        "threads.attachmentChunk": (chunk) => attachments.chunk(session.id, chunk),
+        "threads.discardAttachment": ({ id }) => attachments.discard(session.id, id),
+        "threads.attachment": ({ threadId, id }) => attachments.stream(threadId, id),
         "threads.interrupt": ({ id }) => threads.interrupt(id),
         "threads.subscribe": ({ id }) => threads.subscribe(id),
         "threads.checkReproduce": ({ id }) => threads.checkReproduce(id),
