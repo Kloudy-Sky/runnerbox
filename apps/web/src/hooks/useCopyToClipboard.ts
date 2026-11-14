@@ -1,7 +1,7 @@
+// A stand-in of runnerbox's, not T3 Code's file: what the copied toast uses to copy an error's text,
+// in the same shape as theirs, without the rich clipboard formats their composer needs.
 import { useEffect, useRef, useState } from "react";
 
-// What T3 Code's copied toast uses to copy an error's text, with the same shape as theirs. Theirs
-// also carries rich clipboard formats for their composer, which runnerbox doesn't have.
 export function useCopyToClipboard<TContext = void>({ timeout = 2000 }: { timeout?: number; target?: string } = {}) {
   const [isCopied, setIsCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -28,14 +28,51 @@ SOFTWARE.
 
 ## T3 Code's theme and primitives, copied
 
-Copied unedited from T3 Code at commit `4c8cb0445da6c84fa799edee057af355d1e992aa` (`main`, 2026-11-14). A later sync starts from that commit: diff upstream's `apps/web` from there and apply it to these files.
+Copied unedited from T3 Code at commit `4c8cb0445da6c84fa799edee057af355d1e992aa` (`main`, 2026-11-14). A later sync starts from that commit: diff upstream's `apps/web/src` from there and apply it to the files below.
 
-- `apps/web/src/index.css` as `apps/web/src/theme/t3code.css`
-- `apps/web/src/components/ui/`: `button`, `collapsible`, `command`, `dialog`, `empty`, `input`, `kbd`, `menu`, `scroll-area`, `select`, `sidebar`, `switch`, `textarea`, `toast`, `tooltip`, and what they import: `autocomplete`, `closing-positioner`, `dialog-styles`, `sheet`, `sidebarState`, `spinner`, `toast.logic`, `toastHelpers`
-- `apps/web/src/hooks/`: `useLocalStorage`, `useMediaQuery`, `useResizeDrag`, `useStableCallback`
-- `apps/web/src/lib/`: `accessibilityAnnouncements`, `visibleAnimation`, `windowControlsOverlay`
+Upstream path under `apps/web/src`, and where it is here (the same path unless noted):
 
-Runnerbox's differences from them live in its own files, never in the copies: `apps/web/src/theme/runnerbox.css` overrides the theme, and these stand in for T3 Code modules the copies import: `apps/web/src/lib/utils.ts`, `apps/web/src/env.ts`, `apps/web/src/composerDraftStore.ts`, `apps/web/src/hooks/useSettings.ts`, `apps/web/src/hooks/useCopyToClipboard.ts`, `apps/web/src/hooks/useThreadRouteTarget.ts` and `apps/web/src/lib/t3codeContracts.ts`.
+- `components/ui/autocomplete.tsx`
+- `components/ui/button.tsx`
+- `components/ui/closing-positioner.tsx`
+- `components/ui/collapsible.tsx`
+- `components/ui/command.tsx`
+- `components/ui/dialog-styles.ts`
+- `components/ui/dialog.tsx`
+- `components/ui/empty.tsx`
+- `components/ui/input.tsx`
+- `components/ui/kbd.tsx`
+- `components/ui/menu.tsx`
+- `components/ui/scroll-area.tsx`
+- `components/ui/select.tsx`
+- `components/ui/sheet.tsx`
+- `components/ui/sidebar.tsx`
+- `components/ui/sidebarState.ts`
+- `components/ui/spinner.tsx`
+- `components/ui/switch.tsx`
+- `components/ui/textarea.tsx`
+- `components/ui/toast.logic.ts`
+- `components/ui/toast.tsx`
+- `components/ui/toastHelpers.ts`
+- `components/ui/tooltip.tsx`
+- `hooks/useLocalStorage.ts`
+- `hooks/useMediaQuery.ts`
+- `hooks/useResizeDrag.ts`
+- `hooks/useStableCallback.ts`
+- `index.css` as `theme/t3code.css`
+- `lib/accessibilityAnnouncements.ts`
+- `lib/visibleAnimation.ts`
+- `lib/windowControlsOverlay.ts`
+
+Runnerbox's differences live in its own files, never in the copies. `apps/web/src/theme/runnerbox.css` overrides the theme. These stand in for T3 Code modules the copies import, with only what the copies use, each marked at its top as runnerbox's:
+
+- `apps/web/src/composerDraftStore.ts`
+- `apps/web/src/env.ts`
+- `apps/web/src/hooks/useCopyToClipboard.ts`
+- `apps/web/src/hooks/useSettings.ts`
+- `apps/web/src/hooks/useThreadRouteTarget.ts`
+- `apps/web/src/lib/t3codeContracts.ts` (mapped to `@t3tools/contracts`)
+- `apps/web/src/lib/utils.ts`
 
 ## Inter
 
