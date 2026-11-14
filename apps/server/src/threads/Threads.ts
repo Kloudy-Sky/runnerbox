@@ -138,6 +138,8 @@ const make = Effect.gen(function* () {
   const lock = yield* Semaphore.make(1);
   const events = yield* PubSub.unbounded<{ readonly threadId: string; readonly event: ThreadEvent }>();
   const running = new Map<string, Running>();
+  // Threads whose reproduce `up` is still starting, which can take seconds outside the lock.
+  const reproduceStarting = new Set<string>();
 
   const publish = (threadId: string, event: ThreadEvent) => PubSub.publish(events, { threadId, event }).pipe(Effect.asVoid);
   const appendUnlocked = (threadId: string, item: ThreadItem) => log.append(threadId, item).pipe(Effect.andThen(publish(threadId, item)));
@@ -274,8 +276,10 @@ const make = Effect.gen(function* () {
         if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
         const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
-        const attached = attaching === undefined ? [] : yield* attachments.claim(attaching.sessionId, id, attaching.ids);
-        const contents = yield* Effect.forEach(attached, (each) => attachments.bytes(id, each.id).pipe(Effect.map((bytes) => ({ ...each, bytes }))));
+        const taken = attaching === undefined ? [] : yield* attachments.take(attaching.sessionId, attaching.ids);
+        const attached = taken.map((each) => each.attachment);
+        const contents = taken.map((each) => ({ ...each.attachment, bytes: each.bytes }));
+        const ids = attached.map((each) => each.id);
         // The account's ID only: its key never goes in a thread's log.
         yield* appendUnlocked(id, {
           _tag: "UserMessage",
@@ -287,7 +291,10 @@ const make = Effect.gen(function* () {
           ...(model !== undefined && !monitor ? { model } : {}),
           ...(attached.length > 0 ? { attachments: attached } : {}),
           ...(monitor ? { source: "monitor" as const } : {}),
-        });
+        }).pipe(Effect.onError(() => attachments.release(ids)));
+        // Logged, so the files are the thread's now. If moving one fails it stays staged until it
+        // expires, and the thread shows it as missing; the turn already has its bytes.
+        yield* attachments.keep(id, ids).pipe(Effect.ignore);
         turn.nextSeq += 1;
         running.set(id, turn);
         const images = contents.filter((each) => each.kind === "image");
@@ -338,7 +345,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         yield* log.read(id);
         if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
-        if (reproduces.running(id)) return yield* new ThreadError({ reason: "reproduce_running" });
+        if (reproduces.running(id) || reproduceStarting.has(id)) return yield* new ThreadError({ reason: "reproduce_running" });
         yield* attachments.removeThread(id).pipe(Effect.mapError(() => new ThreadError({ reason: "log_unreadable" })));
         yield* log.remove(id);
         yield* publish(id, { _tag: "ThreadDeleted" });
@@ -386,10 +393,19 @@ const make = Effect.gen(function* () {
   });
 
   const startReproduce = Effect.fn("Threads.startReproduce")(function* (id: string, network: ReproduceNetwork) {
-    const { packet, subject } = yield* header(id);
-    if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
-    const started = yield* reproduces.start(id, packet, jobIdOf(subject), network);
-    yield* appendNow(id, (seq, at) => ({ _tag: "ReproduceStarted", seq, ...started, network, at }));
+    // Marked under the lock, so a delete can't land while `up` starts the container.
+    const { packet, subject } = yield* lock.withPermits(1)(
+      Effect.gen(function* () {
+        const found = yield* header(id);
+        if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
+        reproduceStarting.add(id);
+        return found;
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const started = yield* reproduces.start(id, packet, jobIdOf(subject), network);
+      yield* appendNow(id, (seq, at) => ({ _tag: "ReproduceStarted", seq, ...started, network, at }));
+    }).pipe(Effect.ensuring(Effect.sync(() => reproduceStarting.delete(id))));
   });
 
   const stopReproduce = Effect.fn("Threads.stopReproduce")(function* (id: string) {

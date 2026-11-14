@@ -178,3 +178,10 @@ test("deleting a thread removes its log and files and ends its streams, but not 
     assert.equal(gone._tag === "ThreadError" && gone.reason, "thread_not_found");
     await assert.rejects(stat(join(server.stateDir, ".server", "attachments", thread.id)));
   }));
+
+test("a text file over the text limit is refused as too big, not as the wrong type", () =>
+  withServer([[{ text: "unused" }]], async (server) => {
+    const { token } = await session(server);
+    const refused = await withClient(server, token, (client) => Effect.flip(upload(client, "build.log", new TextEncoder().encode("x".repeat(ATTACHMENT_LIMITS.textBytes + 1)))));
+    assert.equal(refused._tag === "AttachmentError" && refused.reason, "too_large");
+  }));

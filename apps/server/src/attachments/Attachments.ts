@@ -39,8 +39,13 @@ export class Attachments extends Context.Service<
     readonly stage: (sessionId: string, file: { readonly name: string; readonly size: number }) => Effect.Effect<{ readonly id: string }, AttachmentError>;
     readonly chunk: (sessionId: string, chunk: { readonly id: string; readonly offset: number; readonly data: string }) => Effect.Effect<{ readonly received: number; readonly attachment: Attachment | null }, AttachmentError>;
     readonly discard: (sessionId: string, id: string) => Effect.Effect<void, AttachmentError>;
-    // Moves finished staged files into the thread, all or none. Only the session that staged them may.
-    readonly claim: (sessionId: string, threadId: string, ids: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<Attachment>, AttachmentError>;
+    // Sending is two steps, so a failure in between leaves the files staged and sendable again.
+    // `take` checks finished files this session staged, reads them and holds them for this send;
+    // once the question is logged, `keep` moves them into the thread. `release` lets them go if the
+    // send failed first.
+    readonly take: (sessionId: string, ids: ReadonlyArray<string>) => Effect.Effect<ReadonlyArray<{ readonly attachment: Attachment; readonly bytes: Uint8Array }>, AttachmentError>;
+    readonly keep: (threadId: string, ids: ReadonlyArray<string>) => Effect.Effect<void, AttachmentError>;
+    readonly release: (ids: ReadonlyArray<string>) => Effect.Effect<void>;
     readonly bytes: (threadId: string, id: string) => Effect.Effect<Uint8Array, AttachmentError>;
     // A sent file as base64 chunks, each its own message, so other calls on the socket go between.
     readonly stream: (threadId: string, id: string) => Stream.Stream<string, AttachmentError>;
@@ -121,9 +126,9 @@ const make = Effect.gen(function* () {
         const received = have + bytes.length;
         if (received < staged.size) return { received, attachment: null };
         const found = sniff(yield* fs.readFile(path));
-        if (found === null) {
+        if (found === null || found === "text_too_large") {
           yield* removeStaged(staged.id);
-          return yield* new AttachmentError({ reason: "unsupported_type" });
+          return yield* new AttachmentError({ reason: found === null ? "unsupported_type" : "too_large" });
         }
         yield* writeStaged({ ...staged, attachment: found });
         return { received, attachment: { id: staged.id, name: staged.name, size: staged.size, ...found } };
@@ -135,30 +140,45 @@ const make = Effect.gen(function* () {
     yield* lock.withPermits(1)(ownStaged(sessionId, id).pipe(Effect.flatMap((staged) => removeStaged(staged.id).pipe(Effect.mapError(unreadable)))));
   });
 
-  const claim = Effect.fn("Attachments.claim")(function* (sessionId: string, threadId: string, ids: ReadonlyArray<string>) {
-    if (ids.length === 0) return [];
-    if (new Set(ids).size > ATTACHMENT_LIMITS.perMessage) return yield* new AttachmentError({ reason: "too_many" });
+  // Files a send holds between `take` and `keep`, so two sends can't both take one.
+  const held = new Set<string>();
+
+  const take = Effect.fn("Attachments.take")(function* (sessionId: string, ids: ReadonlyArray<string>) {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    if (unique.length > ATTACHMENT_LIMITS.perMessage) return yield* new AttachmentError({ reason: "too_many" });
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
-        const staged = yield* Effect.forEach([...new Set(ids)], (id) => ownStaged(sessionId, id));
+        if (unique.some((id) => held.has(id))) return yield* notFound;
+        const staged = yield* Effect.forEach(unique, (id) => ownStaged(sessionId, id));
         const done = staged.flatMap((each) => (each.attachment === null ? [] : [{ ...each, attachment: each.attachment }]));
         if (done.length !== staged.length) return yield* notFound;
         // Text goes into the prompt whole, so a message's text files share one text-sized budget.
         if (done.filter((each) => each.attachment.kind === "text").reduce((sum, each) => sum + each.size, 0) > ATTACHMENT_LIMITS.textBytes) {
           return yield* new AttachmentError({ reason: "too_large" });
         }
-        const dir = join(root, threadId);
-        yield* ensureDir(dir).pipe(Effect.mapError(unreadable));
-        return yield* Effect.forEach(done, (each) =>
-          fs.rename(join(stagedDir, each.id), join(dir, each.id)).pipe(
-            Effect.andThen(fs.remove(join(stagedDir, `${each.id}.json`), { force: true })),
+        const read = yield* Effect.forEach(done, (each) =>
+          fs.readFile(join(stagedDir, each.id)).pipe(
             Effect.mapError(unreadable),
-            Effect.as<Attachment>({ id: each.id, name: each.name, size: each.size, ...each.attachment }),
+            Effect.map((bytes) => ({ attachment: { id: each.id, name: each.name, size: each.size, ...each.attachment } satisfies Attachment, bytes })),
           ),
         );
+        for (const id of unique) held.add(id);
+        return read;
       }),
     );
   });
+
+  const release = (ids: ReadonlyArray<string>) => Effect.sync(() => ids.forEach((id) => held.delete(id)));
+
+  const keep = (threadId: string, ids: ReadonlyArray<string>) =>
+    lock.withPermits(1)(
+      Effect.gen(function* () {
+        const dir = join(root, threadId);
+        yield* ensureDir(dir);
+        yield* Effect.forEach(ids, (id) => fs.rename(join(stagedDir, id), join(dir, id)).pipe(Effect.andThen(fs.remove(join(stagedDir, `${id}.json`), { force: true }))), { discard: true });
+      }).pipe(Effect.mapError(unreadable), Effect.ensuring(release(ids))),
+    );
 
   const bytes = (threadId: string, id: string) =>
     ID.test(threadId) && ID.test(id) ? fs.readFile(join(root, threadId, id)).pipe(Effect.mapError(() => notFound)) : Effect.fail(notFound);
@@ -190,7 +210,7 @@ const make = Effect.gen(function* () {
 
   yield* sweep.pipe(Effect.repeat(Schedule.spaced("1 hour")), Effect.forkScoped);
 
-  return Attachments.of({ stage, chunk, discard, claim, bytes, stream, removeThread, sweep });
+  return Attachments.of({ stage, chunk, discard, take, keep, release, bytes, stream, removeThread, sweep });
 });
 
 export const layer = Layer.effect(Attachments, make);

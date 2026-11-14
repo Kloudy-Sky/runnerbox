@@ -13,7 +13,7 @@ const IMAGES: ReadonlyArray<{ readonly mimeType: AttachmentMime; readonly matche
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 const isText = (bytes: Uint8Array) => {
-  if (bytes.length > ATTACHMENT_LIMITS.textBytes || bytes.includes(0)) return false;
+  if (bytes.includes(0)) return false;
   try {
     utf8.decode(bytes);
     return true;
@@ -22,9 +22,11 @@ const isText = (bytes: Uint8Array) => {
   }
 };
 
-// What a staged file is, from its bytes alone. Null is anything else, which is refused.
-export function sniff(bytes: Uint8Array): { readonly kind: AttachmentKind; readonly mimeType: AttachmentMime } | null {
+// What a staged file is, from its bytes alone. Null is anything else, which is refused; text over
+// the text limit is told apart so the refusal says why.
+export function sniff(bytes: Uint8Array): { readonly kind: AttachmentKind; readonly mimeType: AttachmentMime } | "text_too_large" | null {
   const image = IMAGES.find((candidate) => candidate.matches(bytes));
   if (image) return { kind: "image", mimeType: image.mimeType };
-  return isText(bytes) ? { kind: "text", mimeType: "text/plain" } : null;
+  if (!isText(bytes)) return null;
+  return bytes.length > ATTACHMENT_LIMITS.textBytes ? "text_too_large" : { kind: "text", mimeType: "text/plain" };
 }
