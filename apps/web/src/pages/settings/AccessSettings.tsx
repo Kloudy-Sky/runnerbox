@@ -4,7 +4,7 @@ import { useState } from "react";
 import { SettingsPanel } from "../../components/settings/SettingsPanel.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
-import { toast } from "../../components/ui/toast.tsx";
+import { toastManager } from "../../components/ui/toast.tsx";
 import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
 import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
 import { formatAge } from "../../lib/format.ts";
@@ -59,10 +59,10 @@ export function AccessSettings() {
                 onClick={() =>
                   void runtime.run(environmentId, (client) => client["access.revokeSession"]({ id: session.id })).then(
                     () => {
-                      toast.add({ title: `${session.label} can't reach it any more` });
+                      toastManager.add({ title: `${session.label} can't reach it any more` });
                       void refresh();
                     },
-                    (error: unknown) => toast.add({ title: "That didn't work", description: error instanceof Error ? error.message : "" }),
+                    (error: unknown) => toastManager.add({ title: "That didn't work", description: error instanceof Error ? error.message : "" }),
                   )
                 }
               >
@@ -84,7 +84,7 @@ export function AccessSettings() {
             disabled={scopes.size === 0}
             onClick={() =>
               void runtime.run(environmentId, (client) => client["access.createPairingCode"]({ scopes: [...scopes] })).then(setCode, (error: unknown) =>
-                toast.add({ title: "No code made", description: error instanceof Error ? error.message : "" }),
+                toastManager.add({ title: "No code made", description: error instanceof Error ? error.message : "" }),
               )
             }
           >

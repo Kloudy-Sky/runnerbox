@@ -3,7 +3,17 @@
   "compilerOptions": {
     "lib": ["esnext", "dom", "dom.iterable"],
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    // As T3 Code's web app compiles, so the primitives copied from it stay unedited: extensionless
+    // `~/` imports, resolved the way Vite resolves them.
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "erasableSyntaxOnly": false,
+    "verbatimModuleSyntax": false,
+    "paths": {
+      "~/*": ["./src/*"],
+      "@t3tools/contracts": ["./src/lib/t3codeContracts.ts"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

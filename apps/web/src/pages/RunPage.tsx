@@ -2,7 +2,7 @@ import { useParams } from "@tanstack/react-router";
 import { Reading } from "../components/Reading.tsx";
 import { ThreadColumn } from "../components/ThreadColumn.tsx";
 import { Button } from "../components/ui/button.tsx";
-import { Empty } from "../components/ui/empty.tsx";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty.tsx";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
@@ -18,10 +18,12 @@ export function RunPage() {
   const run = runs.data?.find((candidate) => String(candidate.jobId) === jobId);
   if (!run) {
     return runs.data ? (
-      <Empty.Root className="mx-auto">
-        <Empty.Title>This run isn't in the time range</Empty.Title>
-        <Empty.Description>Pick a longer range, or open it from All runs.</Empty.Description>
-      </Empty.Root>
+      <Empty>
+        <EmptyHeader>
+        <EmptyTitle>This run isn't in the time range</EmptyTitle>
+        <EmptyDescription>Pick a longer range, or open it from All runs.</EmptyDescription>
+      </EmptyHeader>
+      </Empty>
     ) : null;
   }
   return (

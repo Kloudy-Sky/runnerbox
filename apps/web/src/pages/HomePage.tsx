@@ -1,6 +1,6 @@
 import { inboxItems } from "@runnerbox/contracts";
 import { Link } from "@tanstack/react-router";
-import { Empty } from "../components/ui/empty.tsx";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Reading } from "../components/Reading.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
@@ -16,12 +16,14 @@ export function HomePage() {
   // still have something that needs the owner, such as a slot that keeps failing.
   if (inbox && inbox.summary.jobs === 0 && inboxItems(inbox).length === 0) {
     return (
-      <Empty.Root className="mx-auto">
-        <Empty.Title>No job history on this machine yet</Empty.Title>
-        <Empty.Description>
+      <Empty>
+        <EmptyHeader>
+        <EmptyTitle>No job history on this machine yet</EmptyTitle>
+        <EmptyDescription>
           Run <code className="font-mono text-foreground">runnerbox report --repo owner/name</code> on the server's machine to sync one.
-        </Empty.Description>
-      </Empty.Root>
+        </EmptyDescription>
+      </EmptyHeader>
+      </Empty>
     );
   }
   if (!inbox) return null;

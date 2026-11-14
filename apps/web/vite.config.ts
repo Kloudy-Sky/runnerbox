@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -7,6 +8,13 @@ export default defineConfig({
   // scripts/dist.ts), so the command to update a server names that same repository. Empty when
   // built without one, from a checkout.
   define: { "import.meta.env.RUNNERBOX_RELEASE_REPO": JSON.stringify(process.env.RUNNERBOX_UPDATE_REPO ?? "") },
+  // The same paths as tsconfig.json, for the primitives copied from T3 Code.
+  resolve: {
+    alias: {
+      "~": fileURLToPath(new URL("./src", import.meta.url)),
+      "@t3tools/contracts": fileURLToPath(new URL("./src/lib/t3codeContracts.ts", import.meta.url)),
+    },
+  },
   plugins: [react({ compiler: { logDiagnostics: true } }), tailwindcss()],
   server: { host: "127.0.0.1", port: 5733, strictPort: true },
   // Effect makes one large chunk, and the app loads from disk, so size matters less than for the web.

@@ -12,20 +12,29 @@ import { EnvironmentMenu } from "./EnvironmentMenu.tsx";
 import { RangePicker } from "./RangePicker.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible.tsx";
 import { Kbd } from "./ui/kbd.tsx";
+import { cn } from "../lib/utils.ts";
+import type * as React from "react";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "./ui/sidebar.tsx";
 
 const keep = (previous: RootSearch) => previous;
+
+// T3 Code's sidebar primitive has no group label or row badge; its app sidebar draws its own.
+function SidebarGroupLabel({ className, ...props }: React.ComponentProps<"div">) {
+  return <div className={cn("flex h-7 items-center px-2.5 text-muted-foreground text-xs", className)} data-slot="sidebar-group-label" {...props} />;
+}
+
+function SidebarMenuBadge({ className, ...props }: React.ComponentProps<"span">) {
+  return <span className={cn("pointer-events-none absolute top-1.5 right-2 text-muted-foreground text-xs tabular-nums", className)} data-slot="sidebar-menu-badge" {...props} />;
+}
 
 // The views to browse first, then what needs the owner and what's worth watching, like T3 Code's
 // list of threads: each item shows its state without opening it.

@@ -7,7 +7,7 @@ import { Reading } from "../components/Reading.tsx";
 import { ThreadColumn } from "../components/ThreadColumn.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible.tsx";
-import { Empty } from "../components/ui/empty.tsx";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useMonitors } from "../hooks/useMonitors.ts";
 import { formatAge } from "../lib/format.ts";
@@ -29,10 +29,12 @@ export function ItemPage() {
   }, [unread, itemId]);
   if (!item) {
     return inbox.data ? (
-      <Empty.Root className="mx-auto">
-        <Empty.Title>This item isn't in the inbox any more</Empty.Title>
-        <Empty.Description>It may have been fixed, or fallen outside the time range.</Empty.Description>
-      </Empty.Root>
+      <Empty>
+        <EmptyHeader>
+        <EmptyTitle>This item isn't in the inbox any more</EmptyTitle>
+        <EmptyDescription>It may have been fixed, or fallen outside the time range.</EmptyDescription>
+      </EmptyHeader>
+      </Empty>
     ) : null;
   }
   const evidenceCount = item.evidence.attempts.length;

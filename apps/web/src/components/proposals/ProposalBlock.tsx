@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { useProposals } from "../../hooks/useProposals.ts";
 import { fieldWords, statusWords, valueWords } from "../../lib/changeWords.ts";
 import { Button } from "../ui/button.tsx";
-import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogPopup, DialogTitle } from "../ui/dialog.tsx";
+import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog.tsx";
 
 type Actions = ReturnType<typeof useProposals>;
 
@@ -89,24 +89,28 @@ export function ProposalBlock({ proposal, actions, offerRevert }: { proposal: Pr
       ) : null}
       <Dialog open={confirming} onOpenChange={(next) => !busy && setConfirming(next)}>
         <DialogPopup>
-          <DialogTitle>Change {proposal.install}?</DialogTitle>
-          <DialogDescription>Runnerbox saves these values on the machine, keeps the previous ones, and restarts its runners.</DialogDescription>
-          <Changes proposal={proposal} />
-          <div className="flex flex-col gap-1 pt-1">
-            {WHEN.map(([option, label, detail]) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setWhen(option)}
-                className={`flex flex-col rounded-[var(--control-radius)] px-2.5 py-1.5 text-left ${when === option ? "bg-accent" : "hover:bg-accent/60"}`}
-              >
-                <span>{label}</span>
-                <span className="text-muted-foreground text-[13px]">{detail}</span>
-              </button>
-            ))}
-          </div>
-          {error ? <p className="text-destructive">{error}</p> : null}
-          <DialogFooter>
+          <DialogHeader>
+              <DialogTitle>Change {proposal.install}?</DialogTitle>
+              <DialogDescription>Runnerbox saves these values on the machine, keeps the previous ones, and restarts its runners.</DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <Changes proposal={proposal} />
+            <div className="flex flex-col gap-1 pt-1">
+              {WHEN.map(([option, label, detail]) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setWhen(option)}
+                  className={`flex flex-col rounded-[var(--control-radius)] px-2.5 py-1.5 text-left ${when === option ? "bg-accent" : "hover:bg-accent/60"}`}
+                >
+                  <span>{label}</span>
+                  <span className="text-muted-foreground text-[13px]">{detail}</span>
+                </button>
+              ))}
+            </div>
+            {error ? <p className="text-destructive">{error}</p> : null}
+          </DialogPanel>
+          <DialogFooter variant="bare">
             <DialogClose render={<Button variant="ghost" size="sm" disabled={busy} />}>Cancel</DialogClose>
             <Button size="sm" disabled={busy} onClick={() => void act(() => actions.approve(proposal.id, proposal.hash, when))}>
               {busy ? "Approving" : "Approve"}

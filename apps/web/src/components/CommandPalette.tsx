@@ -7,7 +7,8 @@ import { useRepo } from "../hooks/useRepo.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { formatAge, jobName } from "../lib/format.ts";
 import type { RootSearch } from "../lib/search.ts";
-import { Command, CommandCollection, CommandDialog, CommandDialogPopup, CommandEmpty, CommandGroup, CommandGroupLabel, CommandInput, CommandItem, CommandList } from "./ui/command.tsx";
+import { AutocompleteEmpty } from "./ui/autocomplete.tsx";
+import { Command, CommandCollection, CommandDialog, CommandDialogPopup, CommandGroup, CommandGroupLabel, CommandInput, CommandItem, CommandList } from "./ui/command.tsx";
 
 type Entry = { id: string; label: string; detail: string; icon: typeof House; go: () => void };
 
@@ -54,7 +55,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       <CommandDialogPopup aria-label="Jump to">
         <Command items={groups} itemToStringValue={(entry) => (typeof entry === "object" && entry !== null ? (searchText.get(entry) ?? "") : "")}>
           <CommandInput placeholder="Jump to a page, item or run" />
-          <CommandEmpty>Nothing matches.</CommandEmpty>
+          <AutocompleteEmpty>Nothing matches.</AutocompleteEmpty>
           <CommandList>
             {(group: (typeof groups)[number]) => (
               <CommandGroup key={group.value} items={group.items}>

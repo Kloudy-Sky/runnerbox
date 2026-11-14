@@ -1,20 +1,32 @@
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible";
-import { cn } from "../../lib/utils.ts";
 
-// Ported from T3 Code (MIT). The panel's height animates open and shut, then stops.
-function Collapsible(props: CollapsiblePrimitive.Root.Props) {
+import { cn } from "~/lib/utils";
+
+function Collapsible({ ...props }: CollapsiblePrimitive.Root.Props) {
   return <CollapsiblePrimitive.Root data-slot="collapsible" {...props} />;
 }
 
 function CollapsibleTrigger({ className, ...props }: CollapsiblePrimitive.Trigger.Props) {
-  return <CollapsiblePrimitive.Trigger className={cn("cursor-pointer", className)} data-slot="collapsible-trigger" {...props} />;
+  return (
+    <CollapsiblePrimitive.Trigger
+      className={cn("cursor-pointer", className)}
+      data-slot="collapsible-trigger"
+      {...props}
+    />
+  );
 }
 
-function CollapsiblePanel({ className, ...props }: CollapsiblePrimitive.Panel.Props) {
+function CollapsiblePanel({
+  className,
+  animate = true,
+  ...props
+}: CollapsiblePrimitive.Panel.Props & { animate?: boolean }) {
   return (
     <CollapsiblePrimitive.Panel
       className={cn(
-        "h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0",
+        "overflow-hidden",
+        animate &&
+          "h-(--collapsible-panel-height) transition-[height] duration-200 motion-reduce:transition-none data-ending-style:h-0 data-starting-style:h-0 data-open:data-ending-style:[height:var(--collapsible-panel-height)]",
         className,
       )}
       data-slot="collapsible-panel"
@@ -23,4 +35,9 @@ function CollapsiblePanel({ className, ...props }: CollapsiblePrimitive.Panel.Pr
   );
 }
 
-export { Collapsible, CollapsiblePanel, CollapsibleTrigger };
+export {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsiblePanel,
+  CollapsiblePanel as CollapsibleContent,
+};
