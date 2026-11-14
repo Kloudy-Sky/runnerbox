@@ -42,6 +42,7 @@ concurrency:
 jobs:
   plan:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       mode: ${{ steps.plan.outputs.mode }}
       tag: ${{ steps.plan.outputs.tag }}
@@ -79,6 +80,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.mode != 'skip'
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,6 +109,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -138,6 +141,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
     runs-on: macos-15
+    timeout-minutes: 90 # room for two slow notarizations, one per architecture
     environment: release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -198,6 +202,7 @@ jobs:
       always() && needs.cli.result == 'success' &&
       (needs.plan.outputs.mode == 'cli' || (needs.linux.result == 'success' && needs.mac.result == 'success'))
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
