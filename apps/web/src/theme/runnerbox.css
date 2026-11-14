@@ -37,10 +37,10 @@ body,
   }
 }
 
-/* T3 Code lays a faint grain over the canvas. It would lighten the charcoal, so the canvas is the
-   flat color. */
-body {
-  background-image: none;
+/* T3 Code lays a faint grain over the canvas and every surface-grain surface (the sidebar and the
+   main column). It would lighten the charcoal, so they're all the flat color. */
+:root {
+  --surface-grain: none;
 }
 
 /* No continuously repainting animation: T3 Code's skeleton breath, status pulse and ping, spinners,
@@ -58,8 +58,9 @@ body {
   animation: none !important;
 }
 
-/* No blur: T3 Code's glass surfaces (popovers, menus, dialogs) blur what's behind them, which
-   re-blends on every change underneath. They're solid instead, and the dialog backdrop only dims. */
+/* No blur: T3 Code's glass surfaces (popovers, menus, dialogs) and its backdrop-blur utilities (a
+   toast's dismiss button, the narrow-window sidebar sheet) blur what's behind them, which re-blends
+   on every change underneath. They're solid instead, and the dialog backdrop only dims. */
 :root {
   --glass-blur: 0px;
   --glass-opacity: 100%;
@@ -69,6 +70,17 @@ body {
 .dialog-backdrop {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+@theme {
+  --blur-xs: 0px;
+  --blur-sm: 0px;
+  --blur: 0px;
+  --blur-md: 0px;
+  --blur-lg: 0px;
+  --blur-xl: 0px;
+  --blur-2xl: 0px;
+  --blur-3xl: 0px;
 }
 
 /* T3 Code's scroll areas fade their edges with a mask. In Chromium, after a route change, the
@@ -93,9 +105,8 @@ body {
   line-height: 1.55;
 }
 
-/* Runnerbox's layout widths. */
+/* The width runnerbox's pages read at. */
 :root {
-  --sidebar-width: 15rem;
   --reading-width: 40rem;
 }
 
