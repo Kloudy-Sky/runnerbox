@@ -11,7 +11,7 @@
     "@runnerbox/connect": "workspace:*",
     "@runnerbox/contracts": "workspace:*",
     "effect": "4.0.5",
-    "jose": "6.2.2"
+    "jose": "6.2.17"
   },
   "devDependencies": {
     "@runnerbox/client-runtime": "workspace:*",
