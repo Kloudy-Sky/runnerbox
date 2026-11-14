@@ -222,3 +222,32 @@ test("a thread on a run starts from that attempt's steps, attempts and verdict",
     assert.equal(packet.ruleVerdict, "infra");
     assert.ok(packet.evidence.steps.length > 0 && packet.evidence.attempts.length > 0 && packet.evidence.machine !== null);
   }));
+
+test("a turn runs on the model the composer picked, over the account's own, and only on one the server offers", () =>
+  withServer([[{ text: "On the pick." }], [{ text: "On the account's." }]], async (server, fake) => {
+    const { token } = await appSession(server);
+    const { harnesses, refused, items } = await withClient(server, token, (client) =>
+      Effect.gen(function* () {
+        const account = yield* client["accounts.save"]({ driver: "claude", label: "Pinned", model: "claude-example-1" });
+        const { thread } = yield* newThread(client);
+        const turn = (text: string, model?: string) =>
+          Effect.gen(function* () {
+            const listening = yield* untilTurnEnds(client["threads.subscribe"]({ id: thread.id }).pipe(Stream.drop(1))).pipe(Effect.forkChild);
+            yield* Effect.sleep(50);
+            yield* client["threads.startTurn"]({ id: thread.id, text, accountId: account.id, ...(model ? { model } : {}) });
+            yield* Fiber.join(listening);
+          });
+        const refused = yield* Effect.flip(client["threads.startTurn"]({ id: thread.id, text: "On this?", accountId: account.id, model: "claude-example-1" }));
+        yield* turn("On Haiku?", "haiku");
+        yield* turn("And now?");
+        return { harnesses: yield* client["threads.harnesses"](), refused, items: (yield* client["threads.read"]({ id: thread.id })).items };
+      }),
+    );
+    assert.deepEqual(harnesses.map((harness) => [harness.driver, harness.models.map((model) => model.id)]), [["claude", ["haiku", "sonnet", "opus"]]]);
+    assert.equal(harnesses[0]?.status.available, true);
+    // Only a name from the list: the account's own model is fine as its default, but not as a pick.
+    assert.equal(refused._tag === "ThreadError" && refused.reason, "model_not_offered");
+    assert.deepEqual(fake.inputs.map((input) => input.account.model), ["haiku", "claude-example-1"]);
+    // The log keeps the pick, so the composer can offer it again, and nothing when there wasn't one.
+    assert.deepEqual(items.flatMap((item) => (item._tag === "UserMessage" ? [item.model ?? null] : [])), ["haiku", null]);
+  }));

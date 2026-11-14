@@ -12,6 +12,17 @@ export const BUILT_IN_ACCOUNT_ID = "claude-subscription";
 
 export const AccountId = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,39}$/));
 export const ModelName = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,79}$/));
+
+// A harness is a driver as the composer offers it: whether it can run here, and the models the
+// server lets a turn pick. The list is the server's, so a client can't name a model it didn't offer.
+export const HarnessModel = Schema.Struct({ id: Schema.String, label: Schema.String });
+export const Harness = Schema.Struct({
+  driver: ProviderDriver,
+  label: Schema.String,
+  status: ProviderStatus,
+  models: Schema.Array(HarnessModel),
+});
+export type Harness = typeof Harness.Type;
 export const AccountLabel = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(60));
 // Write-only: it goes to the server and is never sent back.
 export const ApiKey = Schema.String.check(Schema.isPattern(/^\S{8,512}$/));
