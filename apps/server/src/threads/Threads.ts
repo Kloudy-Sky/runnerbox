@@ -6,6 +6,7 @@ import {
   ProposalError,
   ProviderDriver,
   type ProviderStatus,
+  type QueuedMessage,
   type ReproduceCheck,
   ReproduceError,
   type ReproduceNetwork,
@@ -66,10 +67,17 @@ export class Threads extends Context.Service<
     // `monitor` marks a turn a monitor started: logged as the monitor's, on its model, and read-only,
     // with no proposals and no reproduce.
     readonly startTurn: (id: string, text: string, options: TurnOptions) => Effect.Effect<{ readonly turnId: string }, ThreadError | AttachmentError>;
+    // Starts the turn, or while one runs, holds it (one per thread) and starts it when that turn
+    // ends, unless the owner stops that turn. `turnId` is null while it waits. Nothing else can
+    // start a turn in the thread while it waits, so a monitor never slips in ahead of it.
+    readonly queueTurn: (id: string, text: string, options: TurnOptions) => Effect.Effect<{ readonly turnId: string | null }, ThreadError | AttachmentError>;
+    // Drops the waiting question; its stream hands the text back.
+    readonly cancelQueued: (id: string) => Effect.Effect<void, ThreadError>;
     // Removes the log and its attachments, and ends its streams. Refused while a turn or a
     // reproduce runs.
     readonly remove: (id: string) => Effect.Effect<void, ThreadError>;
     // Returns once the turn has ended and that's logged. Does nothing when no turn is running.
+    // A question waiting behind it isn't sent: its stream hands the text back.
     readonly interrupt: (id: string) => Effect.Effect<void, ThreadError>;
     readonly subscribe: (id: string) => Stream.Stream<ThreadEvent, ThreadError>;
     readonly checkReproduce: (id: string) => Effect.Effect<ReproduceCheck, ThreadError>;
@@ -97,6 +105,7 @@ export type TurnOptions = {
   readonly monitor?: { readonly model: string } | undefined;
 };
 
+type Waiting = { readonly message: QueuedMessage; readonly options: TurnOptions };
 type Running = { readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
 
 const MAX_TOOL_INPUT = 300;
@@ -144,6 +153,8 @@ const make = Effect.gen(function* () {
   const running = new Map<string, Running>();
   // Threads whose reproduce `up` is still starting, which can take seconds outside the lock.
   const reproduceStarting = new Set<string>();
+  // In memory only: a restart loses it, and the client hands its text back to the composer.
+  const queued = new Map<string, Waiting>();
 
   const publish = (threadId: string, event: ThreadEvent) => PubSub.publish(events, { threadId, event }).pipe(Effect.asVoid);
   const appendUnlocked = (threadId: string, item: ThreadItem) => log.append(threadId, item).pipe(Effect.andThen(publish(threadId, item)));
@@ -256,7 +267,31 @@ const make = Effect.gen(function* () {
         Effect.ignore,
         Effect.ensuring(Effect.sync(() => running.delete(id))),
       ),
+    ).pipe(
+      // A stop by the owner already handed the waiting question back; one by the server leaves it
+      // to be lost with the restart.
+      Effect.andThen(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? Effect.void : startQueued(id)),
     );
+
+  const clearQueue = (id: string, reason: "started" | "cancelled" | "stopped" | "failed", message: string | null) =>
+    lock.withPermits(1)(
+      Effect.suspend(() => {
+        const waiting = queued.get(id);
+        if (!waiting) return Effect.void;
+        queued.delete(id);
+        return publish(id, { _tag: "QueueCleared", reason, text: waiting.message.text, message });
+      }),
+    );
+
+  // Starts the waiting question as an ordinary turn of the owner's.
+  const startQueued = (id: string): Effect.Effect<void> =>
+    Effect.suspend(() => {
+      const waiting = queued.get(id);
+      if (!waiting) return Effect.void;
+      return begin(id, waiting.message.text, waiting.options, true).pipe(
+        Effect.matchEffect({ onSuccess: () => clearQueue(id, "started", null), onFailure: (error) => clearQueue(id, "failed", error.message) }),
+      );
+    });
 
   const ended = (id: string, reason: string) => appendNow(id, (seq, at) => ({ _tag: "ReproduceEnded", seq, reason, at }));
 
@@ -265,7 +300,8 @@ const make = Effect.gen(function* () {
   const settleReproduce = (id: string) =>
     reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
 
-  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, model, attachments: attaching, references: referring = [], scopes, monitor }: TurnOptions) {
+  // `fromQueue` is the waiting question itself, the one start a waiting question doesn't block.
+  const begin = Effect.fn("Threads.begin")(function* (id: string, text: string, { accountId, model, attachments: attaching, references: referring = [], scopes, monitor }: TurnOptions, fromQueue: boolean) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
@@ -278,7 +314,7 @@ const make = Effect.gen(function* () {
     if (!status.available) return yield* new ThreadError({ reason: "provider_unavailable" });
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
-        if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
+        if (running.has(id) || (!fromQueue && queued.has(id))) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
         const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
         const taken = attaching === undefined ? [] : yield* attachments.take(attaching.sessionId, attaching.ids);
@@ -347,6 +383,28 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const startTurn = (id: string, text: string, options: TurnOptions) => begin(id, text, options, false);
+
+  const queueTurn = Effect.fn("Threads.queueTurn")(function* (id: string, text: string, options: TurnOptions) {
+    // What would refuse it later is refused now, while the owner is still looking.
+    const account = yield* accounts.resolve(options.accountId).pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
+    if (options.model !== undefined && !offersModel(account.driver, options.model)) return yield* new ThreadError({ reason: "model_not_offered" });
+    const waiting = yield* lock.withPermits(1)(
+      Effect.gen(function* () {
+        yield* loadUnlocked(id);
+        if (!running.has(id)) return false;
+        if (queued.has(id)) return yield* new ThreadError({ reason: "queue_full" });
+        const message = { text, at: yield* nowIso };
+        queued.set(id, { message, options });
+        yield* publish(id, { _tag: "Queued", message });
+        return true;
+      }),
+    );
+    return waiting ? { turnId: null } : yield* startTurn(id, text, options);
+  });
+
+  const cancelQueued = (id: string) => log.read(id).pipe(Effect.andThen(clearQueue(id, "cancelled", null)));
+
   const remove = Effect.fn("Threads.remove")(function* (id: string) {
     yield* lock.withPermits(1)(
       Effect.gen(function* () {
@@ -361,6 +419,7 @@ const make = Effect.gen(function* () {
   });
 
   const interrupt = Effect.fn("Threads.interrupt")(function* (id: string) {
+    yield* clearQueue(id, "stopped", null);
     const fiber = running.get(id)?.fiber;
     if (fiber) yield* Fiber.interrupt(fiber);
   });
@@ -376,6 +435,7 @@ const make = Effect.gen(function* () {
             _tag: "Snapshot",
             detail: { thread: summary(file), items: file.items },
             partial: turn && turn.partial !== "" ? { turnId: turn.turnId, text: turn.partial } : null,
+            queued: queued.get(id)?.message ?? null,
           };
           return Stream.make(snapshot).pipe(
             Stream.concat(
@@ -457,7 +517,7 @@ const make = Effect.gen(function* () {
     return proposal;
   });
 
-  return Threads.of({ provider, harnesses, list, read, create, startTurn, remove, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
+  return Threads.of({ provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

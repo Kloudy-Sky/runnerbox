@@ -35,6 +35,10 @@ export function foldThread(view: ThreadView, event: ThreadEvent): ThreadView {
       return { ...view, items: [...view.items, event], partial: null, running: false };
     case "ThreadDeleted":
       return EMPTY_VIEW;
+    // The composer shows the waiting question; the thread's items don't change.
+    case "Queued":
+    case "QueueCleared":
+      return view;
   }
 }
 
