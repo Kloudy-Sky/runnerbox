@@ -1,4 +1,5 @@
 import {
+  type AttachmentError,
   type AuthScope,
   type Harness,
   type Proposal,
@@ -27,6 +28,7 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import { Attachments } from "../attachments/Attachments.ts";
 import * as AuthStore from "../auth/AuthStore.ts";
 import { newId } from "../auth/secrets.ts";
 import * as LocalEndpoint from "../config/LocalEndpoint.ts";
@@ -61,7 +63,10 @@ export class Threads extends Context.Service<
     // reproduce's shell tool, whoever started the reproduce.
     // `monitor` marks a turn a monitor started: logged as the monitor's, on its model, and read-only,
     // with no proposals and no reproduce.
-    readonly startTurn: (id: string, text: string, options: TurnOptions) => Effect.Effect<{ readonly turnId: string }, ThreadError>;
+    readonly startTurn: (id: string, text: string, options: TurnOptions) => Effect.Effect<{ readonly turnId: string }, ThreadError | AttachmentError>;
+    // Removes the log and its attachments, and ends its streams. Refused while a turn or a
+    // reproduce runs.
+    readonly remove: (id: string) => Effect.Effect<void, ThreadError>;
     // Returns once the turn has ended and that's logged. Does nothing when no turn is running.
     readonly interrupt: (id: string) => Effect.Effect<void, ThreadError>;
     readonly subscribe: (id: string) => Stream.Stream<ThreadEvent, ThreadError>;
@@ -79,9 +84,11 @@ export class Threads extends Context.Service<
 
 // `model` is the composer's pick, one of the account's driver's offered models. It wins over the
 // account's own model; a monitor's model wins over both.
+// `attachments` are files `sessionId` staged, claimed into the thread with the question.
 export type TurnOptions = {
   readonly accountId?: string | undefined;
   readonly model?: string | undefined;
+  readonly attachments?: { readonly sessionId: string; readonly ids: ReadonlyArray<string> } | undefined;
   readonly scopes: ReadonlyArray<AuthScope>;
   readonly monitor?: { readonly model: string } | undefined;
 };
@@ -100,6 +107,7 @@ const make = Effect.gen(function* () {
   const accounts = yield* AccountStore.AccountStore;
   const reproduces = yield* Reproduces;
   const proposals = yield* Proposals;
+  const attachments = yield* Attachments;
   // Every turn's MCP token, mapped to its thread for the turn, so a tool knows whose thread it's in.
   const turnSessions = new Map<string, string>();
   // Whether the default account can run turns, for a client deciding whether to offer threads.
@@ -130,6 +138,8 @@ const make = Effect.gen(function* () {
   const lock = yield* Semaphore.make(1);
   const events = yield* PubSub.unbounded<{ readonly threadId: string; readonly event: ThreadEvent }>();
   const running = new Map<string, Running>();
+  // Threads whose reproduce `up` is still starting, which can take seconds outside the lock.
+  const reproduceStarting = new Set<string>();
 
   const publish = (threadId: string, event: ThreadEvent) => PubSub.publish(events, { threadId, event }).pipe(Effect.asVoid);
   const appendUnlocked = (threadId: string, item: ThreadItem) => log.append(threadId, item).pipe(Effect.andThen(publish(threadId, item)));
@@ -251,7 +261,7 @@ const make = Effect.gen(function* () {
   const settleReproduce = (id: string) =>
     reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
 
-  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, model, scopes, monitor }: TurnOptions) {
+  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, model, attachments: attaching, scopes, monitor }: TurnOptions) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
@@ -266,11 +276,32 @@ const make = Effect.gen(function* () {
         if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
         const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
+        const taken = attaching === undefined ? [] : yield* attachments.take(attaching.sessionId, attaching.ids);
+        const attached = taken.map((each) => each.attachment);
+        const contents = taken.map((each) => ({ ...each.attachment, bytes: each.bytes }));
+        const ids = attached.map((each) => each.id);
         // The account's ID only: its key never goes in a thread's log.
-        yield* appendUnlocked(id, { _tag: "UserMessage", seq: turn.nextSeq, turnId: turn.turnId, text, at: yield* nowIso, accountId: account.id, ...(model !== undefined && !monitor ? { model } : {}), ...(monitor ? { source: "monitor" as const } : {}) });
+        yield* appendUnlocked(id, {
+          _tag: "UserMessage",
+          seq: turn.nextSeq,
+          turnId: turn.turnId,
+          text,
+          at: yield* nowIso,
+          accountId: account.id,
+          ...(model !== undefined && !monitor ? { model } : {}),
+          ...(attached.length > 0 ? { attachments: attached } : {}),
+          ...(monitor ? { source: "monitor" as const } : {}),
+        }).pipe(Effect.onError(() => attachments.release(ids)));
+        // Logged, so the files are the thread's now. If moving one fails it stays staged until it
+        // expires, and the thread shows it as missing; the turn already has its bytes.
+        yield* attachments.keep(id, ids).pipe(Effect.ignore);
         turn.nextSeq += 1;
         running.set(id, turn);
-        const prompt = turnPrompt(file.header.packet, file.items, text);
+        const images = contents.filter((each) => each.kind === "image");
+        const prompt = turnPrompt(file.header.packet, file.items, text, {
+          texts: contents.filter((each) => each.kind === "text").map((each) => ({ name: each.name, text: new TextDecoder().decode(each.bytes) })),
+          imageNames: images.map((each) => each.name),
+        });
         // Only a turn that starts with a reproduce running, asked by a session that may reproduce,
         // gets the tool, bound to this thread.
         const reproducing = !monitor && reproduces.running(id) && scopes.includes("threads:reproduce");
@@ -292,6 +323,7 @@ const make = Effect.gen(function* () {
             .runTurn({
               systemPrompt: systemPrompt(monitor ? "monitor" : reproducing ? "reproduce" : "owner"),
               prompt,
+              images: images.map((each) => ({ mimeType: each.mimeType, base64: Buffer.from(each.bytes).toString("base64") })),
               mcp: { url: `${baseUrl}/mcp`, token: grant.token },
               reproduce: reproducing,
               propose: !monitor,
@@ -304,6 +336,19 @@ const make = Effect.gen(function* () {
           Effect.forkIn(scope),
         );
         return { turnId: turn.turnId };
+      }),
+    );
+  });
+
+  const remove = Effect.fn("Threads.remove")(function* (id: string) {
+    yield* lock.withPermits(1)(
+      Effect.gen(function* () {
+        yield* log.read(id);
+        if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
+        if (reproduces.running(id) || reproduceStarting.has(id)) return yield* new ThreadError({ reason: "reproduce_running" });
+        yield* attachments.removeThread(id).pipe(Effect.mapError(() => new ThreadError({ reason: "log_unreadable" })));
+        yield* log.remove(id);
+        yield* publish(id, { _tag: "ThreadDeleted" });
       }),
     );
   });
@@ -326,7 +371,13 @@ const make = Effect.gen(function* () {
             partial: turn && turn.partial !== "" ? { turnId: turn.turnId, text: turn.partial } : null,
           };
           return Stream.make(snapshot).pipe(
-            Stream.concat(Stream.fromSubscription(subscription).pipe(Stream.filter((entry) => entry.threadId === id), Stream.map((entry) => entry.event))),
+            Stream.concat(
+              Stream.fromSubscription(subscription).pipe(
+                Stream.filter((entry) => entry.threadId === id),
+                Stream.map((entry) => entry.event),
+                Stream.takeUntil((event) => event._tag === "ThreadDeleted"),
+              ),
+            ),
           );
         }),
       ),
@@ -342,10 +393,19 @@ const make = Effect.gen(function* () {
   });
 
   const startReproduce = Effect.fn("Threads.startReproduce")(function* (id: string, network: ReproduceNetwork) {
-    const { packet, subject } = yield* header(id);
-    if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
-    const started = yield* reproduces.start(id, packet, jobIdOf(subject), network);
-    yield* appendNow(id, (seq, at) => ({ _tag: "ReproduceStarted", seq, ...started, network, at }));
+    // Marked under the lock, so a delete can't land while `up` starts the container.
+    const { packet, subject } = yield* lock.withPermits(1)(
+      Effect.gen(function* () {
+        const found = yield* header(id);
+        if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
+        reproduceStarting.add(id);
+        return found;
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const started = yield* reproduces.start(id, packet, jobIdOf(subject), network);
+      yield* appendNow(id, (seq, at) => ({ _tag: "ReproduceStarted", seq, ...started, network, at }));
+    }).pipe(Effect.ensuring(Effect.sync(() => reproduceStarting.delete(id))));
   });
 
   const stopReproduce = Effect.fn("Threads.stopReproduce")(function* (id: string) {
@@ -390,7 +450,7 @@ const make = Effect.gen(function* () {
     return proposal;
   });
 
-  return Threads.of({ provider, harnesses, list, read, create, startTurn, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
+  return Threads.of({ provider, harnesses, list, read, create, startTurn, remove, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

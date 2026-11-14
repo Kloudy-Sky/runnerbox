@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/http/HttpRouter";
+import * as Attachments from "./attachments/Attachments.ts";
 import * as AuthStore from "./auth/AuthStore.ts";
 import * as CloudLink from "./cloud/CloudLink.ts";
 import * as Connector from "./cloud/connector.ts";
@@ -45,7 +46,7 @@ export const layerCore = (input: ServicesInput) =>
   Threads.layer.pipe(
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
-    Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer).pipe(Layer.provideMerge(UpSocket.layer))),
+    Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer).pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(LocalEndpoint.layer(input.host, input.port)),
     Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer)),
@@ -62,9 +63,13 @@ const layerLocalRoutes = Layer.mergeAll(Routes.layer("local"), Ws.layer("local")
 const layerTunnelRoutes = Layer.mergeAll(Routes.layer("tunnel"), ConnectRoutes.layer, Ws.layer("tunnel"));
 const serveOptions = { disableLogger: true, disableListenLog: true } as const;
 
+// No client message is anywhere near this: attachments arrive in chunks of 512 KB. `ws` would
+// otherwise take one of up to 100 MB from any socket with a ticket.
+const MAX_SOCKET_MESSAGE_BYTES = 4 * 1024 * 1024;
+
 const listener = (host: string, port: number) =>
   // Open sockets would hold a graceful shutdown open, and nothing here has work to finish.
-  NodeHttpServer.layer(createServer, { host, port, gracefulShutdownTimeout: "1 second" });
+  NodeHttpServer.layer(createServer, { host, port, gracefulShutdownTimeout: "1 second", websocket: { maxPayload: MAX_SOCKET_MESSAGE_BYTES } });
 
 // Both listeners. The tunnel listener always binds loopback, and only exists when linked.
 const layerListeners = (input: { host: string; port: number; tunnelPort: number | null }) =>

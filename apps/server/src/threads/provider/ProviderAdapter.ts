@@ -18,6 +18,8 @@ export type TurnInput = {
   // The whole conversation so far, packet first. Threads keep their own log, so a provider never
   // needs session state of its own, and a thread survives the provider's process.
   readonly prompt: string;
+  // Images the owner attached to this question, sent beside the prompt for the model to see.
+  readonly images: ReadonlyArray<TurnImage>;
   // runnerbox's own `/mcp` on loopback, and a read-only token that lasts this turn only.
   readonly mcp: { readonly url: string; readonly token: string };
   // Whether the thread has a reproduce running, which adds its shell tool to this turn.
@@ -27,6 +29,8 @@ export type TurnInput = {
   // The account the turn runs as. Its key, if any, is the only credential that reaches the provider.
   readonly account: TurnAccount;
 };
+
+export type TurnImage = { readonly mimeType: string; readonly base64: string };
 
 export type TurnAccount = { readonly label: string; readonly model: string | null; readonly apiKey: string | null };
 
