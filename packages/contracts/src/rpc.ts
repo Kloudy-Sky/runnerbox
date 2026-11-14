@@ -10,7 +10,7 @@ import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, Chun
 import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
-import { CreateThread, MessageText, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
+import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
 export class StateReadError extends Schema.TaggedError<StateReadError>()("StateReadError", {
@@ -153,6 +153,7 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   // Returns once the question is logged; the answer arrives on the thread's stream.
   // Without `accountId`, the turn runs as the default account. Without `model`, on the account's.
   // `attachments` are files this session staged; the turn claims them into the thread.
+  // `references` are other threads and runs on this server, added to the prompt as data.
   Rpc.make(RPC_METHODS.threadsStartTurn, {
     payload: {
       ...ThreadId,
@@ -160,6 +161,7 @@ export const RunnerboxRpcGroup = RpcGroup.make(
       accountId: Schema.optionalKey(AccountId),
       model: Schema.optionalKey(ModelName),
       attachments: Schema.optionalKey(Schema.Array(AttachmentId).check(Schema.isMaxLength(ATTACHMENT_LIMITS.perMessage))),
+      references: Schema.optionalKey(Schema.Array(ThreadReference).check(Schema.isMaxLength(MAX_REFERENCES))),
     },
     success: Schema.Struct({ turnId: Schema.String }),
     error: TurnFailure,

@@ -14,6 +14,7 @@ import {
   ThreadError,
   type ThreadEvent,
   type ThreadItem,
+  type ThreadReference,
   type ThreadSubject,
   type ThreadSummary,
 } from "@runnerbox/contracts";
@@ -45,6 +46,7 @@ import * as AccountStore from "../accounts/AccountStore.ts";
 import { Drivers } from "./provider/Drivers.ts";
 import { HARNESSES, offersModel } from "./provider/harnesses.ts";
 import type { ProviderEvent } from "./provider/ProviderAdapter.ts";
+import { resolveReference } from "./references.ts";
 import { subjectPacket } from "./subjectPacket.ts";
 import * as ThreadLog from "./ThreadLog.ts";
 
@@ -85,7 +87,9 @@ export class Threads extends Context.Service<
 // `model` is the composer's pick, one of the account's driver's offered models. It wins over the
 // account's own model; a monitor's model wins over both.
 // `attachments` are files `sessionId` staged, claimed into the thread with the question.
+// `references` are other threads and runs, read once now and logged with it.
 export type TurnOptions = {
+  readonly references?: ReadonlyArray<ThreadReference> | undefined;
   readonly accountId?: string | undefined;
   readonly model?: string | undefined;
   readonly attachments?: { readonly sessionId: string; readonly ids: ReadonlyArray<string> } | undefined;
@@ -261,11 +265,12 @@ const make = Effect.gen(function* () {
   const settleReproduce = (id: string) =>
     reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
 
-  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, model, attachments: attaching, scopes, monitor }: TurnOptions) {
+  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, model, attachments: attaching, references: referring = [], scopes, monitor }: TurnOptions) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
     if (model !== undefined && !offersModel(account.driver, model)) return yield* new ThreadError({ reason: "model_not_offered" });
+    const references = yield* Effect.forEach(referring, (ref) => resolveReference(log.read, id, ref).pipe(Effect.provideContext(readers)));
     // So a turn doesn't get the shell for a container `up` already removed.
     yield* settleReproduce(id);
     const driver = drivers.get(account.driver);
@@ -290,6 +295,7 @@ const make = Effect.gen(function* () {
           accountId: account.id,
           ...(model !== undefined && !monitor ? { model } : {}),
           ...(attached.length > 0 ? { attachments: attached } : {}),
+          ...(references.length > 0 ? { references } : {}),
           ...(monitor ? { source: "monitor" as const } : {}),
         }).pipe(Effect.onError(() => attachments.release(ids)));
         // Logged, so the files are the thread's now. If moving one fails it stays staged until it
@@ -301,6 +307,7 @@ const make = Effect.gen(function* () {
         const prompt = turnPrompt(file.header.packet, file.items, text, {
           texts: contents.filter((each) => each.kind === "text").map((each) => ({ name: each.name, text: new TextDecoder().decode(each.bytes) })),
           imageNames: images.map((each) => each.name),
+          references,
         });
         // Only a turn that starts with a reproduce running, asked by a session that may reproduce,
         // gets the tool, bound to this thread.

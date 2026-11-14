@@ -23,8 +23,21 @@ const seq = Schema.Int;
 // What a thread's log holds after its first line, in order. `seq` counts from 1 in each thread.
 // `accountId` is the account the turn ran as; older lines don't have it.
 // `source` is "monitor" when a monitor asked, not the owner; older lines don't have it.
+// Another thread or a run, named in a question with `@`. The server reads it and adds it to the
+// prompt, read-only. `days` is the window the run was listed in, to find it again.
+export const ThreadReference = Schema.Union([
+  Schema.TaggedStruct("thread", { id: Schema.String }),
+  Schema.TaggedStruct("run", { repo: RepoName, jobId: Schema.Number, days: Days }),
+]);
+export type ThreadReference = typeof ThreadReference.Type;
+// What a reference said when it was sent, kept so later turns and restarts see the same thing.
+export const ResolvedReference = Schema.Struct({ ref: ThreadReference, title: Schema.String, packet: Schema.String });
+export type ResolvedReference = typeof ResolvedReference.Type;
+export const MAX_REFERENCES = 3;
+
 // `model` is the model the turn picked in the composer, when it picked one.
 // `attachments` are the files sent with it; the bytes are in the thread's attachments directory.
+// `references` are the threads and runs it named, as they read when it was sent.
 export const UserMessage = Schema.TaggedStruct("UserMessage", {
   seq,
   turnId: Schema.String,
@@ -33,6 +46,7 @@ export const UserMessage = Schema.TaggedStruct("UserMessage", {
   accountId: Schema.optionalKey(Schema.String),
   model: Schema.optionalKey(Schema.String),
   attachments: Schema.optionalKey(Schema.Array(Attachment)),
+  references: Schema.optionalKey(Schema.Array(ResolvedReference)),
   source: Schema.optionalKey(Schema.Literal("monitor")),
 });
 export const AgentText = Schema.TaggedStruct("AgentText", { seq, turnId: Schema.String, text: Schema.String, at });
@@ -121,7 +135,7 @@ export const CreateThread = Schema.Struct({
 });
 
 export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError", {
-  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running"]),
+  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running", "reference_not_found", "reference_self"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -137,6 +151,10 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
         return "Couldn't read or write the thread's log on the server.";
       case "account_not_found":
         return "That account doesn't exist any more. Pick another in the composer.";
+      case "reference_not_found":
+        return "A thread or run this question refers to isn't on the server any more.";
+      case "reference_self":
+        return "A thread can't refer to itself.";
       case "reproduce_running":
         return "Stop this thread's reproduce first.";
       case "model_not_offered":
@@ -159,5 +177,5 @@ export class ReproduceError extends Schema.TaggedError<ReproduceError>()("Reprod
   }
 }
 
-export const MAX_MESSAGE_LENGTH = 4000;
+export const MAX_MESSAGE_LENGTH = 16_000;
 export const MessageText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_MESSAGE_LENGTH));

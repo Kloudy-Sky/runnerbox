@@ -59,8 +59,8 @@ export const layer = (session: Session) =>
         "threads.read": ({ id }) => threads.read(id),
         "threads.create": ({ subject, days }) => threads.create(subject, days),
         "threads.harnesses": () => threads.harnesses,
-        "threads.startTurn": ({ id, text, accountId, model, attachments: ids }) =>
-          threads.startTurn(id, text, { accountId, model, attachments: ids ? { sessionId: session.id, ids } : undefined, scopes: session.scopes }),
+        "threads.startTurn": ({ id, text, accountId, model, attachments: ids, references }) =>
+          threads.startTurn(id, text, { accountId, model, attachments: ids ? { sessionId: session.id, ids } : undefined, references, scopes: session.scopes }),
         "threads.delete": ({ id }) => threads.remove(id),
         "threads.stageAttachment": (file) => attachments.stage(session.id, file),
         "threads.attachmentChunk": (chunk) => attachments.chunk(session.id, chunk),
