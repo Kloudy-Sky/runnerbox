@@ -108,11 +108,12 @@ export type ThreadSummary = typeof ThreadSummary.Type;
 export const ThreadDetail = Schema.Struct({ thread: ThreadSummary, items: Schema.Array(ThreadItem) });
 export type ThreadDetail = typeof ThreadDetail.Type;
 
-// A thread's stream: a snapshot first, then each item as it's logged. Text streams as deltas of the
-// running turn, and its `AgentText` item replaces them. `partial` is the text streamed so far.
 // A question waiting for the running turn to end. It's held in memory only, so a restart loses it.
 export const QueuedMessage = Schema.Struct({ text: Schema.String, at });
 export type QueuedMessage = typeof QueuedMessage.Type;
+
+// A thread's stream: a snapshot first, then each item as it's logged. Text streams as deltas of the
+// running turn, and its `AgentText` item replaces them. `partial` is the text streamed so far.
 // `queued` is missing from a server older than the queue.
 export const ThreadSnapshot = Schema.TaggedStruct("Snapshot", {
   detail: ThreadDetail,

@@ -79,6 +79,9 @@ export class Threads extends Context.Service<
     // Returns once the turn has ended and that's logged. Does nothing when no turn is running.
     // A question waiting behind it isn't sent: its stream hands the text back.
     readonly interrupt: (id: string) => Effect.Effect<void, ThreadError>;
+    // Stops one turn, if it's still the one running, and lets a question waiting behind it start.
+    // For a monitor stopping its own look.
+    readonly stopTurn: (id: string, turnId: string) => Effect.Effect<void>;
     readonly subscribe: (id: string) => Stream.Stream<ThreadEvent, ThreadError>;
     readonly checkReproduce: (id: string) => Effect.Effect<ReproduceCheck, ThreadError>;
     // The owner's click: starts the thread's reproduce and logs it. Only between turns.
@@ -106,7 +109,10 @@ export type TurnOptions = {
 };
 
 type Waiting = { readonly message: QueuedMessage; readonly options: TurnOptions };
-type Running = { readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
+// `yieldsToQueue` is set when a monitor stops its look, so the question waiting behind it still
+// goes; a stop by the server leaves it to be lost with the restart.
+type Running = {
+  yieldsToQueue?: boolean; readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
 
 const MAX_TOOL_INPUT = 300;
 // A turn's MCP token is revoked when the turn ends. This only bounds one a crash left behind.
@@ -268,9 +274,8 @@ const make = Effect.gen(function* () {
         Effect.ensuring(Effect.sync(() => running.delete(id))),
       ),
     ).pipe(
-      // A stop by the owner already handed the waiting question back; one by the server leaves it
-      // to be lost with the restart.
-      Effect.andThen(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) ? Effect.void : startQueued(id)),
+      // A stop by the owner already handed the waiting question back.
+      Effect.andThen(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause) && !turn.yieldsToQueue ? Effect.void : startQueued(id)),
     );
 
   const clearQueue = (id: string, reason: "started" | "cancelled" | "stopped" | "failed", message: string | null) =>
@@ -288,8 +293,10 @@ const make = Effect.gen(function* () {
     Effect.suspend(() => {
       const waiting = queued.get(id);
       if (!waiting) return Effect.void;
-      return begin(id, waiting.message.text, waiting.options, true).pipe(
-        Effect.matchEffect({ onSuccess: () => clearQueue(id, "started", null), onFailure: (error) => clearQueue(id, "failed", error.message) }),
+      // `begin` takes it off the queue as it logs it, so only one of starting it and Stop wins.
+      return begin(id, waiting.message.text, waiting.options, waiting).pipe(
+        Effect.asVoid,
+        Effect.catch((error) => (queued.get(id) === waiting ? clearQueue(id, "failed", error.message) : Effect.void)),
       );
     });
 
@@ -301,7 +308,8 @@ const make = Effect.gen(function* () {
     reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
 
   // `fromQueue` is the waiting question itself, the one start a waiting question doesn't block.
-  const begin = Effect.fn("Threads.begin")(function* (id: string, text: string, { accountId, model, attachments: attaching, references: referring = [], scopes, monitor }: TurnOptions, fromQueue: boolean) {
+  // It starts only if it's still waiting when the lock is taken: Stop or Cancel may have won.
+  const begin = Effect.fn("Threads.begin")(function* (id: string, text: string, { accountId, model, attachments: attaching, references: referring = [], scopes, monitor }: TurnOptions, fromQueue: Waiting | null) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
@@ -314,7 +322,7 @@ const make = Effect.gen(function* () {
     if (!status.available) return yield* new ThreadError({ reason: "provider_unavailable" });
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
-        if (running.has(id) || (!fromQueue && queued.has(id))) return yield* new ThreadError({ reason: "turn_running" });
+        if (running.has(id) || (fromQueue === null ? queued.has(id) : queued.get(id) !== fromQueue)) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
         const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
         const taken = attaching === undefined ? [] : yield* attachments.take(attaching.sessionId, attaching.ids);
@@ -334,6 +342,10 @@ const make = Effect.gen(function* () {
           ...(references.length > 0 ? { references } : {}),
           ...(monitor ? { source: "monitor" as const } : {}),
         }).pipe(Effect.onError(() => attachments.release(ids)));
+        if (fromQueue !== null) {
+          queued.delete(id);
+          yield* publish(id, { _tag: "QueueCleared", reason: "started", text, message: null });
+        }
         // Logged, so the files are the thread's now. If moving one fails it stays staged until it
         // expires, and the thread shows it as missing; the turn already has its bytes.
         yield* attachments.keep(id, ids).pipe(Effect.ignore);
@@ -383,7 +395,7 @@ const make = Effect.gen(function* () {
     );
   });
 
-  const startTurn = (id: string, text: string, options: TurnOptions) => begin(id, text, options, false);
+  const startTurn = (id: string, text: string, options: TurnOptions) => begin(id, text, options, null);
 
   const queueTurn = Effect.fn("Threads.queueTurn")(function* (id: string, text: string, options: TurnOptions) {
     // What would refuse it later is refused now, while the owner is still looking.
@@ -423,6 +435,14 @@ const make = Effect.gen(function* () {
     const fiber = running.get(id)?.fiber;
     if (fiber) yield* Fiber.interrupt(fiber);
   });
+
+  const stopTurn = (id: string, turnId: string) =>
+    Effect.suspend(() => {
+      const turn = running.get(id);
+      if (turn?.turnId !== turnId || !turn.fiber) return Effect.void;
+      turn.yieldsToQueue = true;
+      return Fiber.interrupt(turn.fiber);
+    });
 
   const subscribe = (id: string) =>
     Stream.unwrap(
@@ -517,7 +537,7 @@ const make = Effect.gen(function* () {
     return proposal;
   });
 
-  return Threads.of({ provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
+  return Threads.of({ provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, stopTurn, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

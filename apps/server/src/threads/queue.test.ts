@@ -129,3 +129,68 @@ test("a question waiting behind a monitor's look runs as the owner's, and isn't 
     await server.close();
   }
 });
+
+test("Stop while the waiting question is still starting wins: it isn't sent, and its text comes back", async () => {
+  const fake = makeFakeProvider({ turns: [[{ text: "Quick." }], [{ text: "Should not run." }]], statusDelayMs: 300 });
+  const server = await startTestServer({ provider: fake });
+  try {
+    const { events, items } = await withClient(server, await token(server), (client) =>
+      Effect.gen(function* () {
+        const thread = yield* newThread(client);
+        const watching = yield* client["threads.subscribe"]({ id: thread.id }).pipe(
+          Stream.filter((event) => event._tag !== "AgentTextDelta"),
+          Stream.takeUntil((event) => event._tag === "QueueCleared"),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* client["threads.startTurn"]({ id: thread.id, text: "Why?" });
+        yield* client["threads.queueTurn"]({ id: thread.id, text: "Keep this" });
+        // The first turn ends almost at once; the waiting one is then checking its account.
+        yield* client["threads.subscribe"]({ id: thread.id }).pipe(Stream.takeUntil((event) => event._tag === "TurnEnded"), Stream.runDrain);
+        yield* client["threads.interrupt"]({ id: thread.id });
+        const events = [...(yield* Fiber.join(watching))];
+        yield* Effect.sleep(500);
+        return { events, items: (yield* client["threads.read"]({ id: thread.id })).items };
+      }),
+    );
+    const cleared = events.at(-1);
+    assert.deepEqual(cleared?._tag === "QueueCleared" && [cleared.reason, cleared.text], ["stopped", "Keep this"]);
+    assert.equal(items.filter((item) => item._tag === "UserMessage").length, 1);
+    assert.equal(fake.inputs.length, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("turning monitors off stops the look, and the owner's question waiting behind it still goes", async () => {
+  const fake = makeFakeProvider({ turns: [[{ text: "Owner's answer." }]], delayMs: 30, monitor: { steps: [{ text: "Looking into it, word by word, for quite a while longer." }], costUsd: 0.01 } });
+  const server = await startTestServer({ provider: fake });
+  try {
+    const app = await token(server);
+    await withClient(server, app, (client) => client["monitors.save"]({ enabled: true, dailyLimit: 5, accountId: null, model: null }));
+    const path = join(server.stateDir, ".server", "monitor.json");
+    const state = JSON.parse(await readFile(path, "utf8"));
+    delete state.seen["failure:owner/name\u0000ci\u0000test:infra"];
+    await writeFile(path, JSON.stringify(state));
+    const looking = server.checkMonitors();
+    const items = await withClient(server, app, (client) =>
+      Effect.gen(function* () {
+        let threadId: string | undefined;
+        while (threadId === undefined) {
+          yield* Effect.sleep(20);
+          threadId = (yield* client["threads.list"]({})).find((thread) => thread.running)?.id;
+        }
+        yield* client["threads.queueTurn"]({ id: threadId, text: "Is it the VM?" });
+        yield* client["monitors.save"]({ enabled: false, dailyLimit: 5, accountId: null, model: null });
+        yield* Effect.promise(() => looking);
+        yield* Effect.sleep(800);
+        return (yield* client["threads.read"]({ id: threadId })).items;
+      }),
+    );
+    const ends = items.flatMap((item) => (item._tag === "TurnEnded" ? [item.outcome] : []));
+    assert.deepEqual(ends, ["interrupted", "completed"]);
+    assert.deepEqual(fake.inputs.map((input) => input.propose), [false, true]);
+  } finally {
+    await server.close();
+  }
+});
