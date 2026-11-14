@@ -20,10 +20,7 @@ export type TurnOutcome = typeof TurnOutcome.Type;
 const at = Schema.String;
 const seq = Schema.Int;
 
-// What a thread's log holds after its first line, in order. `seq` counts from 1 in each thread.
-// `accountId` is the account the turn ran as; older lines don't have it.
-// `source` is "monitor" when a monitor asked, not the owner; older lines don't have it.
-// Another thread or a run, named in a question with `@`. The server reads it and adds it to the
+// Another thread or a run, named in a question. The server reads it and adds it to the
 // prompt, read-only. `days` is the window the run was listed in, to find it again.
 export const ThreadReference = Schema.Union([
   Schema.TaggedStruct("thread", { id: Schema.String }),
@@ -35,6 +32,9 @@ export const ResolvedReference = Schema.Struct({ ref: ThreadReference, title: Sc
 export type ResolvedReference = typeof ResolvedReference.Type;
 export const MAX_REFERENCES = 3;
 
+// What a thread's log holds after its first line, in order. `seq` counts from 1 in each thread.
+// `accountId` is the account the turn ran as; older lines don't have it.
+// `source` is "monitor" when a monitor asked, not the owner; older lines don't have it.
 // `model` is the model the turn picked in the composer, when it picked one.
 // `attachments` are the files sent with it; the bytes are in the thread's attachments directory.
 // `references` are the threads and runs it named, as they read when it was sent.

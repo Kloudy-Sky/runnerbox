@@ -12,7 +12,11 @@ const findings = (items: ReadonlyArray<ThreadItem>) => {
   const kept: string[] = [];
   let used = 0;
   for (const text of texts.toReversed()) {
-    if (used + text.length > MAX_FINDINGS_CHARS) break;
+    // The newest answer alone too long still brings its end, rather than nothing.
+    if (used + text.length > MAX_FINDINGS_CHARS) {
+      if (kept.length === 0) kept.unshift(text.slice(-MAX_FINDINGS_CHARS));
+      break;
+    }
     kept.unshift(text);
     used += text.length;
   }

@@ -62,7 +62,11 @@ const withinBudget = (entries: ReadonlyArray<string>) => {
   const kept: string[] = [];
   let used = 0;
   for (const entry of entries.toReversed()) {
-    if (used + entry.length > MAX_HISTORY_CHARS) break;
+    // The newest entry alone too long still brings its end, rather than nothing.
+    if (used + entry.length > MAX_HISTORY_CHARS) {
+      if (kept.length === 0) kept.unshift(entry.slice(-MAX_HISTORY_CHARS));
+      break;
+    }
     kept.unshift(entry);
     used += entry.length;
   }

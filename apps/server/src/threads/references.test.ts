@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
-import { ALL_SCOPES, MAX_MESSAGE_LENGTH, type ThreadEvent, type ThreadItem } from "@runnerbox/contracts";
+import { ALL_SCOPES, type ThreadEvent } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { makeFakeProvider } from "../testing/FakeProvider.ts";
 import { startTestServer } from "../testing/testServer.ts";
-import { MAX_HISTORY_CHARS, turnPrompt } from "./prompt.ts";
+import { MAX_FINDINGS_CHARS } from "./references.ts";
 
 type Server = Awaited<ReturnType<typeof startTestServer>>;
 type Client = Effect.Success<ReturnType<typeof openSession>>["client"];
@@ -63,12 +63,27 @@ test("a question can bring another thread's findings and a run's facts, marked a
   }
 });
 
-test("a long thread's history is cut to its budget, oldest first, and says so", () => {
-  const long = "x".repeat(MAX_MESSAGE_LENGTH);
-  const items: ThreadItem[] = Array.from({ length: 20 }, (_, index) => ({ _tag: "UserMessage", seq: index + 1, turnId: `t${index}`, text: `${index} ${long}`, at: "2026-01-01T00:00:00Z" }));
-  const prompt = turnPrompt("{}", items, "Last?");
-  const history = /<conversation_so_far>\n([\s\S]*)\n<\/conversation_so_far>/.exec(prompt)?.[1] ?? "";
-  assert.ok(history.length <= MAX_HISTORY_CHARS + 100);
-  assert.match(history, /^\(17 earlier entries left out for length\.\)/);
-  assert.ok(history.includes("Owner: 19 ") && !history.includes("Owner: 16 "));
+test("a referenced thread whose newest answer is longer than the budget still brings its end", async () => {
+  const fake = makeFakeProvider({ turns: [[{ text: `${"a".repeat(MAX_FINDINGS_CHARS)}the conclusion.` }], [{ text: "Compared." }]] });
+  const server = await startTestServer({ provider: fake });
+  try {
+    const { code } = await server.createPairingCode(ALL_SCOPES);
+    const { token } = await Effect.runPromise(pairWithCode(server.baseUrl, code, "app"));
+    await withClient(server, token, (client) =>
+      Effect.gen(function* () {
+        const [first, second] = (yield* client["inbox.list"]({ days: 14 })).items;
+        assert.ok(first && second);
+        const earlier = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: first.id }, days: 14 });
+        yield* ask(client, { id: earlier.id, text: "Why?" });
+        const now = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: second.id }, days: 14 });
+        yield* ask(client, { id: now.id, text: "Same?", references: [{ _tag: "thread", id: earlier.id }] });
+      }),
+    );
+    const packet = JSON.parse(/<referenced_thread untrusted="true">\n(.*)\n<\/referenced_thread>/.exec(fake.inputs[1]?.prompt ?? "")?.[1] ?? "{}");
+    assert.equal(packet.findings.length, 1);
+    assert.equal(packet.findings[0].length, MAX_FINDINGS_CHARS);
+    assert.ok(packet.findings[0].endsWith("the conclusion."));
+  } finally {
+    await server.close();
+  }
 });
