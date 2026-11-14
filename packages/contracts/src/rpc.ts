@@ -6,7 +6,7 @@ import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, Pairi
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
-import { Account, AccountError, AccountId, SaveAccount } from "./accounts.ts";
+import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
 import { CreateThread, MessageText, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
@@ -54,6 +54,7 @@ export const RPC_METHODS = {
   accessCreatePairingCode: "access.createPairingCode",
   accessRevokeSession: "access.revokeSession",
   threadsProvider: "threads.provider",
+  threadsHarnesses: "threads.harnesses",
   threadsList: "threads.list",
   threadsRead: "threads.read",
   threadsCreate: "threads.create",
@@ -132,6 +133,8 @@ export const RunnerboxRpcGroup = RpcGroup.make(
     error: Schema.Union([AuthorizationError, AccessError]),
   }),
   Rpc.make(RPC_METHODS.threadsProvider, { success: ProviderStatus, error: AuthorizationError }),
+  // Each driver, whether it can run here, and the models a turn may pick on it.
+  Rpc.make(RPC_METHODS.threadsHarnesses, { success: Schema.Array(Harness), error: AuthorizationError }),
   Rpc.make(RPC_METHODS.threadsList, {
     payload: { subject: Schema.optionalKey(ThreadSubject) },
     success: Schema.Array(ThreadSummary),
@@ -140,8 +143,12 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.threadsRead, { payload: ThreadId, success: ThreadDetail, error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsCreate, { payload: CreateThread, success: ThreadSummary, error: ThreadFailure }),
   // Returns once the question is logged; the answer arrives on the thread's stream.
-  // Without `accountId`, the turn runs as the default account.
-  Rpc.make(RPC_METHODS.threadsStartTurn, { payload: { ...ThreadId, text: MessageText, accountId: Schema.optionalKey(AccountId) }, success: Schema.Struct({ turnId: Schema.String }), error: ThreadFailure }),
+  // Without `accountId`, the turn runs as the default account. Without `model`, on the account's.
+  Rpc.make(RPC_METHODS.threadsStartTurn, {
+    payload: { ...ThreadId, text: MessageText, accountId: Schema.optionalKey(AccountId), model: Schema.optionalKey(ModelName) },
+    success: Schema.Struct({ turnId: Schema.String }),
+    error: ThreadFailure,
+  }),
   Rpc.make(RPC_METHODS.threadsInterrupt, { payload: ThreadId, error: ThreadFailure }),
   Rpc.make(RPC_METHODS.threadsSubscribe, { payload: ThreadId, success: ThreadEvent, error: ThreadFailure, stream: true }),
   Rpc.make(RPC_METHODS.threadsCheckReproduce, { payload: ThreadId, success: ReproduceCheck, error: ReproduceFailure }),
@@ -194,6 +201,7 @@ export const RPC_SCOPES = {
   [RPC_METHODS.accessCreatePairingCode]: ACCESS,
   [RPC_METHODS.accessRevokeSession]: ACCESS,
   [RPC_METHODS.threadsProvider]: THREADS,
+  [RPC_METHODS.threadsHarnesses]: THREADS,
   [RPC_METHODS.threadsList]: THREADS,
   [RPC_METHODS.threadsRead]: THREADS,
   [RPC_METHODS.threadsCreate]: THREADS,

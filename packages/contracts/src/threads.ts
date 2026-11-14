@@ -22,12 +22,14 @@ const seq = Schema.Int;
 // What a thread's log holds after its first line, in order. `seq` counts from 1 in each thread.
 // `accountId` is the account the turn ran as; older lines don't have it.
 // `source` is "monitor" when a monitor asked, not the owner; older lines don't have it.
+// `model` is the model the turn picked in the composer, when it picked one.
 export const UserMessage = Schema.TaggedStruct("UserMessage", {
   seq,
   turnId: Schema.String,
   text: Schema.String,
   at,
   accountId: Schema.optionalKey(Schema.String),
+  model: Schema.optionalKey(Schema.String),
   source: Schema.optionalKey(Schema.Literal("monitor")),
 });
 export const AgentText = Schema.TaggedStruct("AgentText", { seq, turnId: Schema.String, text: Schema.String, at });
@@ -114,7 +116,7 @@ export const CreateThread = Schema.Struct({
 });
 
 export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError", {
-  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found"]),
+  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -130,6 +132,8 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
         return "Couldn't read or write the thread's log on the server.";
       case "account_not_found":
         return "That account doesn't exist any more. Pick another in the composer.";
+      case "model_not_offered":
+        return "That model isn't offered for this account's harness. Pick another in the composer.";
     }
   }
 }

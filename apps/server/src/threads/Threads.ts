@@ -1,7 +1,9 @@
 import {
   type AuthScope,
+  type Harness,
   type Proposal,
   ProposalError,
+  ProviderDriver,
   type ProviderStatus,
   type ReproduceCheck,
   ReproduceError,
@@ -39,6 +41,7 @@ import type { Executed } from "../reproduce/UpSocket.ts";
 import { systemPrompt, turnPrompt } from "./prompt.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
 import { Drivers } from "./provider/Drivers.ts";
+import { HARNESSES, offersModel } from "./provider/harnesses.ts";
 import type { ProviderEvent } from "./provider/ProviderAdapter.ts";
 import { subjectPacket } from "./subjectPacket.ts";
 import * as ThreadLog from "./ThreadLog.ts";
@@ -49,6 +52,7 @@ export class Threads extends Context.Service<
   Threads,
   {
     readonly provider: Effect.Effect<ProviderStatus>;
+    readonly harnesses: Effect.Effect<ReadonlyArray<Harness>>;
     readonly list: (subject?: ThreadSubject) => Effect.Effect<ReadonlyArray<ThreadSummary>, ThreadError>;
     readonly read: (id: string) => Effect.Effect<ThreadDetail, ThreadError>;
     readonly create: (subject: ThreadSubject, days: number) => Effect.Effect<ThreadSummary, ThreadError>;
@@ -73,8 +77,11 @@ export class Threads extends Context.Service<
   }
 >()("runnerbox/server/threads/Threads") {}
 
+// `model` is the composer's pick, one of the account's driver's offered models. It wins over the
+// account's own model; a monitor's model wins over both.
 export type TurnOptions = {
   readonly accountId?: string | undefined;
+  readonly model?: string | undefined;
   readonly scopes: ReadonlyArray<AuthScope>;
   readonly monitor?: { readonly model: string } | undefined;
 };
@@ -99,6 +106,19 @@ const make = Effect.gen(function* () {
   const provider = accounts.resolve(undefined).pipe(
     Effect.flatMap((account) => drivers.get(account.driver).status({ hasKey: account.apiKey !== null })),
     Effect.catch(() => Effect.succeed<ProviderStatus>({ provider: "Claude", available: false, fix: "Couldn't read the accounts file on the server." })),
+  );
+  // A harness can run here when any of its accounts can, and says the first account's fix otherwise.
+  // An unreadable accounts file says so, as `provider` does, since adding an account would fail too.
+  const harnessesOf = (status: (driver: ProviderDriver, label: string) => ProviderStatus) =>
+    ProviderDriver.literals.map((driver): Harness => ({ driver, label: HARNESSES[driver].label, status: status(driver, HARNESSES[driver].label), models: HARNESSES[driver].models }));
+  const harnesses = accounts.list.pipe(
+    Effect.map((all) =>
+      harnessesOf((driver, label) => {
+        const own = all.filter((account) => account.driver === driver);
+        return own.find((account) => account.status.available)?.status ?? own[0]?.status ?? { provider: label, available: false, fix: "Add an account for it in Settings, Accounts." };
+      }),
+    ),
+    Effect.catch(() => Effect.succeed(harnessesOf((_, label) => ({ provider: label, available: false, fix: "Couldn't read the accounts file on the server." })))),
   );
   const auth = yield* AuthStore.AuthStore;
   const { baseUrl } = yield* LocalEndpoint.LocalEndpoint;
@@ -231,10 +251,11 @@ const make = Effect.gen(function* () {
   const settleReproduce = (id: string) =>
     reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
 
-  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, scopes, monitor }: TurnOptions) {
+  const startTurn = Effect.fn("Threads.startTurn")(function* (id: string, text: string, { accountId, model, scopes, monitor }: TurnOptions) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
+    if (model !== undefined && !offersModel(account.driver, model)) return yield* new ThreadError({ reason: "model_not_offered" });
     // So a turn doesn't get the shell for a container `up` already removed.
     yield* settleReproduce(id);
     const driver = drivers.get(account.driver);
@@ -246,7 +267,7 @@ const make = Effect.gen(function* () {
         const file = yield* loadUnlocked(id);
         const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
         // The account's ID only: its key never goes in a thread's log.
-        yield* appendUnlocked(id, { _tag: "UserMessage", seq: turn.nextSeq, turnId: turn.turnId, text, at: yield* nowIso, accountId: account.id, ...(monitor ? { source: "monitor" as const } : {}) });
+        yield* appendUnlocked(id, { _tag: "UserMessage", seq: turn.nextSeq, turnId: turn.turnId, text, at: yield* nowIso, accountId: account.id, ...(model !== undefined && !monitor ? { model } : {}), ...(monitor ? { source: "monitor" as const } : {}) });
         turn.nextSeq += 1;
         running.set(id, turn);
         const prompt = turnPrompt(file.header.packet, file.items, text);
@@ -274,7 +295,7 @@ const make = Effect.gen(function* () {
               mcp: { url: `${baseUrl}/mcp`, token: grant.token },
               reproduce: reproducing,
               propose: !monitor,
-              account: { label: account.label, model: monitor?.model ?? account.model, apiKey: account.apiKey },
+              account: { label: account.label, model: monitor?.model ?? model ?? account.model, apiKey: account.apiKey },
             })
             .pipe(Stream.runForEach(onEvent(id, turn)));
         }).pipe(
@@ -369,7 +390,7 @@ const make = Effect.gen(function* () {
     return proposal;
   });
 
-  return Threads.of({ provider, list, read, create, startTurn, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
+  return Threads.of({ provider, harnesses, list, read, create, startTurn, interrupt, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

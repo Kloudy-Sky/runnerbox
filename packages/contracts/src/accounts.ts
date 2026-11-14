@@ -16,6 +16,17 @@ export const AccountLabel = Schema.String.check(Schema.isMinLength(1), Schema.is
 // Write-only: it goes to the server and is never sent back.
 export const ApiKey = Schema.String.check(Schema.isPattern(/^\S{8,512}$/));
 
+// A harness is a driver as the composer offers it: whether it can run here, and the models the
+// server lets a turn pick. The list is the server's, so a client can't name a model it didn't offer.
+export const HarnessModel = Schema.Struct({ id: Schema.String, label: Schema.String });
+export const Harness = Schema.Struct({
+  driver: ProviderDriver,
+  label: Schema.String,
+  status: ProviderStatus,
+  models: Schema.Array(HarnessModel),
+});
+export type Harness = typeof Harness.Type;
+
 // An account as clients see it: never the key, only its last four characters.
 export const Account = Schema.Struct({
   id: Schema.String,
