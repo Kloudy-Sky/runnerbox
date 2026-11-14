@@ -1,4 +1,4 @@
-import { RPC_METHODS, RPC_SCOPES, RunnerboxRpcGroup, StateReadError } from "@runnerbox/contracts";
+import { RPC_METHODS, RPC_SCOPES, RunnerboxRpcGroup, StateReadError, type TurnRequest } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { Session } from "../auth/AuthStore.ts";
@@ -37,6 +37,12 @@ export const layer = (session: Session) =>
       const accounts = yield* AccountStore.AccountStore;
       const attachments = yield* Attachments.Attachments;
       const identity = yield* EnvironmentIdentity.EnvironmentIdentity;
+      // A turn's files are the ones this session staged, and its tools follow this session's scopes.
+      const turnOptions = ({ attachments: ids, ...rest }: Omit<TurnRequest, "id" | "text">): Threads.TurnOptions => ({
+        ...rest,
+        attachments: ids ? { sessionId: session.id, ids } : undefined,
+        scopes: session.scopes,
+      });
       return {
         "history.repos": () => history.repos.pipe(toWire),
         "history.overview": ({ days }) => history.overview(days).pipe(toWire),
@@ -59,8 +65,9 @@ export const layer = (session: Session) =>
         "threads.read": ({ id }) => threads.read(id),
         "threads.create": ({ subject, days }) => threads.create(subject, days),
         "threads.harnesses": () => threads.harnesses,
-        "threads.startTurn": ({ id, text, accountId, model, attachments: ids, references }) =>
-          threads.startTurn(id, text, { accountId, model, attachments: ids ? { sessionId: session.id, ids } : undefined, references, scopes: session.scopes }),
+        "threads.startTurn": ({ id, text, ...rest }) => threads.startTurn(id, text, turnOptions(rest)),
+        "threads.queueTurn": ({ id, text, ...rest }) => threads.queueTurn(id, text, turnOptions(rest)),
+        "threads.cancelQueued": ({ id }) => threads.cancelQueued(id),
         "threads.delete": ({ id }) => threads.remove(id),
         "threads.stageAttachment": (file) => attachments.stage(session.id, file),
         "threads.attachmentChunk": (chunk) => attachments.chunk(session.id, chunk),

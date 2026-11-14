@@ -39,6 +39,17 @@ const ReproduceFailure = Schema.Union([AuthorizationError, ThreadError, Reproduc
 const ProposalFailure = Schema.Union([AuthorizationError, ProposalError]);
 const ProposalId = { id: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)) };
 const ThreadId = { id: Schema.String };
+const TurnPayload = {
+  ...ThreadId,
+  text: MessageText,
+  accountId: Schema.optionalKey(AccountId),
+  model: Schema.optionalKey(ModelName),
+  attachments: Schema.optionalKey(Schema.Array(AttachmentId).check(Schema.isMaxLength(ATTACHMENT_LIMITS.perMessage))),
+  references: Schema.optionalKey(Schema.Array(ThreadReference).check(Schema.isMaxLength(MAX_REFERENCES))),
+};
+// A question as `threads.startTurn` and `threads.queueTurn` take it.
+export const TurnRequest = Schema.Struct(TurnPayload);
+export type TurnRequest = typeof TurnRequest.Type;
 const Window = { repo: RepoName, days: Days };
 
 export const RPC_METHODS = {
@@ -63,6 +74,8 @@ export const RPC_METHODS = {
   threadsCreate: "threads.create",
   threadsStartTurn: "threads.startTurn",
   threadsInterrupt: "threads.interrupt",
+  threadsQueueTurn: "threads.queueTurn",
+  threadsCancelQueued: "threads.cancelQueued",
   threadsDelete: "threads.delete",
   threadsStageAttachment: "threads.stageAttachment",
   threadsAttachmentChunk: "threads.attachmentChunk",
@@ -155,17 +168,15 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   // `attachments` are files this session staged; the turn claims them into the thread.
   // `references` are other threads and runs on this server, added to the prompt as data.
   Rpc.make(RPC_METHODS.threadsStartTurn, {
-    payload: {
-      ...ThreadId,
-      text: MessageText,
-      accountId: Schema.optionalKey(AccountId),
-      model: Schema.optionalKey(ModelName),
-      attachments: Schema.optionalKey(Schema.Array(AttachmentId).check(Schema.isMaxLength(ATTACHMENT_LIMITS.perMessage))),
-      references: Schema.optionalKey(Schema.Array(ThreadReference).check(Schema.isMaxLength(MAX_REFERENCES))),
-    },
+    payload: TurnPayload,
     success: Schema.Struct({ turnId: Schema.String }),
     error: TurnFailure,
   }),
+  // The same question, but while a turn runs it waits, one per thread, and starts when that turn
+  // ends. `turnId` is null while it waits.
+  Rpc.make(RPC_METHODS.threadsQueueTurn, { payload: TurnPayload, success: Schema.Struct({ turnId: Schema.NullOr(Schema.String) }), error: TurnFailure }),
+  // Drops the waiting question; the stream hands its text back.
+  Rpc.make(RPC_METHODS.threadsCancelQueued, { payload: ThreadId, error: ThreadFailure }),
   // Removes the thread's log and attachments. Refused while a turn or a reproduce runs. Proposals
   // it made stay, naming it as history.
   Rpc.make(RPC_METHODS.threadsDelete, { payload: ThreadId, error: ThreadFailure }),
@@ -234,6 +245,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.threadsCreate]: THREADS,
   [RPC_METHODS.threadsStartTurn]: THREADS,
   [RPC_METHODS.threadsInterrupt]: THREADS,
+  [RPC_METHODS.threadsQueueTurn]: THREADS,
+  [RPC_METHODS.threadsCancelQueued]: THREADS,
   [RPC_METHODS.threadsDelete]: THREADS,
   // Storing files on the machine is part of running threads, which Connect and MCP never reach.
   [RPC_METHODS.threadsStageAttachment]: THREADS,

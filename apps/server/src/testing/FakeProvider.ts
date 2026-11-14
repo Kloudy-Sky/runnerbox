@@ -29,6 +29,8 @@ export function makeFakeProvider(options: {
   readonly turns: ReadonlyArray<ReadonlyArray<FakeStep>>;
   readonly available?: boolean;
   readonly delayMs?: number;
+  // How long `status` takes, like a `claude auth status` that isn't cached.
+  readonly statusDelayMs?: number;
   readonly monitor?: { readonly steps: ReadonlyArray<FakeStep>; readonly costUsd: number };
 }) {
   const inputs: TurnInput[] = [];
@@ -56,7 +58,7 @@ export function makeFakeProvider(options: {
   };
 
   const layer = Layer.succeed(ProviderAdapter)({
-    status: () => Effect.succeed(options.available === false ? { provider: "Fake", available: false, fix: "Install Claude Code on this machine and run `claude` once to sign in." } : { provider: "Fake", available: true, fix: null }),
+    status: () => Effect.sleep(options.statusDelayMs ?? 0).pipe(Effect.as(options.available === false ? { provider: "Fake", available: false, fix: "Install Claude Code on this machine and run `claude` once to sign in." } : { provider: "Fake", available: true, fix: null })),
     runTurn: (input) =>
       Stream.suspend(() => {
         const monitor = !input.propose ? options.monitor : undefined;

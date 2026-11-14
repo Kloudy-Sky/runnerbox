@@ -108,16 +108,30 @@ export type ThreadSummary = typeof ThreadSummary.Type;
 export const ThreadDetail = Schema.Struct({ thread: ThreadSummary, items: Schema.Array(ThreadItem) });
 export type ThreadDetail = typeof ThreadDetail.Type;
 
+// A question waiting for the running turn to end. It's held in memory only, so a restart loses it.
+export const QueuedMessage = Schema.Struct({ text: Schema.String, at });
+export type QueuedMessage = typeof QueuedMessage.Type;
+
 // A thread's stream: a snapshot first, then each item as it's logged. Text streams as deltas of the
 // running turn, and its `AgentText` item replaces them. `partial` is the text streamed so far.
+// `queued` is missing from a server older than the queue.
 export const ThreadSnapshot = Schema.TaggedStruct("Snapshot", {
   detail: ThreadDetail,
   partial: Schema.NullOr(Schema.Struct({ turnId: Schema.String, text: Schema.String })),
+  queued: Schema.optionalKey(Schema.NullOr(QueuedMessage)),
 });
 export const AgentTextDelta = Schema.TaggedStruct("AgentTextDelta", { turnId: Schema.String, text: Schema.String });
+// The queue gained a question, or lost it: it started, the owner cancelled it, Stop dropped it,
+// or it couldn't start. Only `started` sent it; the others hand the text back to the composer.
+export const Queued = Schema.TaggedStruct("Queued", { message: QueuedMessage });
+export const QueueCleared = Schema.TaggedStruct("QueueCleared", {
+  reason: Schema.Literals(["started", "cancelled", "stopped", "failed"]),
+  text: Schema.String,
+  message: Schema.NullOr(Schema.String),
+});
 // The thread was deleted; its stream ends after this.
 export const ThreadDeleted = Schema.TaggedStruct("ThreadDeleted", {});
-export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, ThreadDeleted, UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded, ChangeProposed]);
+export const ThreadEvent = Schema.Union([ThreadSnapshot, AgentTextDelta, ThreadDeleted, Queued, QueueCleared, UserMessage, AgentText, ToolCall, TurnEnded, ReproduceStarted, ReproduceCommand, ReproduceEnded, ChangeProposed]);
 export type ThreadEvent = typeof ThreadEvent.Type;
 
 // Whether the environment can run agent turns. The reason never carries account details.
@@ -135,7 +149,7 @@ export const CreateThread = Schema.Struct({
 });
 
 export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError", {
-  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running", "reference_not_found", "reference_self"]),
+  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running", "reference_not_found", "reference_self", "queue_full"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -153,6 +167,8 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
         return "That account doesn't exist any more. Pick another in the composer.";
       case "reference_not_found":
         return "A thread or run this question refers to isn't on the server any more.";
+      case "queue_full":
+        return "A question is already waiting in this thread. Cancel it or wait for it to start.";
       case "reference_self":
         return "A thread can't refer to itself.";
       case "reproduce_running":

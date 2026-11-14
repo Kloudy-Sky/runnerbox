@@ -89,8 +89,9 @@ const make = Effect.gen(function* () {
   // Guards the file; `checking` keeps looks one at a time across passes.
   const lock = yield* Semaphore.make(1);
   const checking = yield* Semaphore.make(1);
-  // The thread a look is running in, so turning monitors off can stop it.
-  let active: string | null = null;
+  // The look running now, so turning monitors off can stop that turn and no other: an owner's
+  // question waiting behind it still starts.
+  let active: { readonly threadId: string; readonly turnId: string } | null = null;
 
   const read = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
@@ -133,7 +134,7 @@ const make = Effect.gen(function* () {
     // Everything in the inbox when it's turned on was there before the owner asked for this.
     const backlog = settings.enabled && !before.enabled ? yield* needsYou : [];
     yield* update((state) => [{ ...state, settings, seen: { ...state.seen, ...Object.fromEntries(backlog.map((item) => [item.id, new Date(now).toISOString()])) } }, undefined]);
-    if (!settings.enabled && active !== null) yield* threads.interrupt(active).pipe(Effect.ignore);
+    if (!settings.enabled && active !== null) yield* threads.stopTurn(active.threadId, active.turnId).pipe(Effect.ignore);
     return yield* status(true);
   });
 
@@ -214,11 +215,11 @@ const make = Effect.gen(function* () {
         }
         const { threadId, turnId } = started;
         // Set before anything else, so turning monitors off from here on stops this turn.
-        active = threadId;
+        active = { threadId, turnId };
         const run: MonitorRun = { itemId: item.id, title: item.title, threadId, startedAt, outcome: "running", costUsd: null };
         yield* Effect.gen(function* () {
           // Turned off while the turn was starting, before `active` was set.
-          if (!(yield* read).settings.enabled) yield* threads.interrupt(threadId).pipe(Effect.ignore);
+          if (!(yield* read).settings.enabled) yield* threads.stopTurn(threadId, turnId).pipe(Effect.ignore);
           yield* update((state) => [{ ...state, day: { ...state.day, looks: state.day.looks + 1 } }, undefined]);
           yield* record(run, 0);
           const end = yield* ended(threadId, turnId);
