@@ -108,16 +108,17 @@ const make = Effect.gen(function* () {
     Effect.catch(() => Effect.succeed<ProviderStatus>({ provider: "Claude", available: false, fix: "Couldn't read the accounts file on the server." })),
   );
   // A harness can run here when any of its accounts can, and says the first account's fix otherwise.
+  // An unreadable accounts file says so, as `provider` does, since adding an account would fail too.
+  const harnessesOf = (status: (driver: ProviderDriver, label: string) => ProviderStatus) =>
+    ProviderDriver.literals.map((driver): Harness => ({ driver, label: HARNESSES[driver].label, status: status(driver, HARNESSES[driver].label), models: HARNESSES[driver].models }));
   const harnesses = accounts.list.pipe(
-    Effect.orElseSucceed(() => []),
     Effect.map((all) =>
-      ProviderDriver.literals.map((driver): Harness => {
-        const harness = HARNESSES[driver];
+      harnessesOf((driver, label) => {
         const own = all.filter((account) => account.driver === driver);
-        const status = own.find((account) => account.status.available)?.status ?? own[0]?.status ?? { provider: harness.label, available: false, fix: "Add an account for it in Settings, Accounts." };
-        return { driver, label: harness.label, status, models: harness.models };
+        return own.find((account) => account.status.available)?.status ?? own[0]?.status ?? { provider: label, available: false, fix: "Add an account for it in Settings, Accounts." };
       }),
     ),
+    Effect.catch(() => Effect.succeed(harnessesOf((_, label) => ({ provider: label, available: false, fix: "Couldn't read the accounts file on the server." })))),
   );
   const auth = yield* AuthStore.AuthStore;
   const { baseUrl } = yield* LocalEndpoint.LocalEndpoint;
