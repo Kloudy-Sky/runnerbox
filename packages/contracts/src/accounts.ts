@@ -19,6 +19,7 @@ export const ApiKey = Schema.String.check(Schema.isPattern(/^\S{8,512}$/));
 // A harness is a driver as the composer offers it: whether it can run here, and the models the
 // server lets a turn pick. The list is the server's, so a client can't name a model it didn't offer.
 export const HarnessModel = Schema.Struct({ id: Schema.String, label: Schema.String });
+export type HarnessModel = typeof HarnessModel.Type;
 export const Harness = Schema.Struct({
   driver: ProviderDriver,
   label: Schema.String,

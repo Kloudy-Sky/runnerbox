@@ -21,8 +21,9 @@ const makeFakeProviderUnavailable = () => makeFakeProvider({ turns: [], availabl
 
 // A real server on random loopback ports over freshly written fixture logs, in a temporary
 // directory that `close` removes. Pass `stateDir` to start again over an earlier server's files,
-// and `close(false)` to keep them. Threads use `provider`, or one that's never available.
-export async function startTestServer(options: { fixtures?: boolean; stateDir?: string; provider?: ReturnType<typeof makeFakeProvider>; withoutMethods?: ReadonlyArray<RpcMethod> } = {}) {
+// and `close(false)` to keep them. Threads use `provider`, or one that's never available, and run
+// Codex only when given `codex`.
+export async function startTestServer(options: { fixtures?: boolean; stateDir?: string; provider?: ReturnType<typeof makeFakeProvider>; codex?: ReturnType<typeof makeFakeProvider>; withoutMethods?: ReadonlyArray<RpcMethod> } = {}) {
   const stateDir = options.stateDir ?? (await mkdtemp(join(tmpdir(), "runnerbox-server-test-")));
   const now = Date.now();
   if (options.stateDir === undefined && options.fixtures !== false) await writeFixtures(stateDir, now);
@@ -30,7 +31,7 @@ export async function startTestServer(options: { fixtures?: boolean; stateDir?: 
   const scope = Effect.runSync(Scope.make());
   // Two loopback listeners, the one apps use and the tunnel-facing one, each on a port the system
   // picks as it binds, so no other test can take it in between. Their ports are read back once up.
-  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port: 0, tunnelPort: 0, stateDir, provider: provider.layer, withoutMethods: options.withoutMethods ?? [] }), scope));
+  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port: 0, tunnelPort: 0, stateDir, provider: provider.layer, ...(options.codex ? { codex: options.codex.codexLayer } : {}), withoutMethods: options.withoutMethods ?? [] }), scope));
   const listening = Context.get(context, ListeningPorts.ListeningPorts);
   const [port, tunnelPort] = await Effect.runPromise(Effect.all([Deferred.await(listening.local), Deferred.await(listening.tunnel)]));
   const auth = Context.get(context, AuthStore.AuthStore);

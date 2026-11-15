@@ -27,7 +27,7 @@ const USAGE = `Usage:
   runnerbox host render --config <file> --out <dir>
   runnerbox report --repo <owner/name> [options]
   runnerbox summary --repo <owner/name> [--since <days>d] [--by labels|runner] [--redact]
-  runnerbox serve | pair | mcp-token | link | unlink | link-status   (see runnerbox serve --help)
+  runnerbox serve | pair | mcp-token | link | unlink | link-status | codex-login   (see runnerbox serve --help)
 
 up: keeps runners waiting for jobs in the VM until stopped.
 vm render: writes the VM's cloud-init seed, firewall and a create.sh to run on the host.

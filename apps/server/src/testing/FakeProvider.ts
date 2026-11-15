@@ -1,7 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { ProviderAdapter, ProviderError, type ProviderEvent, type TurnInput } from "../threads/provider/ProviderAdapter.ts";
+import { HARNESSES } from "../threads/provider/harnesses.ts";
+import { CodexProviderAdapter, ProviderAdapter, ProviderError, type ProviderEvent, type TurnInput } from "../threads/provider/ProviderAdapter.ts";
 import { mcpSession } from "./mcpClient.ts";
 
 export type ToolResult = { readonly status: number; readonly text: string; readonly isError: boolean };
@@ -32,6 +33,7 @@ export function makeFakeProvider(options: {
   // How long `status` takes, like a `claude auth status` that isn't cached.
   readonly statusDelayMs?: number;
   readonly monitor?: { readonly steps: ReadonlyArray<FakeStep>; readonly costUsd: number };
+  readonly models?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
 }) {
   const inputs: TurnInput[] = [];
   const toolResults: ToolResult[] = [];
@@ -57,7 +59,8 @@ export function makeFakeProvider(options: {
     return Stream.never;
   };
 
-  const layer = Layer.succeed(ProviderAdapter)({
+  const adapter: ProviderAdapter["Service"] = {
+    models: Effect.succeed(options.models ?? HARNESSES.claude.models),
     status: () => Effect.sleep(options.statusDelayMs ?? 0).pipe(Effect.as(options.available === false ? { provider: "Fake", available: false, fix: "Install Claude Code on this machine and run `claude` once to sign in." } : { provider: "Fake", available: true, fix: null })),
     runTurn: (input) =>
       Stream.suspend(() => {
@@ -69,7 +72,8 @@ export function makeFakeProvider(options: {
           Stream.concat(Stream.succeed<ProviderEvent>({ _tag: "Done", costUsd: monitor?.costUsd ?? 0 })),
         );
       }),
-  });
+  };
 
-  return { layer, inputs, toolResults };
+  // `layer` stands in for Claude's adapter, `codexLayer` for Codex's.
+  return { layer: Layer.succeed(ProviderAdapter)(adapter), codexLayer: Layer.succeed(CodexProviderAdapter)(adapter), inputs, toolResults };
 }

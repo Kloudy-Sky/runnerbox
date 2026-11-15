@@ -1,8 +1,10 @@
 // Serves fixture logs with a scripted agent, for driving the app's threads by hand without a
 // Claude login:
-//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older]
+//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex]
 // `--older` answers as a server from before the composer's model menu, attachments, references,
-// queue and delete, to see the app hold back what such a server can't do.
+// queue and delete, to see the app hold back what such a server can't do. `--codex` runs the real
+// Codex adapter beside the scripted Claude one, with a Codex home under <dir>, signed in with
+// `XDG_STATE_HOME=<dir> runnerbox codex-login`; it reaches the machine's `codex`, not the fixtures.
 // It writes fixtures under <dir>, prints a pairing code, and runs until stopped. Never point it
 // at a real state directory. Keep <dir> short: the reproduce socket's path must fit in about
 // 100 characters.
@@ -14,11 +16,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as AuthStore from "../auth/AuthStore.ts";
 import { layerApp } from "../server.ts";
+import * as CodexAdapter from "../threads/provider/CodexAdapter.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
 import { startFakeUp } from "./fakeUp.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false }, codex: { type: "boolean", default: false } } });
 // What a server from before the composer work doesn't answer.
 const OLDER_SERVER_LACKS = [
   "server.methods",
@@ -33,7 +36,7 @@ const OLDER_SERVER_LACKS = [
 ] as const;
 const target = positionals[0];
 if (!target) {
-  console.error("Usage: node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older]");
+  console.error("Usage: node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex]");
   process.exit(2);
 }
 const stateDir = join(resolve(target), "runnerbox");
@@ -89,7 +92,7 @@ await startFakeUp(join(stateDir, "example"), {
 });
 
 const program = Effect.gen(function* () {
-  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, withoutMethods: values.older ? OLDER_SERVER_LACKS : [] }));
+  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, ...(values.codex ? { codex: CodexAdapter.layer } : {}), withoutMethods: values.older ? OLDER_SERVER_LACKS : [] }));
   const { code } = yield* Context.get(context, AuthStore.AuthStore).createPairingCode(ALL_SCOPES);
   console.log(`Serving fixtures from ${stateDir} on http://127.0.0.1:${values.port}. Pairing code: ${code}`);
   return yield* Effect.never;
