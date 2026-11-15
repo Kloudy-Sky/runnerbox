@@ -43,11 +43,11 @@ test("the server runs the same file with the same arguments, and knows it's supe
 
 test("a stop is passed to the server, which finishes on its own", async () => {
   await withServer(
-    `process.on("SIGTERM", () => { require("node:fs").writeFileSync(require("node:path").join(__dirname, "stopped"), ""); process.exit(0); }); setInterval(() => {}, 1000);`,
+    `process.on("SIGTERM", () => { require("node:fs").writeFileSync(require("node:path").join(__dirname, "stopped"), ""); process.exit(0); }); setInterval(() => {}, 1000); ${STARTED}`,
     async (file, dir) => {
       const supervisor = supervise(file);
       const exited = supervisor.run();
-      await started();
+      await started(dir);
       supervisor.stop("SIGTERM");
       assert.equal(await exited, 0);
       await readFile(join(dir, "stopped"));
@@ -56,17 +56,24 @@ test("a stop is passed to the server, which finishes on its own", async () => {
 });
 
 test("a server that ignores a stop is killed after the grace period", async () => {
-  await withServer(`process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);`, async (file) => {
+  await withServer(`process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); ${STARTED}`, async (file, dir) => {
     const supervisor = supervise(file, 200);
     const exited = supervisor.run();
-    await started();
+    await started(dir);
     supervisor.stop("SIGTERM");
     assert.equal(await exited, 128 + 9);
   });
 });
 
-// Long enough for a stand-in to install its signal handler.
-const started = () => new Promise((resolve) => setTimeout(resolve, 300));
+// Until a stand-in has written `started` beside itself, once its signal handler is in place.
+const started = async (dir: string) => {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (await readFile(join(dir, "started")).then(() => true, () => false)) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error("The stand-in never started.");
+};
+const STARTED = `require("node:fs").writeFileSync(require("node:path").join(__dirname, "started"), "");`;
 
 const freePort = () =>
   new Promise<number>((resolve) => {
@@ -76,12 +83,16 @@ const freePort = () =>
     });
   });
 
-test("runnerbox serve answers under its supervisor, and SIGTERM stops both", async () => {
+// To the supervisor alone, or to its whole process group as systemd's default stop and Ctrl-C in
+// a terminal send it, so the server gets it twice.
+for (const to of ["the supervisor", "the process group"] as const)
+test(`runnerbox serve answers under its supervisor, and SIGTERM to ${to} stops both`, async () => {
   const home = await mkdtemp(join(tmpdir(), "runnerbox-supervised-"));
   const port = await freePort();
   const child = spawn(process.execPath, [new URL("../../../../../src/main.ts", import.meta.url).pathname, "serve", "--port", String(port)], {
     env: { ...process.env, XDG_STATE_HOME: home },
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   try {
     await new Promise<void>((resolve, reject) => {
@@ -92,16 +103,26 @@ test("runnerbox serve answers under its supervisor, and SIGTERM stops both", asy
       });
       child.once("exit", () => reject(new Error(`serve exited early:\n${output}`)));
     });
-    const descriptor = await fetch(`http://127.0.0.1:${port}/.well-known/runnerbox/environment`).then((response) => response.json());
+    // The startup lines can print before the listener is bound.
+    let descriptor: { environmentId?: unknown } = {};
+    for (let attempt = 0; attempt < 100 && descriptor.environmentId === undefined; attempt++) {
+      descriptor = await fetch(`http://127.0.0.1:${port}/.well-known/runnerbox/environment`).then((response) => response.json(), () => ({}));
+      if (descriptor.environmentId === undefined) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     assert.equal(typeof descriptor.environmentId, "string");
     const exited = new Promise<number | null>((resolve) => child.once("exit", resolve));
-    child.kill("SIGTERM");
+    if (to === "the supervisor") child.kill("SIGTERM");
+    else process.kill(-(child.pid ?? 0), "SIGTERM");
     // The server's own code for a stop, as when it ran without a supervisor.
     assert.equal(await exited, 130);
     // The server went with it: nothing is left listening.
     await assert.rejects(fetch(`http://127.0.0.1:${port}/.well-known/runnerbox/environment`));
   } finally {
-    child.kill("SIGKILL");
+    try {
+      process.kill(-(child.pid ?? 0), "SIGKILL");
+    } catch {
+      // Already gone.
+    }
     await rm(home, { recursive: true, force: true });
   }
 });

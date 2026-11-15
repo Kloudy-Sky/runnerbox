@@ -5,11 +5,11 @@ name: vm
 on:
   pull_request:
     paths:
-      ["src/vm/**", "src/jobvm/**", "scripts/job-vm-check.ts", "image/**", "src/launcher/docker-command.ts", "src/launcher/launcher-config.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+      ["src/vm/**", "src/jobvm/**", "scripts/job-vm-check.ts", "image/**", "src/launcher/docker-command.ts", "src/launcher/launcher-config.ts", "src/cli.ts", "src/main.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   push:
     branches: [main]
     paths:
-      ["src/vm/**", "src/jobvm/**", "scripts/job-vm-check.ts", "image/**", "src/launcher/docker-command.ts", "src/launcher/launcher-config.ts", "src/cli.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
+      ["src/vm/**", "src/jobvm/**", "scripts/job-vm-check.ts", "image/**", "src/launcher/docker-command.ts", "src/launcher/launcher-config.ts", "src/cli.ts", "src/main.ts", "package.json", "pnpm-lock.yaml", "runnerbox.vm.example.json", ".github/workflows/vm.yml"]
   workflow_dispatch:
 
 permissions:
