@@ -1,6 +1,6 @@
 import type { InstallState, MachineSample } from "@runnerbox/contracts";
 import { ChevronRight } from "lucide-react";
-import { formatMiB } from "../../lib/format.ts";
+import { formatMiBOf } from "../../lib/format.ts";
 import type { Lane } from "../../lib/now.ts";
 import { ImageFacts } from "../ImageFacts.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
@@ -26,7 +26,7 @@ export function MachineNow(props: {
             <span className="block h-full bg-muted-foreground" style={{ width: `${Math.round(((vm.totalMiB - vm.availableMiB) / vm.totalMiB) * 100)}%` }} />
           </span>
           <span className="text-muted-foreground tabular-nums">
-            {formatMiB(vm.totalMiB - vm.availableMiB)} of {formatMiB(vm.totalMiB)}
+            {formatMiBOf(vm.totalMiB - vm.availableMiB, vm.totalMiB).part} of {formatMiBOf(vm.totalMiB - vm.availableMiB, vm.totalMiB).whole}
           </span>
         </div>
       ) : null}

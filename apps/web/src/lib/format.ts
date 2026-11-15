@@ -15,8 +15,18 @@ export function formatAge(iso: string | null | undefined, now = Date.now()) {
   return hours < 48 ? `${hours}h` : `${Math.round(hours / 24)}d`;
 }
 
+// Memory for the owner: GB to one decimal from 1024 MiB, whole MB below. It's 1024-based, but
+// labelled GB and MB, which is what people call them. The server's sentences use the same rule
+// (`memory` in apps/server/src/inbox/jobs.ts); change both together. Config keys keep their names.
 export const formatMiB = (value: number | null | undefined) =>
-  value === null || value === undefined ? "-" : value >= 1024 ? `${(value / 1024).toFixed(1)} GiB` : `${Math.round(value)} MiB`;
+  value === null || value === undefined ? "-" : value >= 1024 ? `${(value / 1024).toFixed(1)} GB` : `${Math.round(value)} MB`;
+
+// A part and its whole in the whole's unit, so "X of Y" never mixes MB and GB: "0.6 GB" of
+// "16.0 GB". A part that would round to 0.0 GB is "under 0.1 GB". Mirrors `memoryOf` on the server.
+export const formatMiBOf = (part: number, whole: number) => ({
+  part: whole < 1024 ? formatMiB(part) : part < 0.05 * 1024 ? "under 0.1 GB" : `${(part / 1024).toFixed(1)} GB`,
+  whole: formatMiB(whole),
+});
 
 export const formatPercent = (part: number, whole: number) => (whole === 0 ? "-" : `${((part / whole) * 100).toFixed(1)}%`);
 

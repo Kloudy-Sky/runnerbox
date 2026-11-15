@@ -1,5 +1,5 @@
 import type { InboxItem } from "@runnerbox/contracts";
-import { formatAge, formatDuration, formatMiB } from "../lib/format.ts";
+import { formatAge, formatDuration, formatMiB, formatMiBOf } from "../lib/format.ts";
 import { Heading } from "./Heading.tsx";
 import { Sparkline } from "./Sparkline.tsx";
 
@@ -64,7 +64,7 @@ export function ItemEvidence({ item }: { item: InboxItem }) {
           <Heading>Machine during the job, {machine.samples} samples</Heading>
           <table>
             <tbody>
-              <tr><td className="pr-4 text-muted-foreground">VM lowest available</td><td>{formatMiB(machine.vmLowMiB)}{machine.vmTotalMiB ? <span className="text-muted-foreground"> of {formatMiB(machine.vmTotalMiB)}</span> : null}</td></tr>
+              <tr><td className="pr-4 text-muted-foreground">VM lowest available</td><td>{machine.vmTotalMiB && machine.vmLowMiB !== null ? <>{formatMiBOf(machine.vmLowMiB, machine.vmTotalMiB).part}<span className="text-muted-foreground"> of {formatMiBOf(machine.vmLowMiB, machine.vmTotalMiB).whole}</span></> : formatMiB(machine.vmLowMiB)}</td></tr>
               <tr><td className="pr-4 text-muted-foreground">VM swap peak</td><td>{formatMiB(machine.vmSwapPeakMiB)}</td></tr>
               <tr><td className="pr-4 text-muted-foreground">Host lowest available</td><td>{formatMiB(machine.hostLowMiB)}</td></tr>
             </tbody>
