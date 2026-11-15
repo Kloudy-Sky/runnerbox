@@ -47,6 +47,7 @@ export function jobTrends(jobs: readonly JobRecord[], now: number, days: number)
           workflow: first.workflow,
           job: first.job,
           runnerType: runnerType(first),
+          hosted: !first.labels.includes("self-hosted"),
           runs: recent.length,
           runnerMs: recent.reduce((sum, job) => sum + (durationMs(job) ?? 0), 0),
           typicalMs,

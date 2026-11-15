@@ -31,6 +31,7 @@ test("a job is slower when its typical time grew by a quarter and by at least 30
   ]);
   assert.equal(trends[0]!.change?.text, "The Install step grew from 20 seconds to 2 minutes.");
   assert.equal(trends[1]!.change, null);
+  assert.equal(trends[0]!.hosted, false);
   assert.equal(trends[0]!.days.length, 8);
   assert.equal(trends[0]!.days.reduce((sum, day) => sum + day.runs, 0), trends[0]!.runs);
   assert.deepEqual(trends[0]!.days.filter((day) => day.runs > 0).map((day) => day.day), ["2026-06-12", "2026-06-13", "2026-06-14"]);

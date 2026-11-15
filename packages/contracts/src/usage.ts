@@ -68,6 +68,8 @@ export const JobTrend = Schema.Struct({
   workflow: Schema.NullOr(Schema.String),
   job: Schema.String,
   runnerType: Schema.String,
+  // On GitHub's machines: its labels didn't ask for a self-hosted runner. Missing from an older server.
+  hosted: Schema.optionalKey(Schema.Boolean),
   runs: Schema.Number,
   runnerMs: Schema.Number,
   typicalMs: NullableNumber,
