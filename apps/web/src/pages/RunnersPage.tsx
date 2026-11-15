@@ -32,6 +32,8 @@ function ExplainedRunners() {
   const [chosen, setChosen] = useState<string | null>(null);
   const installs = explained.data?.installs ?? [];
   const install = installs.find((each) => each.install === chosen) ?? installs[0];
+  // A server that has the method but can't answer still gets the raw records, never a blank pane.
+  if (explained.isError && !explained.data) return <RunnerRecords />;
   if (!explained.data) return null;
   if (!install) {
     return (

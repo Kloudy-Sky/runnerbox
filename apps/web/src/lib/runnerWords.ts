@@ -1,8 +1,8 @@
 import type { SlotPhase } from "@runnerbox/contracts";
 
-// What a runner is doing, in the words someone new to CI reads. The Now view uses them, and the
-// Runners page is moving to them, so one machine reads the same on both. `job` is the name its
-// runner said it took, when busy.
+// What a runner is doing, in the words someone new to CI reads. The Now view and the Runners page
+// both use them, so one machine reads the same on both. `job` is the name its runner said it took,
+// when busy.
 export function runnerPhase(phase: SlotPhase, job?: string | null) {
   switch (phase) {
     case "registered":
