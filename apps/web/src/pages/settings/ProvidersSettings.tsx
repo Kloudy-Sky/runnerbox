@@ -22,7 +22,7 @@ type Editing = { readonly driver: string; readonly accountId: string | null };
 // this server runs, with its status, its accounts and its models. Only drivers the server lists
 // appear.
 export function ProvidersSettings() {
-  const { providers, refresh, save, environmentId } = useProviders();
+  const { providers, error, refresh, save, environmentId } = useProviders();
   const { environment } = useActiveEnvironment();
   const canEdit = environment?.scopes.includes("access:write") ?? false;
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -45,6 +45,11 @@ export function ProvidersSettings() {
   return (
     <SettingsPageContainer>
       <SettingsIntro>Who agent threads run as, for each provider this server runs. A key is kept on the runner machine, owner-only, and only its last four characters are ever shown again.</SettingsIntro>
+      {error ? (
+        <SettingsSection title="Providers">
+          <SettingsUnavailableGroup message={`Couldn't read this server's providers: ${errorText(error)}`}>{null}</SettingsUnavailableGroup>
+        </SettingsSection>
+      ) : null}
       {providers.map((provider) => (
         <ProviderSection key={provider.driver} provider={provider} canEdit={canEdit} editing={editing?.driver === provider.driver ? editing : null} onEdit={setEditing} actions={actions} />
       ))}

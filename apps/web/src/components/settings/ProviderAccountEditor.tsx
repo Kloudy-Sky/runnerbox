@@ -36,12 +36,18 @@ export function ProviderAccountEditor({
   const [model, setModel] = useState(account?.model ?? DEFAULT_MODEL);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
-  const act = (work: () => Promise<unknown>) => {
+  // Saving or removing closes the editor; making the account the default keeps it open.
+  const act = (work: () => Promise<unknown>, close = true) => {
     setBusy(true);
-    void work().then(onDone, () => setBusy(false));
+    void work().then(
+      () => (close ? onDone() : setBusy(false)),
+      () => setBusy(false),
+    );
   };
+  // A server older than listing its models offers none, so the model is typed, as it was before.
+  const listed = provider.models.length > 0;
   // A model saved before the picker, that the server doesn't offer, stays visible rather than silently going.
-  const models = account?.model && !provider.models.some((each) => each.id === account.model) ? [...provider.models, { id: account.model, label: `${account.model} (not offered)` }] : provider.models;
+  const models = listed && account?.model && !provider.models.some((each) => each.id === account.model) ? [...provider.models, { id: account.model, label: `${account.model} (not offered)` }] : provider.models;
   const modelLabel = (id: string) => (id === DEFAULT_MODEL ? `${provider.label} default` : (models.find((each) => each.id === id)?.label ?? id));
   const save = () =>
     act(() =>
@@ -49,7 +55,7 @@ export function ProviderAccountEditor({
         ...(account ? { id: account.id } : {}),
         driver: provider.driver,
         label: label.trim(),
-        model: model === DEFAULT_MODEL ? null : model,
+        model: model.trim() === DEFAULT_MODEL ? null : model.trim(),
         ...(apiKey.trim() === "" ? {} : { apiKey: apiKey.trim() }),
       }),
     );
@@ -100,19 +106,23 @@ export function ProviderAccountEditor({
         title="Model"
         description="What this account's turns run on, unless the composer picks another."
         control={
-          <Select value={model} onValueChange={(value) => setModel(value ?? DEFAULT_MODEL)}>
-            <SelectTrigger className="w-64" size="sm">
-              <SelectValue>{() => modelLabel(model)}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value={DEFAULT_MODEL}>{modelLabel(DEFAULT_MODEL)}</SelectItem>
-              {models.map((each) => (
-                <SelectItem key={each.id} value={each.id}>
-                  {each.label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
+          listed ? (
+            <Select value={model} onValueChange={(value) => setModel(value ?? DEFAULT_MODEL)}>
+              <SelectTrigger className="w-64" size="sm">
+                <SelectValue>{() => modelLabel(model)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value={DEFAULT_MODEL}>{modelLabel(DEFAULT_MODEL)}</SelectItem>
+                {models.map((each) => (
+                  <SelectItem key={each.id} value={each.id}>
+                    {each.label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          ) : (
+            <Input value={model} onValueChange={setModel} placeholder="default" className="w-64" size="sm" />
+          )
         }
       />
       <div className="flex justify-end gap-2 px-3 py-3 sm:px-4">
@@ -120,7 +130,7 @@ export function ProviderAccountEditor({
           Cancel
         </Button>
         {account && !account.isDefault ? (
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => actions.setDefault(account.id))}>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => act(() => actions.setDefault(account.id), false)}>
             Make default
           </Button>
         ) : null}
