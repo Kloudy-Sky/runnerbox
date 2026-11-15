@@ -8,8 +8,8 @@ import { anyRunnerBusy, mintRegistration, removeRunner } from "../github/runner-
 import { installPaths } from "../host/install-paths.ts";
 import { buildInVm } from "../image/build-in-vm.ts";
 import { hashContext } from "../image/context-hash.ts";
-import { withRebuildPeriod } from "../image/rebuild-period.ts";
 import { createImageKeeper } from "../image/image-keeper.ts";
+import { withRebuildPeriod } from "../image/rebuild-period.ts";
 import type { InTurn } from "../jobvm/in-turn.ts";
 import { startJobVms } from "../jobvm/start-job-vms.ts";
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
