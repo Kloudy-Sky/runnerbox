@@ -17,6 +17,14 @@ test("each new item is announced once, and turning on announces no backlog", () 
   assert.deepEqual(toAnnounce(["b", "c"], second.seen).announce, [], "an item that left and came back isn't announced again");
 });
 
+test("an item still waiting is never dropped from what's seen, however many arrive after it", () => {
+  // A full list: the item still waiting was seen first, then 499 that have since gone.
+  const full = ["waiting", ...Array.from({ length: 499 }, (_, index) => `gone-${index}`)];
+  const after = toAnnounce(["waiting", "new"], full);
+  assert.deepEqual(after.announce, ["new"]);
+  assert.deepEqual(toAnnounce(["waiting", "new"], after.seen).announce, []);
+});
+
 test("two new items get one notification each, and more get a single one that opens home", () => {
   assert.deepEqual(announcements([item("a"), item("b")]).map(({ title, itemId }) => [title, itemId]), [["title a", "a"], ["title b", "b"]]);
   const many = announcements([item("a"), item("b"), item("c"), item("d")]);
