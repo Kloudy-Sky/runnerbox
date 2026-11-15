@@ -107,7 +107,7 @@ test("memory waits seconds long are not blamed for jobs that waited many minutes
     item.why,
     "The logs don't show why. The linux runners have 2 slots, and they were never all busy at once while these jobs waited. The machine was short of free memory for them for 14 seconds of the 25 minutes these jobs were waiting, too little to explain it.",
   );
-  assert.equal(item.action, "Check that runnerbox is running on the machine and that its runners are listening for these labels.");
+  assert.equal(item.action, "Check that Runnerbox is running on the machine and that its runners are listening for these labels.");
   assert.equal(item.evidence.launcher.length, 2);
 });
 

@@ -49,7 +49,7 @@ function actionFor(cause: WaitCause) {
     const memory = cause.tight ? ` More slots need more memory, and the ${cause.tight} ran low while these jobs ran, so give it more memory too.` : "";
     return `Give ${runnersOf(cause)} more slots, or move short jobs to a lighter kind of runner so they don't wait behind long ones.${memory}`;
   }
-  return "Check that runnerbox is running on the machine and that its runners are listening for these labels.";
+  return "Check that Runnerbox is running on the machine and that its runners are listening for these labels.";
 }
 
 // Jobs that waited long enough for a runner and never got one. One cause, one item: every
