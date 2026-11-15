@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import serverPackage from "../apps/server/package.json" with { type: "json" };
 import { SERVER_COMMANDS } from "../apps/server/src/commandNames.ts";
+import { releaseRepository } from "../apps/server/src/update/releaseRepository.ts";
 import { createGitHubClient, REPO_NAME, resolveToken } from "./github/github-client.ts";
 import { renderHost } from "./host/render-host.ts";
 import { loadLauncherConfig } from "./launcher/launcher-config.ts";
@@ -28,6 +30,7 @@ const USAGE = `Usage:
   runnerbox report --repo <owner/name> [options]
   runnerbox summary --repo <owner/name> [--since <days>d] [--by labels|runner] [--redact]
   runnerbox serve | pair | mcp-token | link | unlink | link-status | codex-login   (see runnerbox serve --help)
+  runnerbox --version
 
 up: keeps runners waiting for jobs in the VM until stopped.
 vm render: writes the VM's cloud-init seed, firewall and a create.sh to run on the host.
@@ -67,10 +70,13 @@ async function main() {
       by: { type: "string", default: "labels" },
       redact: { type: "boolean", default: false },
       help: { type: "boolean", default: false },
+      version: { type: "boolean", default: false },
     },
   });
 
   if (values.help) return console.log(USAGE);
+  // The version is the first word, since an update reads it to check that a download runs here.
+  if (values.version) return console.log(releaseRepository === null ? serverPackage.version : `${serverPackage.version} (releases from ${releaseRepository})`);
 
   if (positionals[0] === "up" && positionals.length === 1 && values.config) {
     return startRunners(values.config);
