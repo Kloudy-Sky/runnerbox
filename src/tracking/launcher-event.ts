@@ -16,6 +16,9 @@ export const LauncherEventRecord = type({
   // The image tag the runner's container ran, so a reproduce can use the same one. Older lines
   // don't have it.
   "image?": "string",
+  // The kind's container limits when this runner ran, since an approved change can alter them
+  // later. Host kinds have none, and older lines don't have it.
+  "limits?": { memoryMiB: "number", cpus: "number" },
 })
   .or({ ...Base, event: "'memory_wait'", slot: "number", "runnerType?": "string" })
   .or({ ...Base, event: "'image_build'", tag: "string", ok: "boolean", "runnerType?": "string" });

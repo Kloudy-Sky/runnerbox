@@ -8,6 +8,7 @@ Everything runnerbox records stays on the host, in `~/.local/state/runnerbox/` (
 | --- | --- | --- |
 | `<owner>__<repo>.ndjson` | `report` | One job, from GitHub's API |
 | `<install>/samples.ndjson` | `up`, every minute | The host, the VM and every container in the VM |
+| `<install>/containers.ndjson` | `up`, every 15 seconds while the install's job containers exist | Every container in the VM, without the host or VM |
 | `<install>/events.ndjson` | `up` | One finished thing `up` did |
 | `<install>/state.json` | `up`, as things change and every 15 seconds | Not a log: what each slot is doing now |
 | `.server/` | `runnerbox serve` | Not analytics: the server's environment ID and key, and `auth.json` with pairing codes and sessions, stored as hashes |
@@ -24,18 +25,20 @@ Everything runnerbox records stays on the host, in `~/.local/state/runnerbox/` (
 
 With `jobVms`, `vm` is the builder and `containers` are its image builds. Job VMs aren't sampled yet.
 
+`containers.ndjson` has the same `containers` with its own `time`, read every 15 seconds so a short job gets more than one point. It's read only while one of the install's job containers exists, which includes a runner waiting for a job, and it stops on a read with none, or that fails, once 30 seconds have passed since it was last started, since a runner is reported before its container exists. The next runner, or a minute sample that sees one, starts it again. One `docker stats --no-stream` took about 2 seconds, which is why it isn't more often. Job VMs and host installs have none.
+
 A field that couldn't be read is absent, never `0`. A missing `host` means `/proc` wasn't readable; a missing `vm` means SSH failed. A sampler's first sample has no `cpuBusyPercent`.
 
 ## Events
 
 Every event has `time`, when it was written, and `startedAt` and `durationMs`. Events from a runner kind carry its `runnerType`, the kind's `name`, and their `slot` counts within that kind.
-- `runner`: one runner, from registration until its container ended. `exitCode` is the container's, or `null` if SSH failed. `released` is `"memory"` or `"image"` when the slot removed it unused, because memory dropped or a new image was ready, so its time was waiting, not work. Otherwise it's `false`. A runner's time includes waiting for a job, so match it to GitHub's job record for run time.
+- `runner`: one runner, from registration until its container ended. `exitCode` is the container's, or `null` if SSH failed. `released` is `"memory"` or `"image"` when the slot removed it unused, because memory dropped or a new image was ready, so its time was waiting, not work. Otherwise it's `false`. A runner's time includes waiting for a job, so match it to GitHub's job record for run time. `limits` has the kind's container `memoryMiB` and `cpus` when the runner ran, since an approved change can alter them later. Host kinds and older lines have none.
 - `memory_wait`: a slot waiting for `memoryFloor`, or for slots that started waiting before it, before registering.
 - `image_build`: a build of a project image, with `tag` and `ok`.
 
 ## Live state
 
-`state.json` is rewritten whole, by renaming a new file over the old, so a reader never sees half of one. `updatedAt` changes at least every 15 seconds while `up` runs, so a file older than that by much means `up` stopped without draining. Each runner kind has its `image`, the tag new containers use, and `building`, a tag being built, since `buildingSince`. `buildFailedAt` is when the last build failed, and is cleared by the next one that succeeds. `rebuildDays` comes from the config. `builtAt` and `tools` are what a probe found in the current image: when Docker says it was built, and the versions of its OS, node, gh, git, docker, python, aws and the runner, each null when the image doesn't have it. They're null until the probe has run, which happens once a tag built from a context is current, including one already built when `up` starts. A kind whose `image` is a prebuilt reference isn't probed. Each slot has a `phase` and `since`, when it entered it:
+`state.json` is rewritten whole, by renaming a new file over the old, so a reader never sees half of one. `updatedAt` changes at least every 15 seconds while `up` runs, so a file older than that by much means `up` stopped without draining. Each runner kind has its `image`, the tag new containers use, and `building`, a tag being built, since `buildingSince`. `buildFailedAt` is when the last build failed, and is cleared by the next one that succeeds. `rebuildDays` comes from the config. `builtAt` and `tools` are what a probe found in the current image: when Docker says it was built, and the versions of its OS, node, gh, git, docker, python, aws and the runner, each null when the image doesn't have it. They're null until the probe has run, which happens once a tag built from a context is current, including one already built when `up` starts. A kind whose `image` is a prebuilt reference isn't probed. `runsIn` says where its jobs run, `container`, `job_vm` or `host`, and only `container` jobs are sampled. An older `up` doesn't write it. Each slot has a `phase` and `since`, when it entered it:
 - `waiting`: for `memoryFloor`, or for slots that started waiting first. `detail` says which.
 - `minting`: registering a runner. `registered`: a runner is online, waiting for a job or running one, which `up` can't tell apart. `busy`: GitHub refused to remove it, so it has a job.
 - `backoff`: waiting before the next runner, after a failed mint or a runner that failed within a minute, or the usual 5 seconds between runners. `stopped`: drained.

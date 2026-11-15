@@ -17,23 +17,29 @@ import type { LauncherEvent } from "../tracking/launcher-event.ts";
 import { startChanges } from "../changes/start-changes.ts";
 import { listenForControl } from "../control/socket.ts";
 import { startReproduce } from "../reproduce/start-reproduce.ts";
+import { createContainerSampler, CONTAINERS_COMMAND } from "../tracking/container-sampler.ts";
 import { createRotatingLog } from "../tracking/rotating-log.ts";
 import { createSampler, VM_SAMPLE_COMMAND } from "../tracking/sampler.ts";
 import { stateDir } from "../tracking/state-dir.ts";
 import { readFromVm, runInVm } from "../vm/run-in-vm.ts";
-import { dockerRunCommand, shellQuote } from "./docker-command.ts";
+import { containerName, dockerRunCommand, shellQuote } from "./docker-command.ts";
 import { every } from "./every.ts";
 import { loadLauncherConfig, type MemoryFloor, type RunnerType, type VmInstall } from "./launcher-config.ts";
 import { checkMemoryFloor, memAvailableMiB, vmStatAvailableMiB } from "./memory-floor.ts";
 import { createMemoryLine } from "./memory-line.ts";
+import { memoryMiB } from "./memory-size.ts";
 import { runSlots } from "./run-slots.ts";
 import { runWithSecret } from "./run-with-secret.ts";
-import { createSlotState } from "./slot-state.ts";
+import { createSlotState, type RunsIn } from "./slot-state.ts";
 import { readTokenFile } from "./token-file.ts";
 
 const IMAGE_CHECK_MS = 5 * 60_000;
 const IMAGE_RETRY_MS = 60_000;
 const SAMPLE_MS = 60_000;
+// How often a job's container is read while jobs run. One `docker stats --no-stream` took 2.0 s
+// on average (at most 2.04 s) and about 0.1 s of the daemon's CPU, with four containers on Docker
+// 29, so a 10 s interval would spend a fifth of its time reading.
+const CONTAINER_SAMPLE_MS = 15_000;
 // Often enough that a reader can tell within a minute that `up` stopped without saying so.
 const HEARTBEAT_MS = 15_000;
 
@@ -58,10 +64,13 @@ export async function startRunners(configPath: string) {
   // What `up` did and what the machines looked like, kept locally for `report`. See docs/analytics.md.
   const events = createRotatingLog(join(stateDir(), config.name, "events.ndjson"));
   const record: RecordEvent = (event) => void events.append({ time: new Date().toISOString(), ...event });
-  // Samples come from /proc on the host and the VM, so a host install has none.
-  if ("vm" in config) startSampler(config);
+  // Samples come from /proc on the host and the VM, so a host install has none. Job VMs aren't
+  // sampled yet, so with them the VM's containers are only image builds.
+  const containers = "vm" in config && !config.jobVms ? startContainerSampler(config) : null;
+  if ("vm" in config) startSampler(config, containers);
   // What each slot is doing now, for `runnerbox serve` to show live.
-  const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners);
+  const runsIn: RunsIn = !("vm" in config) ? "host" : config.jobVms ? "job_vm" : "container";
+  const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners.map((runner) => ({ ...runner, runsIn })));
   void slotState.flush();
   every(HEARTBEAT_MS, slotState.heartbeat);
   // Every runner type checks the install's floor unless it sets its own, so together they can't
@@ -148,7 +157,7 @@ export async function startRunners(configPath: string) {
   }
 
   const startSlots = (
-    runner: { name: string; label: string; slots: number; memoryFloor?: MemoryFloor },
+    runner: { name: string; label: string; slots: number; memoryFloor?: MemoryFloor; limits?: RunnerType["limits"] },
     index: number,
     job: Job,
   ) => {
@@ -172,9 +181,16 @@ export async function startRunners(configPath: string) {
         wait: async (ms) => void (await wait(ms)),
         now: Date.now,
         log: (line) => console.log(`${runner.name} ${line}`),
-        record: (event) => record({ ...event, runnerType: runner.name }),
+        record: (event) =>
+          record({
+            ...event,
+            runnerType: runner.name,
+            ...(event.event === "runner" && runner.limits ? { limits: { memoryMiB: memoryMiB(runner.limits.memory), cpus: runner.limits.cpus } } : {}),
+          }),
         stopping: () => stopping,
         report: (slot, phase, details) => {
+          // A new runner's container is starting, so its job's reads begin now.
+          if (phase === "registered") containers?.start();
           if (phase === "waiting") waitingSlots.add(`${runner.name} ${slot}`);
           else waitingSlots.delete(`${runner.name} ${slot}`);
           slotState.slot(runner.name, slot, phase, details);
@@ -308,8 +324,26 @@ async function keepImage(
   return null;
 }
 
+// Reads the VM's job containers every CONTAINER_SAMPLE_MS while any exist, into containers.ndjson.
+function startContainerSampler(config: VmInstall) {
+  const log = createRotatingLog(join(stateDir(), config.name, "containers.ndjson"));
+  const names = new Set(config.runners.flatMap((runner) => Array.from({ length: runner.slots }, (_, index) => containerName(config.name, runner.name, index + 1))));
+  const ours = (name: string) => names.has(name);
+  const sampler = createContainerSampler({
+    read: () => readFromVm({ vm: config.vm, command: CONTAINERS_COMMAND }),
+    append: (sample) => log.append(sample),
+    ours,
+    intervalMs: CONTAINER_SAMPLE_MS,
+    now: Date.now,
+    wait: async (ms) => void (await wait(ms)),
+  });
+  return { ...sampler, ours };
+}
+
 // One sample a minute of the host, the VM and every container in it, whether or not jobs are running.
-function startSampler(config: VmInstall) {
+// `containers` is started again whenever a minute sample sees a job container, in case a failed
+// read stopped it mid-job.
+function startSampler(config: VmInstall, containers: { start: () => void; ours: (name: string) => boolean } | null) {
   const samples = createRotatingLog(join(stateDir(), config.name, "samples.ndjson"));
   const readProc = (file: string) => readFile(`/proc/${file}`, "utf8");
   const sample = createSampler({
@@ -319,7 +353,10 @@ function startSampler(config: VmInstall) {
       stat: (await readProc("stat")).split("\n")[0] ?? "",
     }),
     readVm: () => readFromVm({ vm: config.vm, command: VM_SAMPLE_COMMAND }),
-    append: (record) => samples.append(record),
+    append: async (record) => {
+      if (containers && record.containers?.some(({ name }) => containers.ours(name))) containers.start();
+      await samples.append(record);
+    },
     now: Date.now,
   });
   void sample();

@@ -51,3 +51,14 @@ test("a job records the commit it ran on, and a line from before that still read
   assert.equal(toJobRecord("acme/app", job).headSha, "3b8ac79e0f1d2c3b4a5968778695a4b3c2d1e0f9");
   assert.ok(!(JobRecord(JSON.parse(JSON.stringify(base))) instanceof type.errors));
 });
+
+test("a step keeps when it started, so it can be placed in its job, and a step from before that still reads", () => {
+  const job: GitHubJob = {
+    id: 10, run_id: 4, run_attempt: 1, name: "test", workflow_name: "ci", head_branch: "main",
+    conclusion: "success", runner_name: "box-1", labels: ["box"], created_at: base.createdAt, started_at: base.startedAt, completed_at: base.completedAt,
+    steps: [{ name: "Test", conclusion: "success", started_at: "2026-01-01T00:00:05Z", completed_at: "2026-01-01T00:00:35Z" }],
+  };
+  assert.deepEqual(toJobRecord("owner/name", job).steps, [{ name: "Test", conclusion: "success", ms: 30_000, startedAt: "2026-01-01T00:00:05Z" }]);
+  const old = { ...base, steps: [{ name: "Test", conclusion: "success", ms: 30_000 }] };
+  assert.ok(!(JobRecord(old) instanceof type.errors));
+});
