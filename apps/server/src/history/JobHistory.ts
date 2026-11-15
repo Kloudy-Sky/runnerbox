@@ -13,6 +13,7 @@ import { JobNotFound } from "./JobNotFound.ts";
 import { jobResources } from "./jobResources.ts";
 import { jobTrends } from "./jobTrends.ts";
 import { kindUsage } from "./kindUsage.ts";
+import { machineFit } from "./machineFit.ts";
 import { toJobRun } from "./jobRun.ts";
 import { machineLookup } from "./machineLookup.ts";
 import * as StateLogs from "./StateLogs.ts";
@@ -124,7 +125,14 @@ const make = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const start = now - days * DAY_MS;
     const samples = yield* logs.samples(start);
-    return kindUsage({ now, jobs: yield* logs.allJobs(start), machine: machineLookup(samples), events: yield* logs.events(start), installs: yield* runnerState.current }, days);
+    const events = yield* logs.events(start);
+    const installs = yield* runnerState.current;
+    const report = kindUsage({ now, jobs: yield* logs.allJobs(start), machine: machineLookup(samples), events, installs }, days);
+    // Every machine known, by its live state, its events or its samples, so one with no samples still says so.
+    const names = [...new Set([...installs.map((state) => state.install), ...events.map((event) => event.install), ...samples.map((sample) => sample.install)])].toSorted();
+    // The floor reaches the server once `InstallState` carries `memoryFloor`; until then every
+    // machine reads as not saying, and its sentence says so.
+    return { ...report, machines: machineFit(names, () => null, samples, report.kinds) };
   });
 
   // Twice the window, so each job's time can be set against the same length of time before it.

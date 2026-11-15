@@ -39,6 +39,17 @@ export const KindUsage = Schema.Struct({
 });
 export type KindUsage = typeof KindUsage.Type;
 
+// Whether one install's machine had room over the window, in one sentence by rules. `floorMiB` is
+// the VM memory Runnerbox keeps free, or null when the machine's records don't say.
+export const MachineFit = Schema.Struct({
+  install: Schema.String,
+  floorMiB: NullableNumber,
+  lowestMiB: NullableNumber,
+  totalMiB: NullableNumber,
+  sentence: Schema.String,
+});
+export type MachineFit = typeof MachineFit.Type;
+
 export const KindUsageReport = Schema.Struct({
   since: Schema.String,
   until: Schema.String,
@@ -47,6 +58,8 @@ export const KindUsageReport = Schema.Struct({
   totalCost: Schema.NullOr(Schema.Struct({ usd: Schema.Number, minutes: Schema.Number })),
   pricesReadOn: Schema.String,
   pricesSource: Schema.String,
+  // Missing from an older server.
+  machines: Schema.optionalKey(Schema.Array(MachineFit)),
 });
 export type KindUsageReport = typeof KindUsageReport.Type;
 
@@ -61,6 +74,9 @@ export const JobTrend = Schema.Struct({
   // The typical time over the same length of time just before the window.
   earlierTypicalMs: NullableNumber,
   slower: Schema.Boolean,
+  // For a job that became slower, the step that grew most and a sentence saying so. Missing from an
+  // older server.
+  change: Schema.optionalKey(Schema.NullOr(Schema.Struct({ step: Schema.String, earlierMs: Schema.Number, nowMs: Schema.Number, text: Schema.String }))),
   days: Schema.Array(Schema.Struct({ day: Schema.String, runs: Schema.Number, typicalMs: NullableNumber })),
 });
 export type JobTrend = typeof JobTrend.Type;

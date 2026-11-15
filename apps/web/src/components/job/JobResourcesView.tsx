@@ -1,5 +1,5 @@
 import type { JobResources, PlacedStep } from "@runnerbox/contracts";
-import { formatMiB } from "../../lib/format.ts";
+import { formatDuration, formatMiB } from "../../lib/format.ts";
 import { ResourceChart } from "./ResourceChart.tsx";
 import { StepBar } from "./StepBar.tsx";
 
@@ -15,13 +15,16 @@ const cpus = (percent: number) => {
 // One job's steps, its container's memory and CPU as two graphs with one axis each, and the
 // server's sentence about them, unless the page shows that sentence as its Why instead. Used on a
 // run's page and in Speed and cost's job panel.
-export function JobResourcesView({ resources, sentenceShown = true }: { readonly resources: JobResources; readonly sentenceShown?: boolean }) {
+// `markedStep` stands out in the step bar instead of the one the sentence names, as Speed and cost
+// marks the step that grew.
+export function JobResourcesView({ resources, sentenceShown = true, markedStep }: { readonly resources: JobResources; readonly sentenceShown?: boolean; readonly markedStep?: string | null }) {
   const { steps, points, limits, sentence } = resources;
   const durationMs = resources.job.durationMs ?? points.at(-1)?.offsetMs ?? 0;
   const marked = steps.find((step): step is PlacedStep & { offsetMs: number; ms: number } => step.name === sentence?.step && step.exact && step.offsetMs !== null && step.ms !== null);
   const mark = marked ? { fromMs: marked.offsetMs, toMs: marked.offsetMs + marked.ms, label: `${marked.name} starts` } : null;
   const stepAt = (offsetMs: number) =>
     steps.find((step) => step.exact && step.offsetMs !== null && step.ms !== null && offsetMs >= step.offsetMs && offsetMs <= step.offsetMs + step.ms)?.name ?? null;
+  const describe = (offsetMs: number) => `${formatDuration(offsetMs)} in${stepAt(offsetMs) ? `, ${stepAt(offsetMs)}` : ""}`;
   const drawn = resources.coverage === "sampled" && points.length >= 2;
 
   const memoryPeak = Math.max(...points.map((point) => point.memMiB), 0);
@@ -29,10 +32,12 @@ export function JobResourcesView({ resources, sentenceShown = true }: { readonly
   const cpuPeak = Math.max(...points.map((point) => point.cpuPercent), 0);
   const cpuTop = limits ? limits.cpus * 100 : Math.max(100, Math.ceil(cpuPeak / 100) * 100);
   return (
-    <div className="flex flex-col gap-4">
-      <StepBar steps={steps} marked={sentence?.step ?? null} />
+    // Two graphs side by side only when its own column is wide enough: the run page is, Speed and
+    // cost's panel isn't.
+    <div className="@container flex flex-col gap-4">
+      <StepBar steps={steps} marked={markedStep === undefined ? (sentence?.step ?? null) : markedStep} />
       {drawn ? (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid gap-5 @xl:grid-cols-2">
           <section className="flex flex-col gap-1.5">
             <h3 className="font-medium">
               Memory this job used {limits ? <span className="font-normal text-muted-foreground">limit {formatMiB(limits.memoryMiB)}</span> : null}
@@ -46,7 +51,7 @@ export function JobResourcesView({ resources, sentenceShown = true }: { readonly
               limit={limits ? { value: limits.memoryMiB, label: `limit ${formatMiB(limits.memoryMiB)}` } : null}
               mark={mark}
               format={formatMiB}
-              stepAt={stepAt}
+              describe={describe}
             />
           </section>
           <section className="flex flex-col gap-1.5">
@@ -62,7 +67,7 @@ export function JobResourcesView({ resources, sentenceShown = true }: { readonly
               limit={limits ? { value: limits.cpus * 100, label: `limit ${cpus(limits.cpus * 100)}` } : null}
               mark={mark}
               format={cpus}
-              stepAt={stepAt}
+              describe={describe}
             />
           </section>
         </div>

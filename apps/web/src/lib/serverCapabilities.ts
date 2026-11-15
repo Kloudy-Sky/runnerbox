@@ -17,9 +17,11 @@ export type Capabilities = {
   readonly waitingJobs: boolean;
   // `server.update`: the server updates itself, so the app offers Update instead of a command.
   readonly serverUpdate: boolean;
+  // `history.kindUsage` and `history.jobTrends`: Speed and cost's questions.
+  readonly speed: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -34,5 +36,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     jobResources: has(RPC_METHODS.historyJobResources),
     waitingJobs: has(RPC_METHODS.runnersSubscribeQueue),
     serverUpdate: has(RPC_METHODS.serverUpdate) && has(RPC_METHODS.serverUpdateStatus),
+    speed: has(RPC_METHODS.historyKindUsage) && has(RPC_METHODS.historyJobTrends),
   };
 }

@@ -42,7 +42,7 @@ function bottleneckOf(cause: WaitCause): Bottleneck | null {
     const busy = cause.slots === 1 ? `The ${kinds} runner is the bottleneck: it was` : `The ${kinds} runners are the bottleneck: ${cause.slots === 2 ? "both" : `all ${cause.slots}`} were`;
     return { cause: "slots", text: `${busy} busy while jobs waited, with ${plural(cause.peak, "job")} waiting at once.` };
   }
-  if (cause.cause === "memory") return { cause: "memory", text: `Jobs for ${runners} waited for free memory on the machine, not for a slot.` };
+  if (cause.cause === "memory") return { cause: "memory", text: `Jobs for ${runners} waited for free memory on the machine, not for a free runner.` };
   return null;
 }
 
