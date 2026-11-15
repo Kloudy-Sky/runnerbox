@@ -4,14 +4,18 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/
 import { Button } from "../components/ui/button.tsx";
 import { Reading } from "../components/Reading.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
+import { useMonitors } from "../hooks/useMonitors.ts";
+import { formatAge } from "../lib/format.ts";
 import type { RootSearch } from "../lib/search.ts";
 
 const keep = (previous: RootSearch) => previous;
 
 // What the app opens on when nothing is selected: one sentence on whether anything needs the
 // owner, each thing that does as a short paragraph with its next step, and the week in four facts.
+// Under them, what's only being watched, each a link to its item.
 export function HomePage() {
   const inbox = useInbox().data;
+  const unread = new Set(useMonitors().status?.unread ?? []);
   // The inbox also reads launcher events and live runner state, so a machine with no job log can
   // still have something that needs the owner, such as a slot that keeps failing.
   if (inbox && inbox.summary.jobs === 0 && inboxItems(inbox).length === 0) {
@@ -27,7 +31,6 @@ export function HomePage() {
     );
   }
   if (!inbox) return null;
-  const quiet = inbox.quiet.map((group) => group.title.charAt(0).toLowerCase() + group.title.slice(1));
   return (
     <Reading.Root className="gap-8">
       <Reading.Header>
@@ -38,10 +41,14 @@ export function HomePage() {
         <div className="flex flex-col gap-6">
           {inbox.items.map((item, index) => (
             <section key={item.id} className="enter flex flex-col gap-1.5">
-              <h2 className="font-medium">
+              <h2 className="flex items-baseline gap-2 font-medium">
                 <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="hover:underline">
                   {item.title}
                 </Link>
+                <span className="shrink-0 font-normal text-muted-foreground text-xs">
+                  {formatAge(item.at)}
+                  {unread.has(item.id) ? ", looked into" : null}
+                </span>
               </h2>
               <p className="text-foreground/90">{item.happened}</p>
               <p className="text-muted-foreground">{item.action}</p>
@@ -55,7 +62,26 @@ export function HomePage() {
           ))}
         </div>
       ) : null}
-      {quiet.length > 0 ? <p className="text-muted-foreground">Nothing to do: {quiet.join(", ")}.</p> : null}
+      {inbox.quiet.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-muted-foreground">Watching</h2>
+          {inbox.quiet.map((group) => (
+            <div key={group.kind} className="flex flex-col gap-1">
+              <h3 className="font-medium">{group.title}</h3>
+              <ul className="flex flex-col gap-1">
+                {group.items.map((item) => (
+                  <li key={item.id} className="flex items-baseline gap-2">
+                    <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="text-foreground/90 hover:underline">
+                      {item.title}
+                    </Link>
+                    <span className="shrink-0 text-muted-foreground text-xs">{formatAge(item.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      ) : null}
     </Reading.Root>
   );
 }

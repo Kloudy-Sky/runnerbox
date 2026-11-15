@@ -30,6 +30,9 @@ export type ServerProviderSkill = {
 // Runnerbox binds no keys of its own, so the resolved list is always empty.
 export type ResolvedKeybindingsConfig = ReadonlyArray<never>;
 
+// As T3 Code's `settings.ts` bounds it: 0 to 400 ms.
+export type PanelAnimationDurationMs = number;
+
 export type ClientSettings = { readonly sendShortcut: "enter" | "mod-enter-multiline" | "mod-enter" };
 
 // As T3 Code's `settings.ts` defines it. Runnerbox has no setting for it and always uses "locale".

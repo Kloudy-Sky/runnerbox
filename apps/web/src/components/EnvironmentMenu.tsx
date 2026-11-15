@@ -3,15 +3,20 @@ import { ChevronsUpDown } from "lucide-react";
 import { useStore } from "zustand";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { activeRoute } from "../lib/routes.ts";
+import { cn } from "../lib/utils.ts";
 import { runtime } from "../runtime.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { usePreferences } from "../state/preferences.ts";
 import { useRestarting } from "../state/serverUpdates.ts";
 import { ConnectionState } from "./ConnectionState.tsx";
+import { railFade } from "./railFade.ts";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu.tsx";
+import { SidebarMenuButton, useSidebar } from "./ui/sidebar.tsx";
+import { UserAvatar } from "./UserAvatar.tsx";
 
-// The environment this window shows, how it's reached and whether it's connected, with the others
-// a click away.
+// The sidebar's bottom row, as in Codex: the account's avatar beside the environment this window
+// shows and how it's connected, with the other environments a click away. In the rail only the
+// avatar stays.
 export function EnvironmentMenu() {
   const { environment, connection } = useActiveEnvironment();
   const environments = useStore(runtime.store, (state) => state.environments);
@@ -19,21 +24,21 @@ export function EnvironmentMenu() {
   const restarting = useRestarting();
   const setActive = usePreferences((state) => state.setActive);
   const navigate = useNavigate();
+  const { state } = useSidebar();
   const route = environment ? activeRoute(environment, connection) : undefined;
   return (
     <Menu>
-      <MenuTrigger className="flex w-full cursor-pointer items-center gap-2 rounded-[var(--control-radius)] px-2.5 py-1.5 text-left outline-none hover:bg-sidebar-row-hover data-popup-open:bg-sidebar-row-hover">
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{environment?.label ?? "No environment"}</span>
-          {environment ? (
-            <span className="flex items-center gap-2 text-xs">
-              <ConnectionState connection={connection} route={route} restarting={restarting.has(environment.environmentId)} />
-            </span>
-          ) : null}
+      <MenuTrigger
+        render={<SidebarMenuButton size="lg" className="h-11 px-1.5 group-data-[collapsible=icon]:p-1! data-popup-open:bg-sidebar-row-hover" aria-label="Environments and account" />}
+      >
+        <UserAvatar />
+        <span className={cn("min-w-0 flex-1", railFade)}>
+          <span className="block truncate font-medium text-sidebar-foreground">{environment?.label ?? "No environment"}</span>
+          {environment ? <ConnectionState connection={connection} route={route} restarting={restarting.has(environment.environmentId)} className="max-w-full truncate font-normal text-xs" /> : null}
         </span>
-        <ChevronsUpDown className="size-4 text-muted-foreground" />
+        <ChevronsUpDown className={railFade} />
       </MenuTrigger>
-      <MenuPopup className="w-64">
+      <MenuPopup className="w-64" side={state === "collapsed" ? "right" : "top"} align="start">
         <MenuGroup>
           <MenuGroupLabel>Environments</MenuGroupLabel>
           {environments.map((saved) => (
