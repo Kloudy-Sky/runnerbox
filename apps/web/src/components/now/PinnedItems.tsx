@@ -1,4 +1,4 @@
-import type { Inbox, InboxItem } from "@runnerbox/contracts";
+import type { Inbox, InboxItem, JobRun } from "@runnerbox/contracts";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useMediaQuery } from "../../hooks/useMediaQuery.ts";
@@ -11,9 +11,9 @@ const MAX_SHOWN = 5;
 // What needs the owner, then jobs that failed in their own code in the last hour. The first is
 // shown in full (two in a wide window) and the rest as one line each, so what's running stays in
 // view. Each opens the same thread the home screen or the run's page would.
-export function PinnedItems({ inbox, now }: { inbox: Inbox; now: number }) {
+export function PinnedItems({ inbox, now, runs }: { inbox: Inbox; now: number; runs: ReadonlyArray<JobRun> }) {
   const wide = useMediaQuery("md");
-  const items = pinned(inbox, now);
+  const items = pinned(inbox, now, runs);
   if (items.length === 0) return null;
   const full = wide ? 2 : 1;
   const shown = items.slice(0, MAX_SHOWN);

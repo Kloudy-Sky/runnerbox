@@ -9,18 +9,32 @@ const withinHour = (iso: string, now: number) => {
 };
 
 // What the Now view pins at its top: everything that needs the owner, then jobs that failed in
-// their own code in the last hour. Those are the code's, and leave once a later run passes, which
-// moves them out of the inbox's "own code" group, or after an hour.
-export function pinned(inbox: Inbox, now: number) {
+// their own code in the last hour. Those are the code's, and leave after an hour, or once a later
+// run of the same job on the same branch passes. The inbox keeps a fixed one in its "own code"
+// group, so that's read from `runs`, which only covers the repo the view shows.
+export function pinned(inbox: Inbox, now: number, runs: ReadonlyArray<JobRun>) {
   const code = inbox.quiet
     .filter((group) => group.kind === "own_code")
     .flatMap((group) => group.items)
-    .filter((item) => withinHour(item.at, now));
+    .filter((item) => withinHour(item.at, now) && !passedLater(item, runs));
   return [...inbox.items.map((item) => ({ item, kind: "needs_you" as const })), ...code.map((item) => ({ item, kind: "code" as const }))];
 }
 
 // The job a code failure points at, for opening its run thread. Its latest attempt.
 export const failedJobId = (item: InboxItem) => item.evidence.attempts.at(-1)?.jobId ?? null;
+
+function passedLater(item: InboxItem, runs: ReadonlyArray<JobRun>) {
+  const failed = runs.find((run) => run.jobId === failedJobId(item));
+  if (!failed) return false;
+  return runs.some(
+    (run) =>
+      run.conclusion === "success" &&
+      run.workflow === failed.workflow &&
+      run.job === failed.job &&
+      run.branch === failed.branch &&
+      Date.parse(run.createdAt) > Date.parse(failed.createdAt),
+  );
+}
 
 // Finished jobs on this machine's runners in the last hour, newest first.
 export function lastHour(runs: ReadonlyArray<JobRun>, runnerNames: ReadonlySet<string>, now: number) {
