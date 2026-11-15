@@ -209,10 +209,10 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.monitorsSave, { payload: MonitorSettings, success: MonitorStatus, error: Schema.Union([AuthorizationError, MonitorError]) }),
   // The owner opened the item's thread, so its "Looked into" mark goes.
   Rpc.make(RPC_METHODS.monitorsMarkRead, { payload: { itemId: Schema.String }, error: Schema.Union([AuthorizationError, MonitorError]) }),
-  // The same version facts the public descriptor gives, over whatever route the client uses.
   // The methods this server answers, so a client offers only what will work. A server older than
   // this method refuses it as unknown, which tells the client as much.
   Rpc.make(RPC_METHODS.serverMethods, { success: Schema.Array(Schema.String), error: AuthorizationError }),
+  // The same version facts the public descriptor gives, over whatever route the client uses.
   Rpc.make(RPC_METHODS.serverAbout, { success: Schema.Struct({ label: Schema.String, serverVersion: Schema.String, protocolVersion: Schema.Int }), error: AuthorizationError }),
 ).middleware(RpcScopeAuthorization);
 

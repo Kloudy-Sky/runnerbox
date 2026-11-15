@@ -33,7 +33,7 @@ const OLDER_SERVER_LACKS = [
 ] as const;
 const target = positionals[0];
 if (!target) {
-  console.error("Usage: node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider]");
+  console.error("Usage: node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older]");
   process.exit(2);
 }
 const stateDir = join(resolve(target), "runnerbox");

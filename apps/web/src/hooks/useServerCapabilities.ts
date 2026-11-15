@@ -7,8 +7,9 @@ import { useActiveEnvironment } from "./useEnvironment.ts";
 // A server refuses a method it doesn't have this way, rather than with an error of its own.
 const isUnknownMethod = (defect: unknown) => String(defect).includes("Unknown request tag");
 
-// What the connected server can do, asked once per connection. Until it answers, nothing newer is
-// offered, so a control never appears and then vanishes.
+// What the connected server can do, asked once per connection, since it may have been upgraded in
+// between. A reconnect keeps what this environment's server last said until it answers again, so
+// controls don't blink out; before its first answer, nothing newer is offered.
 export function useServerCapabilities() {
   const { environment, connection } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
@@ -21,6 +22,7 @@ export function useServerCapabilities() {
       ),
     enabled: connected !== null,
     staleTime: Number.POSITIVE_INFINITY,
+    placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[0] === environmentId ? previous : undefined),
   });
   return methods.isSuccess ? capabilitiesOf(methods.data) : NO_CAPABILITIES;
 }
