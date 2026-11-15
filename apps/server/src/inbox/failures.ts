@@ -67,13 +67,12 @@ export function failureItems(input: InboxInput): InboxItem[] {
               : "Find the step that fails in the latest failed attempt. The agent can compare it with the runs that passed.",
         });
       }
-      case "code":
-        return item("own_code", {
-          title: `${name} fails in its own code`,
-          happened: `${howOften}${later}`,
-          why: `${capitalize(unit.reasons.at(-1) ?? "")}, and the machine looked fine.`,
-          action: "Nothing for you: the check already told whoever changed the code.",
-        });
+      case "code": {
+        const why = `${capitalize(unit.reasons.at(-1) ?? "")}, and the machine looked fine.`;
+        return isFixed
+          ? item("resolved", { title: `${name} failed in its own code, and a later run passed`, happened: `${howOften}${later}`, why, action: RESOLVED_ACTION })
+          : item("own_code", { title: `${name} fails in its own code`, happened: howOften, why, action: "Nothing for you: the check already told whoever changed the code." });
+      }
       case "unconfirmed":
         return item("failed_once", {
           title: `${name} failed once`,
