@@ -10,7 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as ServerPaths from "../../config/ServerPaths.ts";
-import { allowedTools, appliedProblems, appServerArgs, launchProblems, maxSteps, mcpProblems, SUPPORTED_CODEX_LABEL, supportedVersion, threadStartParams, TOKEN_ENV, turnStartParams } from "./codexAppServer.ts";
+import { allowedTools, appliedProblems, appServerArgs, DISABLED_FEATURES, launchProblems, maxSteps, mcpProblems, SUPPORTED_CODEX_LABEL, supportedVersion, threadStartParams, TOKEN_ENV, turnStartParams } from "./codexAppServer.ts";
 import { codexEnv, codexHome } from "./codexCommand.ts";
 import { decodeMessage, type ErrorResponse, McpServers, type Response, ThreadStarted } from "./codexProtocol.ts";
 import { decide, type TurnState } from "./codexTurnPolicy.ts";
@@ -140,7 +140,9 @@ export const makeWith = (find: () => string | null) =>
     // The owner's MCP servers that are on in their config, read by `codex mcp list`, to turn off.
     const ownerServers = (executable: string, loginHome: string) =>
       Effect.gen(function* () {
-        const { ok, stdout } = yield* run(executable, ["mcp", "list", "--json"], loginHome, false);
+        // With the turn's own features off, so a plugin's or app's server, which the turn never loads,
+        // isn't listed: turning off one Codex won't load leaves an entry with no transport, and it won't start.
+        const { ok, stdout } = yield* run(executable, ["mcp", "list", "--json", ...DISABLED_FEATURES.flatMap((feature) => ["--disable", feature])], loginHome, false);
         const servers = decodeServerList(stdout);
         if (!ok || servers._tag === "None") return yield* failed("Couldn't read which MCP servers your Codex config has, so Codex wasn't started.");
         const on = servers.value.filter((server) => server.enabled).map((server) => server.name);

@@ -144,6 +144,8 @@ test("on the owner's Codex login, Codex runs from their home with their MCP serv
     assert.ok(settings.includes("mcp_servers.docs.enabled=false"));
     assert.ok(settings.includes("notify=[]"));
     assert.ok(settings.includes('developer_instructions=""'));
+    const listed = run.log.find((entry) => entry.mcpList)?.mcpList as string[];
+    assert.ok(listed.includes("plugins") && listed.includes("apps"), "the owner's servers are listed with the turn's own features off, so a plugin's server isn't");
     assert.ok(settings.indexOf('mcp_servers={"docs"={enabled=false},"team.tools"={enabled=false}}') < settings.findIndex((setting) => setting.startsWith("mcp_servers.runnerbox.")), "the table comes before Runnerbox's own server");
   } finally {
     await run.cleanup();
