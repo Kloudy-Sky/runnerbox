@@ -216,6 +216,7 @@ export async function writeFixtures(dir: string, now: number) {
   });
   live.image("docker", null, "app-docker:9c1e2f3a4b5d");
   live.slot("linux", 1, "busy", { runner: `${INSTALL}-linux-1-${Math.floor(now / 1000) - 300}` });
+  live.job("linux", 1, "ci / test");
   live.slot("linux", 2, "waiting", { detail: "VM has 1840 MiB available, below its floor of 2048 MiB" });
   live.slot("docker", 1, "backoff", { detail: "the last runner exited 125 within a minute" });
   await live.flush();

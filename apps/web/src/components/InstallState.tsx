@@ -49,7 +49,7 @@ export function InstallState({ install, typicalBuildMs }: { install: Install; ty
                   <td className="py-0.5 pr-4 pl-3 text-muted-foreground">slot {slot.slot}</td>
                   <td className={`py-0.5 pr-4 whitespace-nowrap ${color}`}>{label}</td>
                   <td className="py-0.5 pr-4 text-muted-foreground">{formatAge(slot.since)}</td>
-                  <td className="py-0.5 pr-4 font-mono text-[11.5px] text-muted-foreground">{slot.runner}</td>
+                  <td className="py-0.5 pr-4">{slot.job ?? <span className="font-mono text-[11.5px] text-muted-foreground">{slot.runner}</span>}</td>
                   <td className="py-0.5 text-muted-foreground">{slot.detail}</td>
                 </tr>
               );
