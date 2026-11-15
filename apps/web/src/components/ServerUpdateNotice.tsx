@@ -107,7 +107,8 @@ export function ServerBehindNotice({ environment, serverVersion, appVersion }: {
       <div className="flex items-center gap-3">
         <span className="flex-1">{behind}</span>
         {blocker === "checkout" ? null : (
-          <Button size="xs" disabled={why !== null || !status.isSuccess} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
+          // Disabled, it's grey as well as faded, so it never reads as the thing to press.
+          <Button size="xs" variant={why === null ? "default" : "secondary"} disabled={why !== null || !status.isSuccess} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
             Update
           </Button>
         )}

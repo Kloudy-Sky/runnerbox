@@ -50,7 +50,7 @@ export function ServerUpdateControls({ environment, serverVersion, appVersion }:
       {run && isUnderway(run) ? <p className="text-xs">{underwayLine(run, environment.label)}</p> : null}
       {behind && !(run && isUnderway(run)) && blocker !== "checkout" ? (
         <div className="flex items-center gap-3">
-          <Button size="xs" variant={tried ? "secondary" : "default"} disabled={why !== null || !status.isSuccess} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
+          <Button size="xs" variant={tried || why !== null ? "secondary" : "default"} disabled={why !== null || !status.isSuccess} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
             {tried ? "Try again" : `Update to ${appVersion}`}
           </Button>
           {why ? <span className="text-muted-foreground text-xs">{why}</span> : null}
