@@ -9,11 +9,11 @@ import { readInstallLogs } from "runnerbox/src/tracking/install-logs.ts";
 import { createJobLog } from "runnerbox/src/tracking/job-log.ts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import { LauncherEventRecord } from "runnerbox/src/tracking/launcher-event.ts";
-import { type InstallSample, readSamples } from "runnerbox/src/tracking/sample-log.ts";
+import { type InstallContainerSample, type InstallSample, readContainerSamples, readSamples } from "runnerbox/src/tracking/sample-log.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 
 export class LogReadError extends Schema.TaggedError<LogReadError>()("LogReadError", {
-  what: Schema.Literals(["job log", "samples", "launcher events", "runner state"]),
+  what: Schema.Literals(["job log", "samples", "container readings", "launcher events", "runner state"]),
   cause: Schema.Defect(),
 }) {
   override get message() {
@@ -33,6 +33,7 @@ export class StateLogs extends Context.Service<
     readonly jobs: (repo: string, since: number) => Effect.Effect<ReadonlyArray<JobRecord>, LogReadError>;
     readonly allJobs: (since: number) => Effect.Effect<ReadonlyArray<JobRecord>, LogReadError>;
     readonly samples: (since: number) => Effect.Effect<ReadonlyArray<InstallSample>, LogReadError>;
+    readonly containerSamples: (since: number) => Effect.Effect<ReadonlyArray<InstallContainerSample>, LogReadError>;
     readonly events: (since: number) => Effect.Effect<ReadonlyArray<LauncherEvent>, LogReadError>;
   }
 >()("runnerbox/server/StateLogs") {}
@@ -75,6 +76,14 @@ const make = Effect.gen(function* () {
     return all.filter(({ sample }) => Date.parse(sample.time) >= since);
   });
 
+  const containerSamples = Effect.fn("StateLogs.containerSamples")(function* (since: number) {
+    const all = yield* Effect.tryPromise({
+      try: () => readContainerSamples(stateDir),
+      catch: (cause) => new LogReadError({ what: "container readings", cause }),
+    });
+    return all.filter(({ sample }) => Date.parse(sample.time) >= since);
+  });
+
   const events = Effect.fn("StateLogs.events")(function* (since: number) {
     const entries = yield* Effect.tryPromise({
       try: () => readInstallLogs(stateDir, "events.ndjson", LauncherEventRecord),
@@ -90,7 +99,7 @@ const make = Effect.gen(function* () {
       .toSorted((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
   });
 
-  return StateLogs.of({ repos, jobs, allJobs, samples, events });
+  return StateLogs.of({ repos, jobs, allJobs, samples, containerSamples, events });
 });
 
 export const layer = Layer.effect(StateLogs, make);

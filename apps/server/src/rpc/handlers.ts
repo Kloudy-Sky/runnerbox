@@ -53,6 +53,8 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "history.stepComparison": (input) => history.stepComparison(input).pipe(toWire),
         "history.runs": (input) => history.runs(input).pipe(toWire),
         "history.weeklySummary": (input) => history.weeklySummary(input).pipe(toWire),
+        "history.jobResources": (input) =>
+          history.jobResources(input).pipe(Effect.mapError((error) => new StateReadError({ what: error._tag === "JobNotFound" ? `job ${error.jobId}` : error.what }))),
         "inbox.list": ({ days }) => inbox.list(days).pipe(toWire),
         "runners.events": ({ days }) => launcher.events(days).pipe(toWire),
         "runners.samples": ({ days, maxPoints }) => launcher.samples(days, maxPoints).pipe(toWire),

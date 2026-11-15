@@ -35,14 +35,40 @@ const CI: Plan[] = [
   { workflow: "ci", job: "lint", labels: HOSTED, ms: 38_000, steps: [["Set up job", 0.1], ["Checkout", 0.15], ["Lint", 0.75]] },
 ];
 
-// Steps before the failed one passed, and the ones after it were skipped.
-function stepsFor(plan: Plan, ms: number, failStep: string | undefined) {
+// Steps before the failed one passed, and the ones after it were skipped. Each starts where the
+// one before it ended.
+function stepsFor(plan: Plan, ms: number, failStep: string | undefined, started: number) {
   const failedAt = plan.steps.findIndex(([name]) => name === failStep);
-  return plan.steps.map(([name, share], index) => ({
-    name,
-    conclusion: failedAt < 0 || index < failedAt ? "success" : index === failedAt ? "failure" : "skipped",
-    ms: failedAt >= 0 && index > failedAt ? null : Math.round(ms * share),
-  }));
+  let at = started;
+  return plan.steps.map(([name, share], index) => {
+    const skipped = failedAt >= 0 && index > failedAt;
+    const length = Math.round(ms * share);
+    const step = {
+      name,
+      conclusion: failedAt < 0 || index < failedAt ? "success" : index === failedAt ? "failure" : "skipped",
+      ms: skipped ? null : length,
+      ...(skipped ? {} : { startedAt: new Date(at).toISOString() }),
+    };
+    if (!skipped) at += length;
+    return step;
+  });
+}
+
+// The linux kind's container limits, as its runner events record them.
+const LINUX_LIMITS = { memoryMiB: 3686, cpus: 4 };
+const READING_MS = 15_000;
+// How a job's container used memory and CPU: most jobs grow a little through their longest step;
+// one climbs to its memory limit and is stopped; slow builds sit at the CPU limit while building.
+type Profile = "normal" | "climb" | "cpu";
+type Run = { slot: number; start: number; end: number; profile: Profile; steps: { name: string; startedAt?: string; ms: number | null }[] };
+
+function readingFor(run: Run, at: number, jitter: (ms: number, spread?: number) => number) {
+  const share = (at - run.start) / (run.end - run.start);
+  const step = run.steps.find((each) => each.startedAt && each.ms !== null && at >= Date.parse(each.startedAt) && at <= Date.parse(each.startedAt) + each.ms)?.name;
+  if (run.profile === "climb") return { cpuPercent: jitter(260, 0.2), memMiB: Math.round(700 + share * (LINUX_LIMITS.memoryMiB - 700)) };
+  if (run.profile === "cpu" && step === "Build") return { cpuPercent: jitter(392, 0.02), memMiB: jitter(1400, 0.05) };
+  const working = step === "Test" || step === "Build" || step === "pnpm install";
+  return { cpuPercent: working ? jitter(180, 0.3) : jitter(30, 0.5), memMiB: Math.round(500 + share * 900 + (working ? 300 : 0)) };
 }
 
 export async function writeFixtures(dir: string, now: number) {
@@ -54,6 +80,8 @@ export async function writeFixtures(dir: string, now: number) {
   let jobId = 1000;
   // Times when the VM ran short of memory, which the samples below dip at.
   const pressure: [number, number][] = [];
+  // Each job that ran in one of the install's containers, for its readings.
+  const runs: Run[] = [];
 
   const runner = (labels: string[], slot: number, at: number) =>
     labels === HOSTED ? `GitHub Actions ${Math.floor(next() * 90) + 10}` : `${INSTALL}-linux-${slot}-${Math.floor(at / 1000)}`;
@@ -65,6 +93,9 @@ export async function writeFixtures(dir: string, now: number) {
     slot?: number;
     exitCode?: number | null;
     failStep?: string;
+    profile?: Profile;
+    // How long the runner waited for this job, when it matters.
+    idleMs?: number;
   } = {}) => {
     const attempt = run.attempt ?? 1;
     const ms = outcome.ms ?? jitter(plan.ms);
@@ -89,12 +120,12 @@ export async function writeFixtures(dir: string, now: number) {
       createdAt: iso(queued),
       startedAt: name === null && conclusion === "cancelled" ? iso(queued + ms) : iso(started),
       completedAt: iso(started + ms),
-      steps: name === null ? [] : stepsFor(plan, ms, outcome.failStep),
+      steps: name === null ? [] : stepsFor(plan, ms, outcome.failStep, started),
     };
     jobs[repo]!.push(record);
     if (name?.startsWith(`${INSTALL}-`)) {
       // The runner waited for its job a little before it started.
-      const registered = started - jitter(20_000, 0.8);
+      const registered = started - (outcome.idleMs ?? jitter(20_000, 0.8));
       events.push({
         time: iso(started + ms),
         event: "runner",
@@ -106,7 +137,9 @@ export async function writeFixtures(dir: string, now: number) {
         exitCode: outcome.exitCode === undefined ? 0 : outcome.exitCode,
         released: false,
         image: LINUX_IMAGE,
+        limits: LINUX_LIMITS,
       });
+      runs.push({ slot, start: started, end: started + ms, profile: outcome.profile ?? "normal", steps: record.steps });
     }
     return record;
   };
@@ -131,7 +164,7 @@ export async function writeFixtures(dir: string, now: number) {
         add("owner/name", plan, { ...run, at: at + 10 * MINUTE, attempt: 2 });
       } else if (plan.job === "build" && recent) {
         // Slow: the last few builds take three times as long.
-        add("owner/name", plan, run, { ms: jitter(plan.ms * 3) });
+        add("owner/name", plan, run, { ms: jitter(plan.ms * 3), profile: "cpu" });
       } else if (plan.job === "test" && next() < 0.25) {
         // The repo's runner variable sometimes points back at hosted runners, which are slower here.
         add("owner/name", { ...plan, labels: HOSTED, ms: plan.ms * 1.3 }, run);
@@ -146,7 +179,7 @@ export async function writeFixtures(dir: string, now: number) {
   const killedAt = now - 40 * MINUTE;
   pressure.push([killedAt, killedAt + 5 * MINUTE]);
   const killed = { runId: runId++, at: killedAt, branch: "fix/cache", headSha: shaFor(runId) };
-  add("owner/name", CI[1]!, killed, { conclusion: "failure", failStep: "Test", slot: 2, exitCode: 137, ms: 4 * MINUTE });
+  add("owner/name", CI[1]!, killed, { conclusion: "failure", failStep: "Test", slot: 2, exitCode: 137, ms: 4 * MINUTE, profile: "climb", idleMs: 10 * MINUTE });
   add("owner/name", CI[1]!, { ...killed, at: killedAt + 12 * MINUTE, attempt: 2 }, { slot: 1 });
 
   // No runner: two jobs waited and were cancelled while slots waited for memory.
@@ -167,6 +200,20 @@ export async function writeFixtures(dir: string, now: number) {
   events.push({ time: iso(now - 2 * HOUR), event: "image_build", runnerType: "docker", tag: "app-docker:9c1e2f3a4b5d", startedAt: iso(now - 2 * HOUR - MINUTE), durationMs: MINUTE, ok: false });
   events.push({ time: iso(now - 5 * HOUR), event: "runner", runnerType: "linux", slot: 2, runner: `${INSTALL}-linux-2-${Math.floor((now - 6 * HOUR) / 1000)}`, startedAt: iso(now - 6 * HOUR), durationMs: HOUR, exitCode: 0, released: "image" });
 
+  // Each slot's container at `at`: its job's reading while one runs, or else an idle runner.
+  const containersAt = (at: number) =>
+    [1, 2].map((slot) => {
+      const run = runs.find((each) => each.slot === slot && at >= each.start && at <= each.end);
+      return { name: `${INSTALL}-linux-slot${slot}`, ...(run ? readingFor(run, at, jitter) : { cpuPercent: 0.4, memMiB: 160 }) };
+    });
+  // Readings every 15 seconds while each of the last three days' jobs ran, as `up` takes them.
+  const times = runs
+    .filter((run) => run.start >= now - 3 * 24 * HOUR)
+    .flatMap((run) => Array.from({ length: Math.floor((run.end - run.start) / READING_MS) + 1 }, (_, index) => run.start + index * READING_MS));
+  const readings = [...new Set(times)]
+    .toSorted((a, b) => a - b)
+    .map((at) => ({ time: iso(at), containers: containersAt(at) }));
+
   // A sample a minute for the last three days.
   const samples: Sample[] = [];
   let swap = 120;
@@ -179,10 +226,7 @@ export async function writeFixtures(dir: string, now: number) {
       time: iso(at),
       host: { totalMiB: 65_536, availableMiB: Math.round(30_000 + busy * 12_000), swapUsedMiB: 0, load1: Math.round((1 + busy * 6) * 100) / 100, cpuBusyPercent: Math.round(10 + busy * 55) },
       vm: { totalMiB: 16_384, availableMiB: vmAvailable, swapUsedMiB: swap, load1: Math.round((0.5 + busy * 5) * 100) / 100, cpuBusyPercent: Math.round(5 + busy * 80) },
-      containers: [
-        { name: `${INSTALL}-linux-slot1`, cpuPercent: Math.round(busy * 380), memMiB: Math.round(1500 + busy * 2000) },
-        { name: `${INSTALL}-linux-slot2`, cpuPercent: Math.round(busy * 200), memMiB: Math.round(900 + busy * 1500) },
-      ],
+      containers: containersAt(at),
     });
   }
 
@@ -193,11 +237,12 @@ export async function writeFixtures(dir: string, now: number) {
   }
   await writeFile(join(dir, INSTALL, "events.ndjson"), ndjson(events.toSorted((a, b) => a.time.localeCompare(b.time))), { mode: 0o600 });
   await writeFile(join(dir, INSTALL, "samples.ndjson"), ndjson(samples), { mode: 0o600 });
+  await writeFile(join(dir, INSTALL, "containers.ndjson"), ndjson(readings), { mode: 0o600 });
   // What `up` reports right now, written by the core's own writer: one linux slot on a job, one
   // waiting in line for memory, and the docker slot backing off after its failures.
   const live = createSlotState(join(dir, INSTALL, "state.json"), INSTALL, [
-    { name: "linux", label: "example-linux", slots: 2, image: { rebuildDays: 7 } },
-    { name: "docker", label: "example-docker", slots: 1 },
+    { name: "linux", label: "example-linux", slots: 2, image: { rebuildDays: 7 }, runsIn: "container" },
+    { name: "docker", label: "example-docker", slots: 1, runsIn: "container" },
   ], () => now);
   live.image("linux", LINUX_IMAGE, null);
   // An image three days old with an old gh, so the image facts have something to flag.

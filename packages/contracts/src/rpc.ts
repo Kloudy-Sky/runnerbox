@@ -5,6 +5,7 @@ import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, PairingCode, SessionSummary } from "./auth.ts";
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { Inbox } from "./inbox.ts";
+import { JobResources } from "./resources.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, ChunkReceived, StageAttachment } from "./attachments.ts";
 import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
@@ -60,6 +61,7 @@ export const RPC_METHODS = {
   historyStepComparison: "history.stepComparison",
   historyRuns: "history.runs",
   historyWeeklySummary: "history.weeklySummary",
+  historyJobResources: "history.jobResources",
   inboxList: "inbox.list",
   runnersEvents: "runners.events",
   runnersSamples: "runners.samples",
@@ -119,6 +121,13 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.historyStepComparison, {
     payload: { ...Window, job: Schema.String, by: GroupBy, workflow: Schema.optionalKey(Schema.String) },
     success: StepComparison,
+    error: ReadError,
+  }),
+  // One job attempt's steps, memory and CPU, and a sentence about them. Fails with a
+  // StateReadError when the repo's log has no job with that ID.
+  Rpc.make(RPC_METHODS.historyJobResources, {
+    payload: { repo: RepoName, jobId: Schema.Int },
+    success: JobResources,
     error: ReadError,
   }),
   Rpc.make(RPC_METHODS.historyRuns, {
@@ -241,6 +250,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.historyStepComparison]: HISTORY,
   [RPC_METHODS.historyRuns]: HISTORY,
   [RPC_METHODS.historyWeeklySummary]: HISTORY,
+  // It reads the job's container readings and its runner's events alongside the job.
+  [RPC_METHODS.historyJobResources]: ["history:read", "runners:read"],
   // The inbox reads launcher events and samples alongside jobs.
   [RPC_METHODS.inboxList]: ["history:read", "runners:read"],
   [RPC_METHODS.runnersEvents]: RUNNERS,
