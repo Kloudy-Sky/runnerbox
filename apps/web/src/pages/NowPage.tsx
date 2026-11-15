@@ -49,7 +49,7 @@ export function NowPage() {
         ) : null}
         {inbox ? (
           <div className="pt-3">
-            <PinnedItems inbox={inbox} now={now} runs={runs} />
+            <PinnedItems inbox={inbox} now={now} />
           </div>
         ) : null}
         {live.map((install) => (
