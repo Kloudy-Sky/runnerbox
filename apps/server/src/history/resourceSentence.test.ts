@@ -40,8 +40,10 @@ test("a container stopped for memory comes first, with the step it was stopped i
 test("CPU at the limit for most of a long step names that step", () => {
   const busy = points((second) => (second >= 30 ? { cpuPercent: 195 } : {}));
   assert.deepEqual(say({ points: busy }), { case: "cpu_limit", text: "CPU was at this kind's limit of 2 CPUs for most of Test, so that step was held back by CPU.", step: "Test" });
-  // A brief spike isn't most of anything.
-  assert.equal(say({ points: points((second) => (second === 45 ? { cpuPercent: 200 } : {})) })?.case, "nothing_unusual");
+  // A brief spike isn't most of anything, but the sentence doesn't call it under the limit either.
+  const spike = say({ points: points((second) => (second === 45 ? { cpuPercent: 200 } : {})) });
+  assert.equal(spike?.case, "nothing_unusual");
+  assert.match(spike!.text, /CPU reached its limit of 2 CPUs only for short stretches\.$/);
 });
 
 test("a VM low on memory while the job stayed well under its own limit says so without blaming the job", () => {

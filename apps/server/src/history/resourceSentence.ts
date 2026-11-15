@@ -80,10 +80,13 @@ export function resourceSentence(input: SentenceInput): ResourceSentence | null 
   if (input.durationMs !== null && covered < input.durationMs * COVERED_SHARE) {
     return say("few_readings", "The readings cover only part of this job, too little to say more.");
   }
+  // CPU at the limit for less than most of the job isn't worth a sentence, but isn't "under" it either.
+  const cpuWords = (limit: ContainerLimits) =>
+    points.some((point) => point.cpuPercent >= limit.cpus * 100 * CPU_AT_LIMIT) ? `CPU reached its limit of ${cpus(limit.cpus)} only for short stretches` : `CPU stayed under its limit of ${cpus(limit.cpus)}`;
   return say(
     "nothing_unusual",
     limits
-      ? `Nothing unusual: the highest reading was ${memoryOf(peak, limits.memoryMiB).part} of its ${memoryOf(peak, limits.memoryMiB).whole} memory limit, and CPU stayed under its limit of ${cpus(limits.cpus)}.`
+      ? `Nothing unusual: the highest reading was ${memoryOf(peak, limits.memoryMiB).part} of its ${memoryOf(peak, limits.memoryMiB).whole} memory limit, and ${cpuWords(limits)}.`
       : `Nothing unusual: the highest memory reading was ${memory(peak)}.`,
   );
 }
