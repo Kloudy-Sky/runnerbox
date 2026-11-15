@@ -79,3 +79,20 @@ test("a slot's job shows while its runner is busy, and goes with the runner", as
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("the file holds the install's memory floor, and a kind's own only where it sets one", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "slot-state-"));
+  try {
+    const kinds = [
+      { name: "linux", label: "example-linux", slots: 2 },
+      { name: "light", label: "example-linux-light", slots: 3, memoryFloor: { hostMiB: 500, vmMiB: 600 } },
+    ];
+    await createSlotState(join(dir, "example", "state.json"), "example", kinds, Date.now, { hostMiB: 1000, vmMiB: 2000 }).flush();
+
+    const [read] = await readSlotStates(dir);
+    assert.deepEqual(read?.memoryFloor, { hostMiB: 1000, vmMiB: 2000 });
+    assert.deepEqual(read?.kinds.map((kind) => kind.memoryFloor), [undefined, { hostMiB: 500, vmMiB: 600 }]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

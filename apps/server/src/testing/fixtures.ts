@@ -243,7 +243,7 @@ export async function writeFixtures(dir: string, now: number) {
   const live = createSlotState(join(dir, INSTALL, "state.json"), INSTALL, [
     { name: "linux", label: "example-linux", slots: 2, image: { rebuildDays: 7 }, runsIn: "container" },
     { name: "docker", label: "example-docker", slots: 1, runsIn: "container" },
-  ], () => now);
+  ], () => now, { hostMiB: 1024, vmMiB: 2048 });
   live.image("linux", LINUX_IMAGE, null);
   // An image three days old with an old gh, so the image facts have something to flag.
   live.probed("linux", LINUX_IMAGE, {
