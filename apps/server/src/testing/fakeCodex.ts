@@ -9,7 +9,17 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const stateDir = (process.env.CODEX_HOME ?? "").split("/.server/")[0] ?? "";
-const settings: { scenario: string; version: string } = JSON.parse(readFileSync(join(stateDir, "fake-codex.json"), "utf8"));
+// `ownerServers`: what `codex mcp list` says an owner's config has. `mcpStatus`: what
+// `mcpServerStatus/list` answers, by default Runnerbox's server alone.
+const settings: {
+  scenario: string;
+  version: string;
+  ownerServers?: ReadonlyArray<{ name: string; enabled: boolean }>;
+  mcpStatus?: ReadonlyArray<{ name: string; runtimeStatus: string; tools: Record<string, unknown> }>;
+  // What `thread/start` lists as loaded instruction files, and what `config/read` says of the provider.
+  instructionSources?: ReadonlyArray<string>;
+  config?: Record<string, unknown>;
+} = JSON.parse(readFileSync(join(stateDir, "fake-codex.json"), "utf8"));
 const log = (entry: Record<string, unknown>) => appendFileSync(join(stateDir, "fake-codex.log"), `${JSON.stringify(entry)}\n`);
 const args = process.argv.slice(2);
 if (args[0] === "--version") {
@@ -17,6 +27,12 @@ if (args[0] === "--version") {
   process.exit(0);
 }
 if (args[0] === "login") process.exit(0);
+if (args[0] === "mcp") {
+  log({ mcpList: args, home: process.env.CODEX_HOME });
+  console.log(JSON.stringify(settings.ownerServers ?? []));
+  process.exit(0);
+}
+log({ spawned: args });
 
 const { scenario } = settings;
 // Reads on for a moment after SIGTERM, so a test sees what Runnerbox answered last, and writes into
@@ -67,13 +83,15 @@ for await (const line of createInterface({ input: process.stdin })) {
         approvalPolicy: message.params.approvalPolicy,
         approvalsReviewer: message.params.approvalsReviewer,
         sandbox: wide ? { type: "dangerFullAccess" } : { type: "readOnly", networkAccess: false },
-        instructionSources: [],
+        instructionSources: settings.instructionSources ?? [],
         cwd: message.params.cwd,
         model: "example",
         modelProvider: "openai",
       },
     });
   }
+  if (message.method === "config/read") send({ id: message.id, result: { config: settings.config ?? { model_provider: "openai" } } });
+  if (message.method === "mcpServerStatus/list") send({ id: message.id, result: { data: settings.mcpStatus ?? [{ name: "runnerbox", runtimeStatus: "ready", tools: { ci_overview: {} } }], nextCursor: null } });
   if (message.method === "turn/start") {
     send({ id: message.id, result: { turn: { id: "u", items: [], status: "inProgress" } } });
     play();

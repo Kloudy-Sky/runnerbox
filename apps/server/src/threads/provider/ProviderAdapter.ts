@@ -32,7 +32,8 @@ export type TurnInput = {
 
 export type TurnImage = { readonly mimeType: string; readonly base64: string };
 
-export type TurnAccount = { readonly label: string; readonly model: string | null; readonly apiKey: string | null };
+// `home`: the owner's own CLI home, absolute, when the account uses their login; null for Runnerbox's own.
+export type TurnAccount = { readonly label: string; readonly model: string | null; readonly apiKey: string | null; readonly home: string | null };
 
 // One driver: how turns run on one kind of provider, Claude or Codex, each registered in Drivers.
 // Interrupting the stream must stop the provider's work.
@@ -41,7 +42,7 @@ export class ProviderAdapter extends Context.Service<
   {
     // Whether an account can run turns here: an API account needs only the CLI, a subscription
     // account also needs its login.
-    readonly status: (account: { readonly hasKey: boolean }) => Effect.Effect<ProviderStatus>;
+    readonly status: (account: { readonly hasKey: boolean; readonly home: string | null }) => Effect.Effect<ProviderStatus>;
     // The models a turn may pick here: the driver's own list, less any the installed CLI can't run.
     readonly models: Effect.Effect<ReadonlyArray<HarnessModel>>;
     readonly runTurn: (input: TurnInput) => Stream.Stream<ProviderEvent, ProviderError>;

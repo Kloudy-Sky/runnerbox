@@ -139,7 +139,7 @@ const make = Effect.gen(function* () {
   const turnSessions = new Map<string, string>();
   // Whether the default account can run turns, for a client deciding whether to offer threads.
   const provider = accounts.resolve(undefined).pipe(
-    Effect.flatMap((account) => drivers.get(account.driver).status({ hasKey: account.apiKey !== null })),
+    Effect.flatMap((account) => drivers.get(account.driver).status({ hasKey: account.apiKey !== null, home: account.home })),
     Effect.catch(() => Effect.succeed<ProviderStatus>({ provider: "Claude", available: false, fix: "Couldn't read the accounts file on the server." })),
   );
   // An unreadable accounts file says so, as `provider` does, since adding an account would fail too.
@@ -322,7 +322,7 @@ const make = Effect.gen(function* () {
     // So a turn doesn't get the shell for a container `up` already removed.
     yield* settleReproduce(id);
     const driver = drivers.get(account.driver);
-    const status = yield* driver.status({ hasKey: account.apiKey !== null });
+    const status = yield* driver.status({ hasKey: account.apiKey !== null, home: account.home });
     if (!status.available) return yield* new ThreadError({ reason: "provider_unavailable" });
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
@@ -387,7 +387,7 @@ const make = Effect.gen(function* () {
               mcp: { url: `${yield* endpoint.baseUrl}/mcp`, token: grant.token },
               reproduce: reproducing,
               propose: !monitor,
-              account: { label: account.label, model: monitor?.model ?? model ?? account.model, apiKey: account.apiKey },
+              account: { label: account.label, model: monitor?.model ?? model ?? account.model, apiKey: account.apiKey, home: account.home },
             })
             .pipe(Stream.runForEach(onEvent(id, turn)));
         }).pipe(

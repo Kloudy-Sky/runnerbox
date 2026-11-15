@@ -1,5 +1,5 @@
 import { MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, PROPOSE_TOOL_NAME, READ_ONLY_TOOL_NAMES, REPRODUCE_TOOL_NAME, SERVER_NAME } from "./runnerboxTools.ts";
-import type { ThreadStarted } from "./codexProtocol.ts";
+import type { McpServers, ProviderConfig, ThreadStarted } from "./codexProtocol.ts";
 import type { TurnImage } from "./ProviderAdapter.ts";
 
 // How a thread's turn runs the environment's own `codex`: one `codex app-server` per turn, spoken
@@ -50,13 +50,29 @@ export const maxSteps = (turn: { readonly reproduce: boolean }) => (turn.reprodu
 
 const toml = (value: string) => JSON.stringify(value);
 
-// `codex app-server` with every setting given here, after `--ignore-user-config`'s equivalent: the
-// home is Runnerbox's own and holds no config.toml.
-export function appServerArgs(turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean }) {
+// The owner's own MCP servers, from their config.toml, turned off: one table first, which quotes
+// dotted names and replaces any earlier flag, then a flag for each plain name, as T3 Code's Codex
+// text generation does (MIT, see THIRD_PARTY_NOTICES.md). Empty for Runnerbox's own home.
+export const ownerServersOff = (names: ReadonlyArray<string>) =>
+  names.length === 0
+    ? []
+    : [`mcp_servers={${names.map((name) => `${toml(name)}={enabled=false}`).join(",")}}`, ...names.filter((name) => !/[.=]/.test(name)).map((name) => `mcp_servers.${name}.enabled=false`)];
+
+// `codex app-server` with every setting given here. In Runnerbox's own home there's no config.toml;
+// in the owner's, these come last and win over theirs (`-c` is Codex's highest layer). A profile
+// can't apply: Codex 0.167 reads one only from `--profile`, which this never passes.
+export function appServerArgs(turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> }) {
   return [
     "app-server",
     ...DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     ...[
+      ...ownerServersOff(turn.ownerServers),
+      // Turns go to the built-in OpenAI provider whatever the owner's config names; its base URLs
+      // are checked before the question is sent, since `-c` can't unset them.
+      `model_provider=${toml("openai")}`,
+      // No notify command from the owner's config, and no developer instructions but Runnerbox's.
+      "notify=[]",
+      `developer_instructions=${toml("")}`,
       `web_search=${toml("disabled")}`,
       // No AGENTS.md, skills text or memory reaches the model.
       "project_doc_max_bytes=0",
@@ -119,8 +135,13 @@ const REQUIRED_FEATURES_OFF = [
   "shell_snapshot",
   "memories",
 ];
-const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean }) => [
+const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> }) => [
   ...REQUIRED_FEATURES_OFF.map((feature) => `--disable ${feature}`),
+  ...(turn.ownerServers.length === 0 ? [] : [`mcp_servers={${turn.ownerServers.map((name) => `${JSON.stringify(name)}={enabled=false}`).join(",")}}`]),
+  ...turn.ownerServers.filter((name) => !name.includes(".") && !name.includes("=")).map((name) => `mcp_servers.${name}.enabled=false`),
+  'model_provider="openai"',
+  "notify=[]",
+  'developer_instructions=""',
   'web_search="disabled"',
   "project_doc_max_bytes=0",
   "skills.include_instructions=false",
@@ -131,7 +152,7 @@ const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boo
   "mcp_servers.runnerbox.required=true",
 ];
 export function launchProblems(
-  turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean },
+  turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> },
   args: ReadonlyArray<string>,
   params: Readonly<Record<string, unknown>>,
 ) {
@@ -143,14 +164,49 @@ export function launchProblems(
 
 // What `thread/start` says Codex applied, checked before the prompt is sent: a config or managed
 // policy Runnerbox didn't write could otherwise change it.
-export function appliedProblems(applied: Omit<ThreadStarted, "thread">) {
+// `globalInstructions`: the one instruction file that may load, an owner's `$CODEX_HOME/AGENTS.md`
+// (as typed and as resolved), on an account that uses their home; none on Runnerbox's own.
+export function appliedProblems(applied: Omit<ThreadStarted, "thread">, globalInstructions: ReadonlyArray<string> = []) {
   const { sandbox } = applied;
   return [
     ...(applied.approvalPolicy === REQUIRED_PARAMS.approvalPolicy ? [] : ["approvals aren't all asked of Runnerbox"]),
     ...(applied.approvalsReviewer === REQUIRED_PARAMS.approvalsReviewer ? [] : ["approvals go to a reviewer other than Runnerbox"]),
     ...(sandbox.type === "readOnly" && sandbox.networkAccess !== true ? [] : ["the sandbox isn't read-only without network"]),
-    ...((applied.instructionSources ?? []).length === 0 ? [] : ["it loaded instruction files"]),
+    ...((applied.instructionSources ?? []).every((source) => globalInstructions.includes(source)) ? [] : ["it loaded instruction files"]),
+    ...(applied.modelProvider === undefined || applied.modelProvider === PROVIDER ? [] : [`turns go to the provider \`${applied.modelProvider}\``]),
   ];
+}
+
+// The built-in provider every turn goes to, pinned with `model_provider`. Built-in providers can't be
+// redefined in a config.toml, but its base URLs can, and `-c` can't unset them, so a home that
+// sets one is refused instead.
+const PROVIDER = "openai";
+// `config/read` fills in this one for every home, Codex 0.167.2's DEFAULT_CHATGPT_BASE_URL; any
+// other value, and any value for the rest, came from a config.
+const DEFAULT_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
+export function providerProblems({ config }: ProviderConfig) {
+  const urls = [
+    ["openai_base_url", config.openai_base_url, null],
+    ["chatgpt_base_url", config.chatgpt_base_url, DEFAULT_CHATGPT_BASE_URL],
+    ["experimental_realtime_ws_base_url", config.experimental_realtime_ws_base_url, null],
+    ["experimental_realtime_webrtc_call_base_url", config.experimental_realtime_webrtc_call_base_url, null],
+  ] as const;
+  return [
+    ...(config.model_provider === PROVIDER ? [] : [`turns go to the provider \`${config.model_provider ?? "none"}\``]),
+    ...urls.flatMap(([key, value, normal]) => (value === undefined || value === null || value === normal ? [] : [`its config sets \`${key}\``])),
+    ...(config.model_providers?.[PROVIDER] === undefined ? [] : [`its config changes the \`${PROVIDER}\` provider`]),
+  ];
+}
+
+// What `mcpServerStatus/list` says, checked before the prompt is sent: Runnerbox's server offers only
+// this turn's tools, and every other one, such as the owner's own, is off and offers none.
+export function mcpProblems(servers: McpServers, allowed: ReadonlyArray<string>) {
+  if (servers.nextCursor) return ["it has more MCP servers than Runnerbox could check"];
+  return servers.data.flatMap((server) => {
+    const tools = Object.keys(server.tools);
+    if (server.name === SERVER_NAME) return tools.every((tool) => allowed.includes(tool)) ? [] : ["Runnerbox's MCP server offers tools this turn isn't given"];
+    return server.runtimeStatus === "disabled" && tools.length === 0 ? [] : [`the MCP server \`${server.name}\` is on`];
+  });
 }
 
 // The Codex releases this adapter was written and checked against. A newer one can add an item kind

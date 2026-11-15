@@ -55,14 +55,14 @@ const turn = (account: TurnAccount) =>
   );
 
 test("a turn's account key reaches claude, and the server's own key never does", async () => {
-  const subscription = [...(await turn({ label: "Claude, subscription", model: null, apiKey: null }))];
+  const subscription = [...(await turn({ label: "Claude, subscription", model: null, apiKey: null, home: null }))];
   assert.deepEqual(subscription.find((event) => event._tag === "Text"), { _tag: "Text", text: "key=none" });
-  const api = [...(await turn({ label: "Claude, API", model: null, apiKey: "sk-ant-example-1234" }))];
+  const api = [...(await turn({ label: "Claude, API", model: null, apiKey: "sk-ant-example-1234", home: null }))];
   assert.deepEqual(api.find((event) => event._tag === "Text"), { _tag: "Text", text: "key=sk-ant-example-1234" });
 });
 
 test("a key the API refuses fails the turn with a message that says what to do", async () => {
-  await assert.rejects(turn({ label: "Claude, work key", model: null, apiKey: "sk-ant-refused-0000" }), (error: Error) =>
+  await assert.rejects(turn({ label: "Claude, work key", model: null, apiKey: "sk-ant-refused-0000", home: null }), (error: Error) =>
     /The API key for "Claude, work key" was refused\. Replace it in Settings, Providers\./.test(error.message),
   );
 });

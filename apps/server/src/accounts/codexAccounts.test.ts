@@ -126,3 +126,21 @@ test("a Codex account keyed before Codex refused keys never hands its key to a t
     await server.close();
   }
 });
+
+test("a Codex account can use the owner's own Codex login by its home; Claude's can't, and no home is ever a credential", async () => {
+  const server = await startTestServer({ provider: makeFakeProvider({ turns: [] }), codex: codex() });
+  try {
+    const { saved, refused, listed } = await withClient(server, (client) =>
+      Effect.gen(function* () {
+        const saved = yield* client["providers.save"]({ driver: "codex", label: "Codex, my login", model: null, home: "~/.codex" });
+        const refused = yield* Effect.flip(client["providers.save"]({ driver: "claude", label: "Claude, home", model: null, home: "~/.claude" }));
+        return { saved, refused, listed: yield* client["providers.list"]() };
+      }),
+    );
+    assert.equal(saved.home, "~/.codex");
+    assert.equal(refused._tag === "AccountError" && refused.reason, "no_owner_login");
+    assert.deepEqual(listed.map((provider) => provider.ownerLogin), [false, true]);
+  } finally {
+    await server.close();
+  }
+});

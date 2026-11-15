@@ -23,8 +23,24 @@ export const ThreadStarted = Schema.Struct({
   approvalsReviewer: Schema.Unknown,
   sandbox: Schema.Struct({ type: Schema.String, networkAccess: Schema.optionalKey(Schema.Unknown) }),
   instructionSources: Schema.optionalKey(Schema.Array(Schema.String)),
+  modelProvider: Schema.optionalKey(Schema.String),
 });
 export type ThreadStarted = typeof ThreadStarted.Type;
+
+// What `config/read` says of where turns go: only these keys are read, never the rest of the
+// config, which can hold an owner's MCP server secrets.
+const Url = Schema.optionalKey(Schema.NullOr(Schema.String));
+export const ProviderConfig = Schema.Struct({
+  config: Schema.Struct({
+    model_provider: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    openai_base_url: Url,
+    chatgpt_base_url: Url,
+    experimental_realtime_ws_base_url: Url,
+    experimental_realtime_webrtc_call_base_url: Url,
+    model_providers: Schema.optionalKey(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
+  }),
+});
+export type ProviderConfig = typeof ProviderConfig.Type;
 
 // An item as `item/started` and `item/completed` carry it. Only the kinds a turn may produce are
 // read beyond their `type`.
@@ -39,3 +55,10 @@ export const TurnCompleted = Schema.Struct({
   turn: Schema.Struct({ status: Schema.String, error: Schema.optionalKey(Schema.NullOr(Schema.Struct({ message: Schema.String }))) }),
 });
 export const ErrorNotification = Schema.Struct({ error: Schema.Struct({ message: Schema.String }), willRetry: Schema.Boolean });
+
+// What `mcpServerStatus/list` says of the thread's MCP servers, checked before the prompt is sent.
+export const McpServers = Schema.Struct({
+  data: Schema.Array(Schema.Struct({ name: Schema.String, runtimeStatus: Schema.optionalKey(Schema.NullOr(Schema.String)), tools: Schema.Record(Schema.String, Schema.Unknown) })),
+  nextCursor: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+export type McpServers = typeof McpServers.Type;
