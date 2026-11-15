@@ -4,7 +4,7 @@
 // environment is allow-listed, so it reads them from `fake-codex.json` in the state directory above
 // its CODEX_HOME, and writes what it saw to `fake-codex.log` there, one JSON line each.
 import { spawn } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -19,8 +19,16 @@ if (args[0] === "--version") {
 if (args[0] === "login") process.exit(0);
 
 const { scenario } = settings;
-// Reads on for a moment after SIGTERM, so a test sees what Runnerbox answered last.
-process.on("SIGTERM", () => setTimeout(() => process.exit(0), 300));
+// Reads on for a moment after SIGTERM, so a test sees what Runnerbox answered last, and writes into
+// its home on the way out, as Codex may, so a test sees the home removed only after it closed.
+process.on("SIGTERM", () =>
+  setTimeout(() => {
+    const home = process.env.CODEX_HOME ?? stateDir;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "state.json"), "{}");
+    process.exit(0);
+  }, 300),
+);
 const send = (message: unknown) => process.stdout.write(`${JSON.stringify(message)}\n`);
 // A process of its own, to show that ending the turn ends everything Codex started.
 const sleeper = spawn("sleep", ["60"], { stdio: "ignore" });

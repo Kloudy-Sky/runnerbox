@@ -53,8 +53,10 @@ async function turn(scenario: string, options: { readonly version?: string } = {
     .filter(Boolean)
     .map((line): Record<string, unknown> => JSON.parse(line));
   const pids = (log.find((entry) => entry.pids)?.pids as number[] | undefined) ?? [];
+  // Read once Codex and its children are gone, so a home it wrote into on the way out shows.
+  const left = await settle(pids);
   const turnHomes = await readdir(join(dir, ".server", "agent", "codex-turns")).catch(() => []);
-  return { exit, log, pids, turnHomes, cleanup: () => rm(dir, { recursive: true, force: true }) };
+  return { exit, log, left, turnHomes, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 const stoppedWith = (exit: Exit.Exit<unknown, { readonly message: string }>) => (Exit.isFailure(exit) ? String(exit.cause) : "");
 
@@ -69,7 +71,7 @@ test("a turn on Runnerbox's tools streams its text, and its token and key reach 
     assert.equal(env.key, KEY);
     assert.match(env.home, /codex-turns\/turn-/);
     assert.deepEqual(run.turnHomes, [], "the key account's turn home is removed with the turn");
-    assert.deepEqual(await settle(run.pids), [], "codex and what it started are gone");
+    assert.deepEqual(run.left, [], "codex and what it started are gone");
   } finally {
     await run.cleanup();
   }
@@ -84,7 +86,7 @@ test("a patch Codex asks to apply is declined before it runs, and the turn ends 
       { received: "response:100", result: { decision: "denied" } },
     );
     assert.ok(!run.log.some((entry) => entry.executed), "the patch never ran");
-    assert.deepEqual(await settle(run.pids), [], "codex and what it started are gone");
+    assert.deepEqual(run.left, [], "codex and what it started are gone");
   } finally {
     await run.cleanup();
   }
@@ -98,7 +100,7 @@ test("a subagent, or a message this version doesn't know, ends the turn", async 
     const run = await turn(scenario);
     try {
       assert.match(stoppedWith(run.exit), said);
-      assert.deepEqual(await settle(run.pids), [], `${scenario}: codex and what it started are gone`);
+      assert.deepEqual(run.left, [], `${scenario}: codex and what it started are gone`);
     } finally {
       await run.cleanup();
     }

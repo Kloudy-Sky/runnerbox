@@ -42,7 +42,6 @@ export function findCodex(): string | null {
   );
 }
 
-// The home is made owner-only before `codex` runs, since it would otherwise make it itself, open to all.
 const STDERR_KEPT = 2000;
 const decodeThreadStarted = Schema.decodeUnknownOption(ThreadStarted);
 
@@ -53,10 +52,15 @@ const exited = (child: ChildProcess) =>
     child.once("close", (code) => resolve(code ?? -1));
   });
 
-// Ends Codex and everything it started: the group gets SIGTERM now, and SIGKILL if it's still there.
+// Ends Codex and everything it started: the group gets SIGTERM now, and SIGKILL 2 s later if it's
+// still there. Resolves once Codex has closed, so nothing it writes outlives what's cleaned up after.
 export function killGroup(child: ChildProcess) {
   const { pid } = child;
-  if (pid === undefined) return;
+  const closed = new Promise<void>((resolve) => {
+    if (pid === undefined || child.exitCode !== null || child.signalCode !== null) return resolve();
+    child.once("close", () => resolve());
+  });
+  if (pid === undefined) return closed;
   const signal = (name: NodeJS.Signals) => {
     try {
       process.kill(-pid, name);
@@ -66,8 +70,10 @@ export function killGroup(child: ChildProcess) {
   };
   signal("SIGTERM");
   setTimeout(() => signal("SIGKILL"), 2000).unref();
+  return closed;
 }
 
+// The home is made owner-only before `codex` runs, since it would otherwise make it itself, open to all.
 const run = (executable: string, args: ReadonlyArray<string>, home: string) =>
   Effect.promise(() => mkdir(home, { recursive: true, mode: 0o700 })).pipe(
     Effect.andThen(
@@ -149,7 +155,8 @@ export const makeWith = (find: () => string | null) =>
                     },
                     catch: () => failed("Couldn't make the turn's Codex home on the server."),
                   }),
-                  (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
+                  // Codex has closed by now (its release runs first), so nothing writes here after.
+                  (path) => Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(Effect.ignore),
                 );
           // Its own process group, so ending the turn ends everything Codex started.
           const child = yield* Effect.acquireRelease(
@@ -161,7 +168,7 @@ export const makeWith = (find: () => string | null) =>
                 detached: true,
               }),
             ),
-            (process) => Effect.sync(() => killGroup(process)),
+            (process) => Effect.promise(() => killGroup(process)),
           );
           return talk(child, turn, thread, input);
         }),
