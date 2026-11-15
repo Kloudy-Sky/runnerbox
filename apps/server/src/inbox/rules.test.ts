@@ -97,6 +97,18 @@ test("low memory during a failed job points at the machine", () => {
   assert.equal(items[0]!.evidence.machine?.vmLowMiB, 300);
 });
 
+test("a code failure a later run on its branch fixed is counted as fixed, not as failing", () => {
+  const broken = [job({ job: "build", runId: 1, conclusion: "failure" }), job({ job: "build", runId: 1, attempt: 2, conclusion: "failure" })];
+  const { quiet } = buildInbox(input({ jobs: [...broken, job({ job: "build", runId: 2, at: NOW - minutes(20) })] }), 7);
+  assert.deepEqual(quiet.map((group) => group.title), ["1 problem already fixed"]);
+  const [item] = quiet[0]!.items;
+  assert.equal(item!.title, "ci / build failed in its own code, and a later run passed");
+  assert.match(item!.happened, /A later run on this branch passed\.$/);
+  assert.equal(item!.action, "Nothing to do now. If it fails this way again, it comes back here.");
+  // Still broken: it stays a job failing in its own code.
+  assert.deepEqual(buildInbox(input({ jobs: broken }), 7).quiet.map((group) => group.title), ["1 job failing in its own code"]);
+});
+
 test("a job flaky three times needs a look, and a failure fixed by a later run doesn't", () => {
   const flaky = [1, 2, 3].flatMap((runId) => [
     job({ job: "lint", runId, conclusion: "failure", at: NOW - minutes(runId * 10) }),
