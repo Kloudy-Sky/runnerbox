@@ -3,14 +3,14 @@ import { ListPlusIcon, PaperclipIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { collapseExpandedComposerCursor, composerSubmissionIntentForKey } from "../../composer-logic.ts";
 import { useComposerDraftStore } from "../../composerDraftStore.ts";
-import { useAccounts } from "../../hooks/useAccounts.ts";
 import type { useComposerAttachments } from "../../hooks/useComposerAttachments.ts";
-import { useHarnesses } from "../../hooks/useHarnesses.ts";
+import { useProviders } from "../../hooks/useProviders.ts";
 import { useRange } from "../../hooks/useRange.ts";
 import { useReferenceCandidates } from "../../hooks/useReferenceCandidates.ts";
 import type { useThread } from "../../hooks/useThread.ts";
 import { type ReferenceCandidate, referenceToken, withReferences } from "../../lib/composerReferences.ts";
 import type { Capabilities } from "../../lib/serverCapabilities.ts";
+import { rememberedChoice, type TurnChoice, withAccount, withModel } from "../../lib/turnChoice.ts";
 import { detectComposerTrigger, replaceTextRange } from "../../t3tools/shared/composerTrigger.ts";
 import { type ComposerPromptEditorHandle, ComposerPromptEditorTiptap } from "../ComposerPromptEditorTiptap.tsx";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation.tsx";
@@ -47,18 +47,25 @@ export function Composer({ thread, attachments, capabilities, placeholder }: { t
   const [expandedCursor, setExpandedCursor] = useState(() => draft.length);
   const { view } = thread;
   const { days } = useRange();
-  const { accounts } = useAccounts();
-  const harnesses = useHarnesses(capabilities.models);
+  const { providers } = useProviders();
+  const accounts = providers.flatMap((provider) => provider.accounts);
 
-  // The account and model picked here, or what this thread last ran on if it still exists, or the
-  // defaults. An account removed since falls through to the default, so the thread stays usable.
-  const [pickedAccount, setPickedAccount] = useState<string | null>(null);
-  const [pickedModel, setPickedModel] = useState<{ readonly model: string | null } | null>(null);
+  // The account and model picked here, or what this thread last ran on, or the defaults. They're
+  // kept together, so the driver, account and model a thread runs on always agree.
+  const [picked, setPicked] = useState<TurnChoice | null>(null);
   const lastAsked = view.items.findLast((item) => item._tag === "UserMessage" && item.source === undefined);
-  const remembered = lastAsked?._tag === "UserMessage" ? lastAsked : undefined;
-  const accountId = pickedAccount ?? accounts.find((account) => account.id === remembered?.accountId)?.id ?? accounts.find((account) => account.isDefault)?.id;
+  const choice = picked ?? rememberedChoice(providers, lastAsked?._tag === "UserMessage" ? lastAsked : undefined);
+  const { accountId, model } = choice;
   const account = accounts.find((candidate) => candidate.id === accountId);
-  const model = pickedModel !== null ? pickedModel.model : (remembered?.model ?? null);
+  const modelMenu = (
+    <ModelMenu
+      providers={providers}
+      account={account}
+      model={model}
+      onModel={(driver, next) => setPicked(withModel(providers, choice, driver, next))}
+      onAccount={(next) => setPicked(withAccount(providers, choice, next))}
+    />
+  );
 
   // `@` opens the reference list until it's dismissed at that spot or the text moves on.
   const trigger = detectComposerTrigger(draft, expandedCursor);
@@ -82,7 +89,7 @@ export function Composer({ thread, attachments, capabilities, placeholder }: { t
         <p>{unavailable}</p>
         {accounts.length > 1 ? (
           <div className="text-xs">
-            <ModelMenu harnesses={harnesses} accounts={accounts} accountId={accountId} model={model} onAccount={setPickedAccount} onModel={(next) => setPickedModel({ model: next })} />
+            {modelMenu}
           </div>
         ) : null}
       </div>
@@ -216,7 +223,7 @@ export function Composer({ thread, attachments, capabilities, placeholder }: { t
             </>
           ) : null}
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-            <ModelMenu harnesses={harnesses} accounts={accounts} accountId={accountId} model={model} onAccount={setPickedAccount} onModel={(next) => setPickedModel({ model: next })} />
+            {modelMenu}
             {queueing && capabilities.queue && draft.trim() !== "" ? (
               <Tooltip>
                 <TooltipTrigger

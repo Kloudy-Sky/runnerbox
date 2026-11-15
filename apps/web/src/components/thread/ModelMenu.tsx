@@ -1,6 +1,6 @@
-import type { Account, Harness } from "@runnerbox/contracts";
+import type { Provider, ProviderAccount } from "@runnerbox/contracts";
 import { ChevronDownIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { ComposerControl } from "../chat/ComposerControl";
 import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuRadioItemIndicator, MenuSeparator, MenuTrigger } from "../ui/menu.tsx";
 
@@ -12,25 +12,30 @@ const Choice = ({ children }: { children: ReactNode }) => (
   </span>
 );
 
-// The default model, picked as no model at all, so the account's own setting decides.
-const ACCOUNT_DEFAULT = "";
+// One radio group spans every driver, so a model is picked with its driver: each value is both.
+// The empty model is the account's own setting.
+const choiceOf = (driver: string, model: string | null) => `${driver}\u0000${model ?? ""}`;
+const parseChoice = (value: string) => {
+  const [driver = "", model = ""] = value.split("\u0000");
+  return { driver, model: model === "" ? null : model };
+};
 
-// What a turn runs on, in the composer's row: the harness and its model, then the account. Only
-// Claude today; a second harness adds its own group of models here. With no models to list and
-// one account, there's no choice to make, so there's no menu.
+// What a turn runs on, in the composer's row: each driver the server runs, with its models and, when
+// it has more than one, its accounts under it. A driver's models and accounts show only under it.
+// With no models to list and one account, there's no choice to make, so there's no menu.
 export function ModelMenu(props: {
-  harnesses: ReadonlyArray<Harness>;
-  accounts: ReadonlyArray<Account>;
-  accountId: string | undefined;
+  providers: ReadonlyArray<Provider>;
+  account: ProviderAccount | undefined;
   model: string | null;
-  onAccount: (id: string) => void;
-  onModel: (model: string | null) => void;
+  onModel: (driver: string, model: string | null) => void;
+  onAccount: (account: ProviderAccount) => void;
 }) {
-  const account = props.accounts.find((each) => each.id === props.accountId);
-  const harness = props.harnesses.find((each) => each.driver === (account?.driver ?? "claude"));
-  const picked = harness?.models.find((each) => each.id === props.model);
-  if (props.harnesses.length === 0 && props.accounts.length < 2) return null;
-  const label = harness ? `${harness.label} ${picked?.label ?? "default"}` : (account?.label ?? "Account");
+  const accounts = props.providers.flatMap((provider) => provider.accounts);
+  if (props.providers.every((provider) => provider.models.length === 0) && accounts.length < 2) return null;
+  const driver = props.account?.driver ?? "claude";
+  const provider = props.providers.find((each) => each.driver === driver);
+  const picked = provider?.models.find((each) => each.id === props.model);
+  const label = provider ? `${provider.label} ${picked?.label ?? "default"}` : (props.account?.label ?? "Account");
   return (
     <Menu>
       <MenuTrigger render={<ComposerControl size="xs" aria-label="Harness, model and account" />}>
@@ -38,36 +43,55 @@ export function ModelMenu(props: {
         <ChevronDownIcon data-composer-control-chevron />
       </MenuTrigger>
       <MenuPopup side="top" align="end">
-        {props.harnesses.map((each) => (
-          <MenuGroup key={each.driver}>
-            <MenuGroupLabel>{each.label}</MenuGroupLabel>
-            <MenuRadioGroup value={props.model ?? ACCOUNT_DEFAULT} onValueChange={(value: string) => props.onModel(value === ACCOUNT_DEFAULT ? null : value)}>
-              <MenuRadioItem value={ACCOUNT_DEFAULT} disabled={!each.status.available} closeOnClick>
-                <Choice>{account?.model ? `Account's model (${account.model})` : "Account's default"}</Choice>
-              </MenuRadioItem>
-              {each.models.map((model) => (
-                <MenuRadioItem key={model.id} value={model.id} disabled={!each.status.available} closeOnClick>
-                  <Choice>{model.label}</Choice>
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
-          </MenuGroup>
-        ))}
-        {props.accounts.length > 1 ? (
-          <>
-            <MenuSeparator />
-            <MenuGroup>
-              <MenuGroupLabel>Account</MenuGroupLabel>
-              <MenuRadioGroup value={props.accountId ?? ""} onValueChange={(value: string) => props.onAccount(value)}>
-                {props.accounts.map((each) => (
-                  <MenuRadioItem key={each.id} value={each.id} closeOnClick>
-                    <Choice>{each.label}</Choice>
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
-            </MenuGroup>
-          </>
-        ) : null}
+        {props.providers.map((each, index) => {
+          const own = props.account?.driver === each.driver ? props.account : undefined;
+          // A model needs an account on its driver to run as.
+          const usable = each.status.available && each.accounts.length > 0;
+          return (
+            <Fragment key={each.driver}>
+              {index > 0 ? <MenuSeparator /> : null}
+              <MenuGroup>
+                <MenuGroupLabel>{each.label}</MenuGroupLabel>
+                {each.models.length > 0 ? (
+                  <MenuRadioGroup
+                    value={choiceOf(driver, props.model)}
+                    onValueChange={(value: string) => {
+                      const next = parseChoice(value);
+                      props.onModel(next.driver, next.model);
+                    }}
+                  >
+                    <MenuRadioItem value={choiceOf(each.driver, null)} disabled={!usable} closeOnClick>
+                      <Choice>{own?.model ? `Account's model (${own.model})` : "Account's default"}</Choice>
+                    </MenuRadioItem>
+                    {each.models.map((model) => (
+                      <MenuRadioItem key={model.id} value={choiceOf(each.driver, model.id)} disabled={!usable} closeOnClick>
+                        <Choice>{model.label}</Choice>
+                      </MenuRadioItem>
+                    ))}
+                  </MenuRadioGroup>
+                ) : null}
+                {accounts.length > 1 && each.accounts.length > 0 ? (
+                  <>
+                  {each.models.length > 0 ? <MenuGroupLabel>Account</MenuGroupLabel> : null}
+                  <MenuRadioGroup
+                    value={props.account?.id ?? ""}
+                    onValueChange={(value: string) => {
+                      const next = each.accounts.find((account) => account.id === value);
+                      if (next) props.onAccount(next);
+                    }}
+                  >
+                    {each.accounts.map((account) => (
+                      <MenuRadioItem key={account.id} value={account.id} closeOnClick>
+                        <Choice>{account.label}</Choice>
+                      </MenuRadioItem>
+                    ))}
+                  </MenuRadioGroup>
+                  </>
+                ) : null}
+              </MenuGroup>
+            </Fragment>
+          );
+        })}
       </MenuPopup>
     </Menu>
   );
