@@ -86,7 +86,12 @@ export function ThreadColumn(props: { subject: ThreadSubject; placeholder: strin
             <ThreadMessages view={thread.view} error={thread.error} environmentId={thread.environmentId} onCancelQueued={thread.cancelQueued} />
           </div>
         </div>
-        {!atEnd && thread.view.items.length > 0 ? <ScrollToEndButton bottom={0} summary={null} onScrollToEnd={scrollToEnd} /> : null}
+        {/* In its own band above the composer, as upstream places it, so it never covers a line. */}
+        {!atEnd && thread.view.items.length > 0 ? (
+          <div className="relative h-9 shrink-0">
+            <ScrollToEndButton bottom={0} summary={null} onScrollToEnd={scrollToEnd} />
+          </div>
+        ) : null}
       </div>
       <div className="mx-auto w-full max-w-(--reading-width) px-6 pt-2 pb-4">
         <Composer thread={thread} attachments={attachments} capabilities={capabilities} placeholder={props.placeholder} />
