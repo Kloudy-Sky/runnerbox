@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import { useEffect } from "react";
-import { toAnnounce } from "../lib/needsYouAnnouncements.ts";
+import { announcements, toAnnounce } from "../lib/needsYouAnnouncements.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { getLocalStorageItem, removeLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./useLocalStorage.ts";
 import { useRange } from "./useRange.ts";
@@ -25,7 +25,8 @@ export function useNotificationsSetting() {
 }
 
 // While the setting is on and the system allows it, one notification for each new "Needs you"
-// item, which opens that item when clicked. The inbox is asked again every minute for this.
+// item, which opens that item when clicked, or one for several that opens home. The inbox is
+// asked again every minute for this.
 export function useNeedsYouNotifications() {
   const { enabled } = useNotificationsSetting();
   const { days } = useRange();
@@ -36,11 +37,13 @@ export function useNeedsYouNotifications() {
     if (!enabled || !inbox || typeof Notification === "undefined" || Notification.permission !== "granted") return;
     const { announce, seen } = toAnnounce(inbox.items.map((item) => item.id), getLocalStorageItem(SEEN_KEY, SeenIds));
     setLocalStorageItem(SEEN_KEY, seen, SeenIds);
-    for (const item of inbox.items.filter((candidate) => announce.includes(candidate.id))) {
-      const notification = new Notification(item.title, { body: item.happened, tag: item.id });
+    for (const { title, body, tag, itemId } of announcements(inbox.items.filter((item) => announce.includes(item.id)))) {
+      const notification = new Notification(title, { body, tag });
       notification.onclick = () => {
         window.focus();
-        void navigate({ to: "/item/$itemId", params: { itemId: item.id }, search: (previous: RootSearch) => previous });
+        void (itemId
+          ? navigate({ to: "/item/$itemId", params: { itemId }, search: (previous: RootSearch) => previous })
+          : navigate({ to: "/", search: (previous: RootSearch) => previous }));
       };
     }
   }, [enabled, inbox, navigate]);

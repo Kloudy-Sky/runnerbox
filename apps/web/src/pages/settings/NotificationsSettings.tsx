@@ -25,7 +25,7 @@ export function NotificationsSettings() {
       <SettingsSection title="Notifications">
         <SettingsRow
           title="Tell me when something needs me"
-          description={supported ? "Once for each new item in Needs you. Clicking it opens the item. Failures in a job's own code aren't announced." : "This window can't show notifications."}
+          description={supported ? "Once for each new item in Needs you, or once for several that arrive together. Failures in a job's own code aren't announced." : "This window can't show notifications."}
           status={error || blocked ? <span className="text-warning">{error ?? BLOCKED}</span> : undefined}
           control={<Switch checked={enabled && !blocked} disabled={!supported} onCheckedChange={(next) => void turn(next)} aria-label="Tell me when something needs me" />}
         />
