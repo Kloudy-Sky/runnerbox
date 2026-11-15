@@ -15,8 +15,9 @@ export const serverIsBehind = (appVersion: string, serverVersion: string) =>
 // What updates a server to this app's own release, from the repository this app was released
 // from, as deploy/runnerbox-serve.service installs it.
 // It downloads into a temporary directory and checks the sha256 there, so a bad download never
-// replaces the file a restart would run; the swap into ~/runnerbox is a rename. Its own shell, so
-// `set -e` doesn't stay on in the owner's.
+// replaces the file a restart would run. The file it replaces is kept as runnerbox.js.previous, as
+// the supervisor keeps it, and the swap is a rename. Its own shell, so `set -e` doesn't stay on in
+// the owner's.
 export function serverUpdateCommand(repository: string, appVersion: string) {
   if (!semver.valid(appVersion)) throw new Error(`${appVersion} isn't a version.`);
   if (releaseRepository(repository) === null) throw new Error(`${repository} isn't owner/name.`);
@@ -28,11 +29,19 @@ export function serverUpdateCommand(repository: string, appVersion: string) {
     'cd "$tmp"',
     `curl -fsSL -O "${release}/runnerbox.js" -O "${release}/runnerbox.js.sha256"`,
     "sha256sum -c runnerbox.js.sha256",
+    'if [ -f "$HOME/runnerbox/runnerbox.js" ]; then cp -p "$HOME/runnerbox/runnerbox.js" "$HOME/runnerbox/runnerbox.js.previous"; fi',
     'cp runnerbox.js "$HOME/runnerbox/runnerbox.js.new"',
     'mv "$HOME/runnerbox/runnerbox.js.new" "$HOME/runnerbox/runnerbox.js"',
     "systemctl --user restart runnerbox-serve'",
   ].join("; ");
 }
+
+// Puts back the file the update command, or the supervisor, last replaced.
+export const ROLLBACK_COMMAND = 'cp -p "$HOME/runnerbox/runnerbox.js.previous" "$HOME/runnerbox/runnerbox.js" && systemctl --user restart runnerbox-serve';
+
+// How the notice names a server's version. Builds from before servers reported one say 0.0.0.
+export const serverVersionWords = (serverVersion: string) =>
+  semver.valid(serverVersion) === null || serverVersion === "0.0.0" ? "an older version" : `Runnerbox ${serverVersion}`;
 
 // An update the app asked for, from the click until it knows how it ended. `starting` lasts
 // through the restart and the reconnect after it.
