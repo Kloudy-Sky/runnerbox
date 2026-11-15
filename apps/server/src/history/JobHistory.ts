@@ -130,9 +130,10 @@ const make = Effect.gen(function* () {
     const report = kindUsage({ now, jobs: yield* logs.allJobs(start), machine: machineLookup(samples), events, installs }, days);
     // Every machine known, by its live state, its events or its samples, so one with no samples still says so.
     const names = [...new Set([...installs.map((state) => state.install), ...events.map((event) => event.install), ...samples.map((sample) => sample.install)])].toSorted();
-    // The floor reaches the server once `InstallState` carries `memoryFloor`; until then every
-    // machine reads as not saying, and its sentence says so.
-    return { ...report, machines: machineFit(names, () => null, samples, report.kinds) };
+    // The VM's free memory is the install's, so its line is the install's floor. A machine whose
+    // `up` is too old to record it reads as not saying, and its sentence says so.
+    const floorOf = (install: string) => installs.find((state) => state.install === install)?.memoryFloor?.vmMiB ?? null;
+    return { ...report, machines: machineFit(names, floorOf, samples, report.kinds) };
   });
 
   // Twice the window, so each job's time can be set against the same length of time before it.
