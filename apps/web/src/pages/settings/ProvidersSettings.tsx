@@ -65,6 +65,9 @@ function ProviderSection({
   onEdit: (editing: Editing | null) => void;
   actions: AccountActions;
 }) {
+  // A fix an account already shows under its row, where the owner acts, isn't repeated here.
+  const { available, fix } = provider.status;
+  const statusText = available ? "Ready" : fix === null || provider.accounts.some((account) => account.status.fix === fix) ? "Not ready" : fix;
   const open = editing === null ? undefined : editing.accountId === null ? null : provider.accounts.find((account) => account.id === editing.accountId);
   const rows = (
     <>
@@ -72,8 +75,8 @@ function ProviderSection({
         title="Status"
         status={
           <span className="flex items-center gap-1.5">
-            <StatusDot available={provider.status.available} />
-            {provider.status.available ? "Ready" : (provider.status.fix ?? "Not ready")}
+            <StatusDot available={available} />
+            {statusText}
           </span>
         }
       />
