@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import type { RpcMethod } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/http/HttpRouter";
@@ -63,8 +64,8 @@ export const layerCore = (input: ServicesInput) =>
 // What each listener serves. The loopback one serves everything. The tunnel one, which only
 // `cloudflared` points at, serves the relay's Connect requests and what a Connect session needs,
 // and nothing that takes a CLI pairing code, an app session or an MCP token.
-const layerLocalRoutes = Layer.mergeAll(Routes.layer("local"), Ws.layer("local"), Mcp.layer);
-const layerTunnelRoutes = Layer.mergeAll(Routes.layer("tunnel"), ConnectRoutes.layer, Ws.layer("tunnel"));
+const layerLocalRoutes = (without: ReadonlyArray<RpcMethod>) => Layer.mergeAll(Routes.layer("local"), Ws.layer("local", without), Mcp.layer);
+const layerTunnelRoutes = (without: ReadonlyArray<RpcMethod>) => Layer.mergeAll(Routes.layer("tunnel"), ConnectRoutes.layer, Ws.layer("tunnel", without));
 const serveOptions = { disableLogger: true, disableListenLog: true } as const;
 
 // No client message is anywhere near this: attachments arrive in chunks of 512 KB. `ws` would
@@ -90,15 +91,16 @@ const serveOn = <E, R>(routes: Layer.Layer<never, E, R>, host: string, port: num
   ).pipe(Layer.provide(listener(host, port)));
 
 // Both listeners. The tunnel listener always binds loopback, and only exists when linked.
-const layerListeners = (input: { host: string; port: number; tunnelPort: number | null }) =>
+const layerListeners = (input: { host: string; port: number; tunnelPort: number | null; withoutMethods?: ReadonlyArray<RpcMethod> | undefined }) =>
   Layer.mergeAll(
-    serveOn(layerLocalRoutes, input.host, input.port, "local"),
-    input.tunnelPort === null ? Layer.empty : serveOn(layerTunnelRoutes, "127.0.0.1", input.tunnelPort, "tunnel"),
+    serveOn(layerLocalRoutes(input.withoutMethods ?? []), input.host, input.port, "local"),
+    input.tunnelPort === null ? Layer.empty : serveOn(layerTunnelRoutes(input.withoutMethods ?? []), "127.0.0.1", input.tunnelPort, "tunnel"),
   );
 
 // The listeners over the shared services, exposing the services so tests can mint codes on the
 // same instance.
-export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string; provider?: Provider }) =>
+// `withoutMethods` serves the RPC as a build older than those methods would, for tests and the fake server.
+export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string; provider?: Provider; withoutMethods?: ReadonlyArray<RpcMethod> }) =>
   layerListeners(input).pipe(Layer.provideMerge(layerServices(input)));
 
 // `serve`: the listeners, with the tunnel one on the port the link chose, and for a linked

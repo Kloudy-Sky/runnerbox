@@ -12,7 +12,7 @@ export function useMonitors() {
   const { environment } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
   const queryClient = useQueryClient();
-  const status = useRpcQuery(["monitors"], (client) => client["monitors.status"](), 60_000);
+  const status = useRpcQuery(["monitors"], (client) => client["monitors.status"](), { refetchEvery: 60_000 });
   const refresh = () => queryClient.invalidateQueries({ queryKey: [environmentId, "monitors"] });
   const looking = status.data?.runs.find((run) => run.outcome === "running")?.threadId ?? null;
   // Following the look's thread is synchronizing with something outside React. When its turn ends,

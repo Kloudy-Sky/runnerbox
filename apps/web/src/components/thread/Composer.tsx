@@ -10,6 +10,7 @@ import { useRange } from "../../hooks/useRange.ts";
 import { useReferenceCandidates } from "../../hooks/useReferenceCandidates.ts";
 import type { useThread } from "../../hooks/useThread.ts";
 import { type ReferenceCandidate, referenceToken, withReferences } from "../../lib/composerReferences.ts";
+import type { Capabilities } from "../../lib/serverCapabilities.ts";
 import { detectComposerTrigger, replaceTextRange } from "../../t3tools/shared/composerTrigger.ts";
 import { type ComposerPromptEditorHandle, ComposerPromptEditorTiptap } from "../ComposerPromptEditorTiptap.tsx";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation.tsx";
@@ -35,7 +36,7 @@ const MAX_MENU_ITEMS = 8;
 // it finishes. `@` refers to another thread or run. Under the box, what the agent
 // may do and the thread's own actions. The draft is kept per subject, across navigation and
 // restarts. When the agent can't run here, it says why in one line instead.
-export function Composer({ thread, attachments, placeholder }: { thread: Thread; attachments: Attachments; placeholder: string }) {
+export function Composer({ thread, attachments, capabilities, placeholder }: { thread: Thread; attachments: Attachments; capabilities: Capabilities; placeholder: string }) {
   const picker = useRef<HTMLInputElement>(null);
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const draft = useComposerDraftStore((store) => store.drafts[thread.draftKey]?.value ?? "");
@@ -47,7 +48,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   const { view } = thread;
   const { days } = useRange();
   const { accounts } = useAccounts();
-  const harnesses = useHarnesses();
+  const harnesses = useHarnesses(capabilities.models);
 
   // The account and model picked here, or what this thread last ran on if it still exists, or the
   // defaults. An account removed since falls through to the default, so the thread stays usable.
@@ -62,7 +63,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   // `@` opens the reference list until it's dismissed at that spot or the text moves on.
   const trigger = detectComposerTrigger(draft, expandedCursor);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
-  const referring = trigger?.kind === "path" && dismissedAt !== trigger.rangeStart;
+  const referring = capabilities.references && trigger?.kind === "path" && dismissedAt !== trigger.rangeStart;
   const candidates = useReferenceCandidates(thread.environmentId, days, view.thread?.id ?? null, referring);
   const query = trigger?.query.toLowerCase() ?? "";
   const matches = referring ? candidates.items.filter((candidate) => candidate.label.toLowerCase().includes(query)).slice(0, MAX_MENU_ITEMS) : [];
@@ -105,13 +106,13 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   // A question needs words; files wait until every one has finished uploading.
   const sending = withReferences(draft.trim());
   const canSend = sending.text !== "" && !attachments.busy && !sending.tooMany;
-  // While the agent works, a question waits for it instead, one at a time.
+  // While the agent works, a question waits for it instead, one at a time, on a server that can.
   const queueing = view.running;
-  const canQueue = canSend && view.queued === null;
+  const canQueue = capabilities.queue && canSend && view.queued === null;
   const submit = async () => {
     if (queueing ? !canQueue : !canSend) return;
     const sentIds = attachments.staged.map((file) => file.id);
-    const options = { accountId, model: model ?? undefined, attachments: sentIds, references: sending.references };
+    const options = { accountId, model: capabilities.models ? (model ?? undefined) : undefined, attachments: sentIds, references: sending.references };
     if (queueing) {
       // Out of the draft before the server answers: it can hand the question back first, and that
       // must land in an empty draft, not be cleared after.
@@ -173,7 +174,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
             contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
             skills={NO_SKILLS}
             disabled={false}
-            placeholder={view.items.length === 0 ? placeholder : "Ask a follow-up, or @ to refer to another thread or run"}
+            placeholder={view.items.length === 0 ? placeholder : capabilities.references ? "Ask a follow-up, or @ to refer to another thread or run" : "Ask a follow-up"}
             ariaLabel="Message"
             className="max-h-64 min-h-11 overflow-y-auto"
             onChange={(next, nextCursor, nextExpanded) => {
@@ -185,7 +186,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
             // Files pasted are attached, not put in the text.
             onPaste={(event) => {
               const files = [...event.clipboardData.files];
-              if (files.length === 0) return;
+              if (files.length === 0 || !capabilities.attachments) return;
               event.preventDefault();
               attachments.add(files);
             }}
@@ -193,6 +194,8 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
           />
         </div>
         <div className="flex min-w-0 flex-nowrap items-center px-2 pb-2" data-slot="composer-footer">
+          {capabilities.attachments ? (
+            <>
           <Tooltip>
             <TooltipTrigger render={<Button type="button" variant="ghost" size="icon-sm" onPointerDown={(event) => event.preventDefault()} onClick={() => picker.current?.click()} aria-label="Attach files" />}>
               <PaperclipIcon className="translate-y-px" />
@@ -210,9 +213,11 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
               event.target.value = "";
             }}
           />
+            </>
+          ) : null}
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <ModelMenu harnesses={harnesses} accounts={accounts} accountId={accountId} model={model} onAccount={setPickedAccount} onModel={(next) => setPickedModel({ model: next })} />
-            {queueing && draft.trim() !== "" ? (
+            {queueing && capabilities.queue && draft.trim() !== "" ? (
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -268,7 +273,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
             <Button variant="link" size="xs" onClick={thread.startFresh}>
               New thread
             </Button>
-            <DeleteThread thread={thread} />
+            {capabilities.deleteThread ? <DeleteThread thread={thread} /> : null}
           </>
         ) : null}
       </div>

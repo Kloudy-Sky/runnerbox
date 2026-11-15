@@ -10,7 +10,7 @@ export function useProposals() {
   const { environment } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
   const queryClient = useQueryClient();
-  const list = useRpcQuery(["proposals"], (client) => client["proposals.list"](), 15_000);
+  const list = useRpcQuery(["proposals"], (client) => client["proposals.list"](), { refetchEvery: 15_000 });
   const refresh = () => queryClient.invalidateQueries({ queryKey: [environmentId, "proposals"] });
   return {
     proposals: list.data?.proposals ?? [],

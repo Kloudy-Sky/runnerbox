@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
-import type { AuthScope } from "@runnerbox/contracts";
+import type { AuthScope, RpcMethod } from "@runnerbox/contracts";
 import * as AuthStore from "../auth/AuthStore.ts";
 import * as CloudLink from "../cloud/CloudLink.ts";
 import * as ListeningPorts from "../config/ListeningPorts.ts";
@@ -22,7 +22,7 @@ const makeFakeProviderUnavailable = () => makeFakeProvider({ turns: [], availabl
 // A real server on random loopback ports over freshly written fixture logs, in a temporary
 // directory that `close` removes. Pass `stateDir` to start again over an earlier server's files,
 // and `close(false)` to keep them. Threads use `provider`, or one that's never available.
-export async function startTestServer(options: { fixtures?: boolean; stateDir?: string; provider?: ReturnType<typeof makeFakeProvider> } = {}) {
+export async function startTestServer(options: { fixtures?: boolean; stateDir?: string; provider?: ReturnType<typeof makeFakeProvider>; withoutMethods?: ReadonlyArray<RpcMethod> } = {}) {
   const stateDir = options.stateDir ?? (await mkdtemp(join(tmpdir(), "runnerbox-server-test-")));
   const now = Date.now();
   if (options.stateDir === undefined && options.fixtures !== false) await writeFixtures(stateDir, now);
@@ -30,7 +30,7 @@ export async function startTestServer(options: { fixtures?: boolean; stateDir?: 
   const scope = Effect.runSync(Scope.make());
   // Two loopback listeners, the one apps use and the tunnel-facing one, each on a port the system
   // picks as it binds, so no other test can take it in between. Their ports are read back once up.
-  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port: 0, tunnelPort: 0, stateDir, provider: provider.layer }), scope));
+  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port: 0, tunnelPort: 0, stateDir, provider: provider.layer, withoutMethods: options.withoutMethods ?? [] }), scope));
   const listening = Context.get(context, ListeningPorts.ListeningPorts);
   const [port, tunnelPort] = await Effect.runPromise(Effect.all([Deferred.await(listening.local), Deferred.await(listening.tunnel)]));
   const auth = Context.get(context, AuthStore.AuthStore);
