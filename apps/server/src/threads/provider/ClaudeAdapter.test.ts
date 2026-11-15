@@ -63,6 +63,6 @@ test("a turn's account key reaches claude, and the server's own key never does",
 
 test("a key the API refuses fails the turn with a message that says what to do", async () => {
   await assert.rejects(turn({ label: "Claude, work key", model: null, apiKey: "sk-ant-refused-0000" }), (error: Error) =>
-    /The API key for "Claude, work key" was refused\. Replace it in Settings, Accounts\./.test(error.message),
+    /The API key for "Claude, work key" was refused\. Replace it in Settings, Providers\./.test(error.message),
   );
 });

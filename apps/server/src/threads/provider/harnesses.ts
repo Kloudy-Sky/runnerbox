@@ -18,4 +18,4 @@ export const offersModel = (driver: ProviderDriver, model: string) => HARNESSES[
 
 // A driver can run turns when any of its accounts can, and says its first account's fix otherwise.
 export const driverStatus = (label: string, accounts: ReadonlyArray<{ readonly status: ProviderStatus }>): ProviderStatus =>
-  accounts.find((account) => account.status.available)?.status ?? accounts[0]?.status ?? { provider: label, available: false, fix: "Add an account for it in Settings, Accounts." };
+  accounts.find((account) => account.status.available)?.status ?? accounts[0]?.status ?? { provider: label, available: false, fix: "Add an account for it in Settings, Providers." };
