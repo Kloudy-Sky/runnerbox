@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { type } from "arktype";
 import { ChangeRefused, type Changes } from "../changes/changes.ts";
 import { ReproduceRefused, type Reproducer } from "../reproduce/reproducer.ts";
-import { ControlRequest, type ControlResponse } from "./protocol.ts";
+import { ControlRequest, type ControlResponse, RESTARTS_OFF } from "./protocol.ts";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 
@@ -78,6 +78,7 @@ async function answer({ reproducer, changes }: ControlHandlers, line: string): P
   if (request instanceof type.errors) return { ok: false, error: `That request isn't valid: ${request.summary}` };
   const noReproduce = { ok: false as const, error: "This install has no reproduce block." };
   const noChanges = { ok: false as const, error: 'This install doesn\'t take proposals: its config has no "changes": true.' };
+  const noRestarts = { ok: false as const, error: RESTARTS_OFF };
   try {
     switch (request.op) {
       case "start":
@@ -92,6 +93,10 @@ async function answer({ reproducer, changes }: ControlHandlers, line: string): P
         return changes ? { ok: true, ...(await changes.describe()) } : noChanges;
       case "apply":
         return changes ? { ok: true, ...(await changes.apply(request)) } : noChanges;
+      case "restart":
+        return changes ? { ok: true, ...(await changes.restart(request)) } : noRestarts;
+      case "restart-status":
+        return changes ? { ok: true, ...changes.restartWaiting() } : noRestarts;
     }
   } catch (error) {
     // Refusals are meant for the user. Anything else is a fault, and its details stay in up's log.

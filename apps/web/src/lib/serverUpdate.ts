@@ -95,3 +95,20 @@ export const SIGNATURE_WORDS = {
   missing: "This release isn't signed, so it can't be installed from here. Run the command on the machine instead.",
   invalid: "This release's signature isn't by a key this server trusts, so it can't be installed.",
 } as const;
+
+// Installs that restarted since the last update finished, within a day of it, so About can say
+// they're on the new version now. Host installs are left out: their setup still needs a person.
+export function restartedInstalls(installs: ReadonlyArray<InstallState>, lastUpdate: UpdateOutcome | null, now = Date.now()): ReadonlyArray<{ readonly install: string; readonly at: string }> {
+  if (lastUpdate?.status !== "committed" || lastUpdate.finishedAt === undefined) return [];
+  const updatedAt = Date.parse(lastUpdate.finishedAt);
+  if (now - updatedAt > 24 * 60 * 60_000) return [];
+  return installs
+    .filter((state) => !state.stale && Date.parse(state.startedAt) >= updatedAt && !state.kinds.some((kind) => kind.runsIn === "host"))
+    .map((state) => ({ install: state.install, at: state.startedAt }));
+}
+
+export const RESTART_WORDS = {
+  ask: "Restart the runners when no job is running",
+  waiting: (version: string) => `Waiting for no job to be running. Then its runners restart and pick up ${version}.`,
+  notIdle: "No moment without a running job came in 6 hours, so the runners weren't restarted. Restart them when it suits you:",
+} as const;

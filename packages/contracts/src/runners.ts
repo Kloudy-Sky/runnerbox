@@ -108,3 +108,26 @@ export const InstallState = Schema.Struct({
   kinds: Schema.Array(KindState),
 });
 export type InstallState = typeof InstallState.Type;
+
+// Restarting an install's runners from the app at the first moment no job is running, so they pick
+// up a new runnerbox.js. `available` is false when this install can't take it: `unavailable` then
+// says why in a sentence when the owner can change that (changes off in its config), and is null
+// when there's nothing to say, as for an install whose Runnerbox is too old to be asked.
+export const RunnerRestart = Schema.Struct({
+  install: Schema.String,
+  available: Schema.Boolean,
+  unavailable: Schema.NullOr(Schema.String),
+  // A restart waiting now, seen the same by every client.
+  waiting: Schema.NullOr(Schema.Struct({ since: Schema.String, requestedBy: Schema.String })),
+  // How the last restart asked for ended.
+  last: Schema.NullOr(Schema.Struct({ outcome: Schema.Literals(["restarted", "not_restarted"]), at: Schema.String, reason: Schema.optionalKey(Schema.String) })),
+});
+export type RunnerRestart = typeof RunnerRestart.Type;
+
+export class RunnerRestartError extends Schema.TaggedError<RunnerRestartError>()("RunnerRestartError", { why: Schema.String }) {
+  override get message() {
+    return this.why;
+  }
+}
+
+export const InstallName = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/));

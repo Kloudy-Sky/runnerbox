@@ -17,6 +17,7 @@ import * as AccountStore from "../accounts/AccountStore.ts";
 import * as Providers from "../accounts/Providers.ts";
 import * as Attachments from "../attachments/Attachments.ts";
 import * as EnvironmentIdentity from "../environment/EnvironmentIdentity.ts";
+import * as RunnerRestarts from "../runners/RunnerRestarts.ts";
 import * as ServerUpdate from "../update/ServerUpdate.ts";
 
 const toWire = Effect.mapError((error: LogReadError) => new StateReadError({ what: error.what }));
@@ -46,6 +47,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const attachments = yield* Attachments.Attachments;
       const identity = yield* EnvironmentIdentity.EnvironmentIdentity;
       const serverUpdate = yield* ServerUpdate.ServerUpdate;
+      const restarts = yield* RunnerRestarts.RunnerRestarts;
       // A turn's files are the ones this session staged, and its tools follow this session's scopes.
       const turnOptions = ({ attachments: ids, ...rest }: Omit<TurnRequest, "id" | "text">): Threads.TurnOptions => ({
         ...rest,
@@ -111,6 +113,9 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "server.updateStatus": () => serverUpdate.status,
         "server.update": ({ version }) => serverUpdate.update(version),
         "server.checkRelease": ({ version }) => serverUpdate.checkRelease(version),
+        "runners.restartStatus": ({ install }) => restarts.status(install),
+        // Who asked, as `up` logs it: the session, never its token.
+        "runners.restartWhenIdle": ({ install }) => restarts.restartWhenIdle(install, { session: session.id, label: session.label }),
       };
     }),
   );

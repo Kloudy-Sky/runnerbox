@@ -26,6 +26,7 @@ import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as QueueConfig from "./runners/QueueConfig.ts";
 import * as RunnerQueue from "./runners/RunnerQueue.ts";
 import * as RunnersExplained from "./runners/RunnersExplained.ts";
+import * as RunnerRestarts from "./runners/RunnerRestarts.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
 import * as ToolReleases from "./runners/ToolReleases.ts";
 import * as ClaudeAdapter from "./threads/provider/ClaudeAdapter.ts";
@@ -82,7 +83,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provideMerge(Layer.mergeAll(Threads.layer, Providers.layer, (input.updates ?? releaseUpdates).supervision)),
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
-    Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer).pipe(Layer.provideMerge(UpSocket.layer))),
+    Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer, RunnerRestarts.layer).pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),

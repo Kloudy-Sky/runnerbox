@@ -3,7 +3,7 @@ import { appendFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } fro
 import { basename, dirname, join } from "node:path";
 import { parseLauncherConfig } from "../launcher/launcher-config.ts";
 import { memoryMiB } from "../launcher/memory-size.ts";
-import type { Accepted, ApplyRequest, Described } from "../control/protocol.ts";
+import { type Accepted, type ApplyRequest, type Described, type RestartRequest, RESTARTS_OFF, type RestartWaiting } from "../control/protocol.ts";
 import { fieldsOf, type Machine, refusal, type Value, withField } from "./change-paths.ts";
 
 // Applies a change the owner approved in the app to this install's config, and nothing else. `up`
@@ -33,6 +33,8 @@ export type ChangesActions = {
 export class ChangeRefused extends Error {}
 
 type Waiting = ApplyRequest & { since: number };
+type WaitingRestart = RestartRequest & { since: number };
+const NOT_IDLE = "no moment without a running job came in 6 hours";
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -50,6 +52,8 @@ function loads(value: unknown, what: string) {
 export function createChanges(actions: ChangesActions) {
   const { configPath, now } = actions;
   let waiting: Waiting | null = null;
+  // A restart the owner asked for, which waits for a moment with no job running just as a change does.
+  let restartWaiting: WaitingRestart | null = null;
   // Requests and the idle check run one at a time, so two approvals arriving together can't both
   // pass "nothing is waiting", and a check can't apply a change while another request reads it.
   let turn: Promise<unknown> = Promise.resolve();
@@ -155,6 +159,12 @@ export function createChanges(actions: ChangesActions) {
   async function accept(request: ApplyRequest): Promise<Accepted> {
     if (waiting) throw new ChangeRefused("Another change is already waiting to apply.");
     await plan(request);
+    // Applying the change restarts the runners anyway.
+    if (restartWaiting) {
+      const { requestedBy } = restartWaiting;
+      restartWaiting = null;
+      await note({ kind: "restart", outcome: "not_restarted", requestedBy, reason: "a change that restarts the runners was approved" });
+    }
     await record({ outcome: "accepted", proposalId: request.proposalId, hash: request.hash, approvedBy: request.approvedBy, when: request.when, changes: request.changes });
     if (request.when === "idle") {
       waiting = { ...request, since: now() };
@@ -166,15 +176,43 @@ export function createChanges(actions: ChangesActions) {
     return { accepted: true, when: "now" };
   }
 
+  // Takes the owner's restart, to run at the first moment no job is running. Only one waits at a
+  // time, and none while a change waits, since applying it restarts the runners anyway.
+  const restart = (request: RestartRequest) =>
+    exclusive(async (): Promise<RestartWaiting> => {
+      const config = loads(JSON.parse(await readFile(configPath, "utf8")), "The config doesn't load");
+      if (!("vm" in config)) throw new ChangeRefused("This install runs jobs on the machine's own OS, so its runners are restarted there, by hand.");
+      if (config.changes !== true) throw new ChangeRefused(RESTARTS_OFF);
+      if (waiting) throw new ChangeRefused("A change is waiting to apply, and it restarts the runners when it does.");
+      if (restartWaiting) throw new ChangeRefused("A restart is already waiting.");
+      restartWaiting = { ...request, since: now() };
+      await record({ kind: "restart", outcome: "waiting", requestedBy: request.requestedBy });
+      return restartWaitingNow();
+    });
+  const restartWaitingNow = (): RestartWaiting => ({ restart: restartWaiting ? { since: iso(restartWaiting.since), requestedBy: restartWaiting.requestedBy.label } : null });
+
   // Applies a waiting change at the first moment no job is running, or drops it after 6 hours.
   // It never throws: `every` runs it unwatched, and a fault here must not stop `up`.
   const check = () => exclusive(idleCheck);
   async function idleCheck() {
+    const asked = restartWaiting;
+    if (asked) {
+      if (now() - asked.since > IDLE_LIMIT_MS) {
+        restartWaiting = null;
+        await note({ kind: "restart", outcome: "not_restarted", requestedBy: asked.requestedBy, reason: NOT_IDLE });
+      } else if (!(await actions.busy().catch(() => true))) {
+        restartWaiting = null;
+        await note({ kind: "restart", outcome: "restarted", requestedBy: asked.requestedBy });
+        actions.log(`restarting the runners, as ${asked.requestedBy.label} asked`);
+        actions.drain("restarting the runners, as the owner asked from the app");
+      }
+      return;
+    }
     const change = waiting;
     if (!change) return;
     if (now() - change.since > IDLE_LIMIT_MS) {
       waiting = null;
-      await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "no moment without a running job came in 6 hours" });
+      await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: NOT_IDLE });
       return;
     }
     if (!(await actions.busy().catch(() => true))) await commit(change);
@@ -184,6 +222,8 @@ export function createChanges(actions: ChangesActions) {
   return {
     describe,
     apply,
+    restart,
+    restartWaiting: restartWaitingNow,
     check,
     begin() {
       stopChecking = actions.every(IDLE_CHECK_MS, check);
@@ -191,6 +231,9 @@ export function createChanges(actions: ChangesActions) {
     // As `up` drains for any other reason, a waiting change is dropped and says so.
     async close() {
       stopChecking?.();
+      const asked = restartWaiting;
+      restartWaiting = null;
+      if (asked) await note({ kind: "restart", outcome: "not_restarted", requestedBy: asked.requestedBy, reason: "Runnerbox stopped on the machine before the runners were restarted" });
       const change = waiting;
       waiting = null;
       if (change) await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: "Runnerbox stopped on the machine before it could apply it" });

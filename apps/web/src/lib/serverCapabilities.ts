@@ -23,9 +23,11 @@ export type Capabilities = {
   readonly runnersExplained: boolean;
   // `server.checkRelease`: the server can say whether a release is signed before Update is offered.
   readonly checkRelease: boolean;
+  // `runners.restartStatus` and `runners.restartWhenIdle`: About can restart an install's runners.
+  readonly restartRunners: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, runnersExplained: false, checkRelease: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, runnersExplained: false, checkRelease: false, restartRunners: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -43,5 +45,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     speed: has(RPC_METHODS.historyKindUsage) && has(RPC_METHODS.historyJobTrends),
     runnersExplained: has(RPC_METHODS.runnersExplain),
     checkRelease: has(RPC_METHODS.serverCheckRelease),
+    restartRunners: has(RPC_METHODS.runnersRestartStatus) && has(RPC_METHODS.runnersRestartWhenIdle),
   };
 }
