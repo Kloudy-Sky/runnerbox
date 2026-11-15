@@ -1,4 +1,4 @@
-import { ArrowUp } from "lucide-react";
+import { CircleArrowUp } from "lucide-react";
 import { useDesktopUpdates } from "../../hooks/useDesktopUpdates.ts";
 import { useNow } from "../../hooks/useNow.ts";
 import { cn } from "../../lib/utils.ts";
@@ -7,14 +7,18 @@ import { useServerUpdates } from "../../state/serverUpdates.ts";
 import { dismissRun, type EverythingRun, restartApp, restartLater, retryFailed } from "../../state/updateEverything.ts";
 import { Button } from "../ui/button.tsx";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover.tsx";
-import { ROW } from "./row.ts";
+import { railFade } from "../railFade.ts";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "../ui/sidebar.tsx";
 
 const ACTIONS = { later: ["Later", restartLater], restart: ["Restart", restartApp], retry: ["Retry", retryFailed], dismiss: ["Dismiss", dismissRun] } as const;
 
 // The Update row during a run, after T3 Code's `SidebarUpdateCapsule.tsx`: one line for where it
 // is, naming a machine that's slow, with Later, Retry or Restart beside it. Click it for every
 // machine. A failure holds the app's restart, so Retry survives; Restart app now goes on anyway.
+// On the rail, the line is the icon's tooltip and the action is in the list.
 export function UpdateRunRow({ run }: { run: EverythingRun }) {
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
   const runs = useServerUpdates((state) => state.runs);
   const desktop = useDesktopUpdates();
   const machines = run.machines.map((machine) => ({ ...machine, status: machineStatus(runs[machine.environmentId]), failure: failureOf(runs[machine.environmentId]) }));
@@ -38,25 +42,30 @@ export function UpdateRunRow({ run }: { run: EverythingRun }) {
             : held
               ? "held"
               : "restarts after the servers";
+  const line = view.elapsed ? `${view.label} ${view.elapsed}` : view.label;
   return (
     <Popover>
-      <div className={cn(ROW, "pr-0 hover:bg-transparent", view.tone === "failed" && "text-destructive")}>
-        <PopoverTrigger
-          render={
-            <button type="button" className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left outline-none">
-              <ArrowUp className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{view.label}</span>
-              {view.elapsed ? <span className="shrink-0 text-warning tabular-nums">{view.elapsed}</span> : null}
+      <SidebarMenu>
+        <SidebarMenuItem className="relative">
+          <SidebarMenuButton tooltip={line} render={<PopoverTrigger />} className={cn(action && "pr-16", view.tone === "failed" && "text-destructive [&>svg]:text-destructive")}>
+            <CircleArrowUp />
+            <span className={cn("truncate", railFade)}>
+              {view.label}
+              {view.elapsed ? <span className="text-warning tabular-nums"> {view.elapsed}</span> : null}
+            </span>
+          </SidebarMenuButton>
+          {action ? (
+            <button
+              type="button"
+              className={cn("absolute top-1/2 right-2 -translate-y-1/2 text-foreground text-xs underline underline-offset-3 group-data-[collapsible=icon]:pointer-events-none", railFade)}
+              onClick={action[1]}
+            >
+              {action[0]}
             </button>
-          }
-        />
-        {action ? (
-          <button type="button" className="shrink-0 px-2 text-foreground underline underline-offset-3" onClick={action[1]}>
-            {action[0]}
-          </button>
-        ) : null}
-      </div>
-      <PopoverPopup side="top" align="start" padding="compact" width="sm">
+          ) : null}
+        </SidebarMenuItem>
+      </SidebarMenu>
+      <PopoverPopup side={collapsed ? "right" : "top"} align={collapsed ? "end" : "start"} padding="compact" width="sm">
         <div className="flex flex-col gap-1 text-xs">
           {run.installsApp ? (
             <div className="flex justify-between gap-3">
@@ -89,6 +98,12 @@ export function UpdateRunRow({ run }: { run: EverythingRun }) {
               )}
               <Button size="xs" onClick={retryFailed}>
                 Retry
+              </Button>
+            </div>
+          ) : action ? (
+            <div className="mt-1 flex justify-end">
+              <Button size="xs" variant="secondary" onClick={action[1]}>
+                {action[0]}
               </Button>
             </div>
           ) : null}
