@@ -90,8 +90,8 @@ export function Composer({ thread, placeholder }: { thread: Thread; placeholder:
             setDraft(thread.draftKey, next);
             setCursor(nextCursor);
           }}
-          // Enter sends and Shift+Enter starts a new line, as T3 Code decides it; lists, quotes and
-          // code blocks are the editor's own.
+          // Enter sends and Shift+Enter starts a new line, as T3 Code decides it, in a list too, where
+          // Shift+Enter adds the next item. Inside a code block, Enter is the editor's own.
           onCommandKeyDown={(_key, event) => {
             const intent = composerSubmissionIntentForKey({ event, keybindings: [], isSoftwareKeyboardOpen: false, isDraftThread: false, isRunning: view.running, sendShortcut: "enter", prompt: draft });
             if (intent !== "foreground") return false;
