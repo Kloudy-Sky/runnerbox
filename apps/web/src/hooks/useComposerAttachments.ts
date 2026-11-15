@@ -28,15 +28,17 @@ export function useComposerAttachments(environmentId: string, draftKey: string) 
 
   const upload = async (file: File, kind: AttachmentKind) => {
     const localId = crypto.randomUUID();
+    const patch = (change: Partial<Uploading>) => setUploading((all) => all.map((each) => (each.localId === localId ? { ...each, ...change } : each)));
+    // Counted as uploading from the start, so Send waits and the count holds while the picture is read.
+    setUploading((all) => [...all, { localId, name: file.name, size: file.size, kind, sent: 0, preview: null }]);
     const preview = kind === "image" ? await dataUrlOf(file).catch(() => null) : null;
-    const progress = (sent: number) => setUploading((all) => all.map((each) => (each.localId === localId ? { ...each, sent } : each)));
-    setUploading((all) => [...all, { localId, name: file.name, size: file.size, kind, sent: 0, preview }]);
+    patch({ preview });
     try {
       const { id } = await runtime.run(environmentId, (client) => client["threads.stageAttachment"]({ name: file.name.slice(0, 200) || "file", size: file.size }));
       for (let offset = 0; offset < file.size; offset += ATTACHMENT_LIMITS.chunkBytes) {
         const data = await base64Of(file.slice(offset, offset + ATTACHMENT_LIMITS.chunkBytes));
         const { received, attachment } = await runtime.run(environmentId, (client) => client["threads.attachmentChunk"]({ id, offset, data }));
-        progress(received);
+        patch({ sent: received });
         if (attachment !== null) {
           if (preview !== null) attachmentPreviews.set(attachment.id, preview);
           addAttachment(draftKey, { id: attachment.id, name: attachment.name, size: attachment.size, kind: attachment.kind, at: Date.now() });

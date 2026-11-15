@@ -13,9 +13,10 @@ const TEXT_TYPES = new Set(["application/json", "application/x-yaml", "applicati
 export function precheck(file: PickedFile, alreadyAttached: number): { readonly kind: AttachmentKind } | { readonly refusal: string } {
   const refuse = (reason: AttachmentError["reason"]) => ({ refusal: new AttachmentError({ reason }).message });
   if (alreadyAttached >= ATTACHMENT_LIMITS.perMessage) return refuse("too_many");
+  // An empty file is nothing to show the agent, whatever it's called.
+  if (file.size === 0) return refuse("unsupported_type");
   if (IMAGE_TYPES.has(file.type)) return file.size > ATTACHMENT_LIMITS.fileBytes ? refuse("too_large") : { kind: "image" };
   const text = file.type === "" || file.type.startsWith("text/") || TEXT_TYPES.has(file.type);
   if (!text) return refuse("unsupported_type");
-  if (file.size === 0) return refuse("unsupported_type");
   return file.size > ATTACHMENT_LIMITS.textBytes ? refuse("too_large") : { kind: "text" };
 }

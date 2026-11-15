@@ -30,7 +30,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   const picker = useRef<HTMLInputElement>(null);
   const draft = useComposerDraftStore((store) => store.drafts[thread.draftKey]?.value ?? "");
   const setDraft = useComposerDraftStore((store) => store.setDraft);
-  const clearDraft = useComposerDraftStore((store) => store.clearDraft);
+  const settleSent = useComposerDraftStore((store) => store.settleSent);
   const [cursor, setCursor] = useState(() => draft.length);
   const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const { view } = thread;
@@ -79,8 +79,9 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   const submit = async () => {
     const text = draft.trim();
     if (!canSend || view.running) return;
-    if (await thread.send(text, accountId, attachments.staged.map((file) => file.id))) {
-      clearDraft(thread.draftKey);
+    const sentIds = attachments.staged.map((file) => file.id);
+    if (await thread.send(text, accountId, sentIds)) {
+      settleSent(thread.draftKey, sentIds);
       attachments.settle();
       setCursor(0);
     }

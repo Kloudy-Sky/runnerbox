@@ -13,4 +13,5 @@ test("the composer refuses what the server would, at once and in the same words"
   assert.match(refusal(precheck({ name: "logs.zip", size: 1000, type: "application/zip" }, 0)) ?? "", /Only PNG, JPEG, GIF and WebP/);
   assert.match(refusal(precheck({ name: "photo.heic", size: 1000, type: "image/heic" }, 0)) ?? "", /Only PNG, JPEG, GIF and WebP/);
   assert.match(refusal(precheck({ name: "sixth.png", size: 1000, type: "image/png" }, 5)) ?? "", /up to 5 files/);
+  assert.notEqual(refusal(precheck({ name: "empty.png", size: 0, type: "image/png" }, 0)), null);
 });
