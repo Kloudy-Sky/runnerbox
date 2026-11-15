@@ -5,7 +5,7 @@ import { ConnectSection } from "../../components/ConnectSection.tsx";
 import { PairForm } from "../../components/PairForm.tsx";
 import { SettingsPanel } from "../../components/settings/SettingsPanel.tsx";
 import { Button } from "../../components/ui/button.tsx";
-import { Dialog, DialogDescription, DialogPopup, DialogTitle } from "../../components/ui/dialog.tsx";
+import { Dialog, DialogDescription, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../../components/ui/dialog.tsx";
 import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
 import { routeAddress, routePhrase } from "../../lib/routes.ts";
 import { runtime } from "../../runtime.ts";
@@ -54,16 +54,20 @@ export function ConnectionsSettings() {
       <ConnectSection />
       <Dialog open={adding} onOpenChange={setAdding}>
         <DialogPopup className="max-w-lg">
-          <DialogTitle>Add environment</DialogTitle>
-          <DialogDescription>
-            Run <code className="font-mono text-foreground">runnerbox pair</code> on that machine for a code, or pair over SSH and leave the code empty.
-          </DialogDescription>
-          <PairForm
-            onPaired={(id) => {
-              setActive(id);
-              setAdding(false);
-            }}
-          />
+          <DialogHeader>
+            <DialogTitle>Add environment</DialogTitle>
+            <DialogDescription>
+              Run <code className="font-mono text-foreground">runnerbox pair</code> on that machine for a code, or pair over SSH and leave the code empty.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <PairForm
+              onPaired={(id) => {
+                setActive(id);
+                setAdding(false);
+              }}
+            />
+          </DialogPanel>
         </DialogPopup>
       </Dialog>
     </SettingsPanel.Root>

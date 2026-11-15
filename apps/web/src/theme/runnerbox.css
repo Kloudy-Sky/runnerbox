@@ -1,0 +1,130 @@
+/* Runnerbox's rules over T3 Code's theme (t3code.css, copied unedited). Where the owner's standing
+   rules differ from T3 Code's, they win here, one small block each, so a sync of t3code.css stays a
+   plain diff. Unlayered, so these beat T3 Code's layered utilities. */
+
+/* Dark only: index.html sets class="dark", and nothing switches it. */
+html {
+  color-scheme: dark;
+}
+
+/* The app fills the window and scrolls inside it. T3 Code sets this inline in its index.html, so it
+   isn't in t3code.css. */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+/* A charcoal canvas (#141414) where T3 Code's is black, and white primary text. Raised surfaces keep
+   T3 Code's small lift, measured from charcoal instead of near-black, so they still sit above it.
+   Same selector shape as T3 Code's dark block, and later, so it wins. */
+:root {
+  @variant dark {
+    --background: #141414;
+    --foreground: #ffffff;
+    --card: color-mix(in srgb, #141414 96%, var(--color-white));
+    --card-foreground: #ffffff;
+    --popover: color-mix(in srgb, #141414 95%, var(--color-white));
+    --popover-foreground: #ffffff;
+    --surface-raised: var(--card);
+    --message-surface: color-mix(in srgb, #141414 92%, var(--color-white));
+    --sidebar: #141414;
+    --sidebar-foreground: #ffffff;
+    --sidebar-stage-fade: #141414;
+    --app-chrome-background: #141414;
+  }
+}
+
+/* T3 Code lays a faint grain over the canvas and every surface-grain surface (the sidebar and the
+   main column). It would lighten the charcoal, so they're all the flat color. */
+:root {
+  --surface-grain: none;
+}
+
+/* No continuously repainting animation: T3 Code's skeleton breath, status pulse and ping, spinners,
+   and live shimmer would each repaint every cycle for as long as they show. They hold still. */
+.animate-skeleton,
+.animate-status-pulse,
+.animate-status-ping,
+.animate-spin,
+.animate-pulse,
+.animate-ping,
+.visible-animate-spin,
+.live-tool-shine,
+.live-activity-focus,
+.live-activity-focus-counter {
+  animation: none !important;
+}
+
+/* No blur: T3 Code's glass surfaces (popovers, menus, dialogs) and its backdrop-blur utilities (a
+   toast's dismiss button, the narrow-window sidebar sheet) blur what's behind them, which re-blends
+   on every change underneath. They're solid instead, and the dialog backdrop only dims. */
+:root {
+  --glass-blur: 0px;
+  --glass-opacity: 100%;
+  --glass-saturation: 1;
+}
+
+.dialog-backdrop {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@theme {
+  --blur-xs: 0px;
+  --blur-sm: 0px;
+  --blur: 0px;
+  --blur-md: 0px;
+  --blur-lg: 0px;
+  --blur-xl: 0px;
+  --blur-2xl: 0px;
+  --blur-3xl: 0px;
+}
+
+/* T3 Code's scroll areas fade their edges with a mask. In Chromium, after a route change, the
+   masked sidebar list sometimes painted blank until something else repainted it, so scroll areas
+   end at a plain edge. */
+[data-slot="scroll-area-viewport"] {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* Runnerbox's own tokens, named in T3 Code's roles: a quiet surface for grouped content, and text
+   a step fainter than muted. */
+@theme inline {
+  --color-surface: var(--card);
+  --color-faint: var(--contrast-placeholder);
+}
+
+/* T3 Code leaves the root at 16px and sizes each surface itself; runnerbox's pages inherit their
+   text size, at T3 Code's small size and the line height they were laid out with. */
+body {
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+/* The width runnerbox's pages read at. */
+:root {
+  --reading-width: 40rem;
+}
+
+/* A list item, or text that streamed in, fades up once when it first renders, then stays still. */
+@utility enter {
+  transition:
+    opacity 180ms ease-out,
+    translate 180ms ease-out;
+  @starting-style {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+  }
+}

@@ -4,7 +4,7 @@ import { SettingsPanel } from "../../components/settings/SettingsPanel.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../../components/ui/select.tsx";
-import { toast } from "../../components/ui/toast.tsx";
+import { toastManager } from "../../components/ui/toast.tsx";
 import { useAccounts } from "../../hooks/useAccounts.ts";
 import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
 import { cn } from "../../lib/utils.ts";
@@ -84,10 +84,10 @@ function AccountEditor({ account, onDone }: { account: Account | null; onDone: (
     setBusy(true);
     await work().then(
       () => {
-        toast.add({ title: message });
+        toastManager.add({ title: message });
         onDone(next);
       },
-      (error: unknown) => toast.add({ title: "That didn't work", description: errorText(error) }),
+      (error: unknown) => toastManager.add({ title: "That didn't work", description: errorText(error) }),
     );
     setBusy(false);
   };

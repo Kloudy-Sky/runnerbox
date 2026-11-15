@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { useThread } from "../../hooks/useThread.ts";
 import { Button } from "../ui/button.tsx";
-import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogPopup, DialogTitle } from "../ui/dialog.tsx";
+import { Dialog, DialogClose, DialogDescription, DialogFooter, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog.tsx";
 import { Switch } from "../ui/switch.tsx";
 
 type Thread = ReturnType<typeof useThread>;
@@ -34,17 +34,21 @@ export function ReproduceControl({ thread }: { thread: Thread }) {
         Reproduce
       </Button>
       <DialogPopup>
-        <DialogTitle>Rerun this job in a container?</DialogTitle>
-        <DialogDescription>
-          A throwaway container on {check.kind}'s {check.imageRecorded ? "image the job ran on" : "current image, since the job's own wasn't recorded"}, with commit {check.commit.slice(0, 7)}'s
-          files. The agent can run commands in it until you stop it, for up to 30 minutes.
-        </DialogDescription>
-        <p className="text-muted-foreground">It isn't a runner: no marketplace actions, no job secrets, no service containers. It makes way for real jobs that need the memory.</p>
-        <label className="flex items-center justify-between gap-3 py-1">
-          <span>Cut the network after the first command</span>
-          <Switch checked={cutNetwork} onCheckedChange={setCutNetwork} />
-        </label>
-        <DialogFooter>
+        <DialogHeader>
+          <DialogTitle>Rerun this job in a container?</DialogTitle>
+          <DialogDescription>
+            A throwaway container on {check.kind}'s {check.imageRecorded ? "image the job ran on" : "current image, since the job's own wasn't recorded"}, with commit {check.commit.slice(0, 7)}'s
+            files. The agent can run commands in it until you stop it, for up to 30 minutes.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <p className="text-muted-foreground">It isn't a runner: no marketplace actions, no job secrets, no service containers. It makes way for real jobs that need the memory.</p>
+          <label className="flex items-center justify-between gap-3 py-1">
+            <span>Cut the network after the first command</span>
+            <Switch checked={cutNetwork} onCheckedChange={setCutNetwork} />
+          </label>
+        </DialogPanel>
+        <DialogFooter variant="bare">
           <DialogClose render={<Button variant="ghost" size="sm" disabled={starting} />}>Cancel</DialogClose>
           <Button size="sm" disabled={starting} onClick={() => void confirm()}>
             {starting ? "Starting" : "Start"}
