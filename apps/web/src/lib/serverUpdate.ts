@@ -37,7 +37,8 @@ export function serverUpdateCommand(repository: string, appVersion: string) {
 }
 
 // Puts back the file the update command, or the supervisor, last replaced.
-export const ROLLBACK_COMMAND = 'cp -p "$HOME/runnerbox/runnerbox.js.previous" "$HOME/runnerbox/runnerbox.js" && systemctl --user restart runnerbox-serve';
+export const ROLLBACK_COMMAND =
+  "bash -c 'set -euo pipefail; [ -f \"$HOME/runnerbox/runnerbox.js.previous\" ]; cp -p \"$HOME/runnerbox/runnerbox.js.previous\" \"$HOME/runnerbox/runnerbox.js.new\"; mv \"$HOME/runnerbox/runnerbox.js.new\" \"$HOME/runnerbox/runnerbox.js\"; systemctl --user restart runnerbox-serve'";
 
 // How the notice names a server's version. Builds from before servers reported one say 0.0.0.
 export const serverVersionWords = (serverVersion: string) =>
