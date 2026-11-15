@@ -25,3 +25,9 @@ test("a snapshot taken mid-turn resumes from the text already streamed", () => {
   const view = foldThread(EMPTY_VIEW, { _tag: "Snapshot", detail: { thread: { ...thread, running: true }, items: [] }, partial: { turnId: "a", text: "Look" } });
   assert.equal(foldThread(view, { _tag: "AgentTextDelta", turnId: "a", text: "ing" }).partial?.text, "Looking");
 });
+
+test("a waiting question folds into the view and out again", () => {
+  const view = foldThread(foldThread(EMPTY_VIEW, { _tag: "Snapshot", detail: { thread, items: [] }, partial: null, queued: null }), { _tag: "Queued", message: { text: "x", at } });
+  assert.deepEqual(view.queued, { text: "x", at });
+  assert.equal(foldThread(view, { _tag: "QueueCleared", reason: "cancelled", text: "x", message: null }).queued, null);
+});

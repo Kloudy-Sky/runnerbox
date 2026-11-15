@@ -1,5 +1,5 @@
 import type { ServerProviderSkill } from "@t3tools/contracts";
-import { PaperclipIcon } from "lucide-react";
+import { ListPlusIcon, PaperclipIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { collapseExpandedComposerCursor, composerSubmissionIntentForKey } from "../../composer-logic.ts";
 import { useComposerDraftStore } from "../../composerDraftStore.ts";
@@ -31,7 +31,8 @@ const MAX_MENU_ITEMS = 8;
 
 // The one composer at the bottom of the reading column, laid out as T3 Code's: the files attached,
 // the rich text editor whose Markdown is sent, and a row inside the box with attach, what the turn
-// runs on, and Send or Stop. `@` refers to another thread or run. Under the box, what the agent
+// runs on, and Send or Stop; while the agent works, a question can be queued beside Stop to go when
+// it finishes. `@` refers to another thread or run. Under the box, what the agent
 // may do and the thread's own actions. The draft is kept per subject, across navigation and
 // restarts. When the agent can't run here, it says why in one line instead.
 export function Composer({ thread, attachments, placeholder }: { thread: Thread; attachments: Attachments; placeholder: string }) {
@@ -40,6 +41,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   const draft = useComposerDraftStore((store) => store.drafts[thread.draftKey]?.value ?? "");
   const setDraft = useComposerDraftStore((store) => store.setDraft);
   const settleSent = useComposerDraftStore((store) => store.settleSent);
+  const restore = useComposerDraftStore((store) => store.restore);
   const [cursor, setCursor] = useState(() => draft.length);
   const [expandedCursor, setExpandedCursor] = useState(() => draft.length);
   const { view } = thread;
@@ -103,10 +105,26 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   // A question needs words; files wait until every one has finished uploading.
   const sending = withReferences(draft.trim());
   const canSend = sending.text !== "" && !attachments.busy && !sending.tooMany;
+  // While the agent works, a question waits for it instead, one at a time.
+  const queueing = view.running;
+  const canQueue = canSend && view.queued === null;
   const submit = async () => {
-    if (!canSend || view.running) return;
+    if (queueing ? !canQueue : !canSend) return;
     const sentIds = attachments.staged.map((file) => file.id);
-    if (await thread.send(sending.text, { accountId, model: model ?? undefined, attachments: sentIds, references: sending.references })) {
+    const options = { accountId, model: model ?? undefined, attachments: sentIds, references: sending.references };
+    if (queueing) {
+      // Out of the draft before the server answers: it can hand the question back first, and that
+      // must land in an empty draft, not be cleared after.
+      const files = attachments.staged;
+      settleSent(thread.draftKey, sentIds);
+      attachments.settle();
+      setCursor(0);
+      setExpandedCursor(0);
+      const waiting = { markdown: draft, files, sentText: sending.text, afterSeq: view.items.at(-1)?.seq ?? 0, at: Date.now() };
+      if (!(await thread.queue(sending.text, options, waiting))) restore(thread.draftKey, draft, files);
+      return;
+    }
+    if (await thread.send(sending.text, options)) {
       settleSent(thread.draftKey, sentIds);
       attachments.settle();
       setCursor(0);
@@ -194,6 +212,24 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
           />
           <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
             <ModelMenu harnesses={harnesses} accounts={accounts} accountId={accountId} model={model} onAccount={setPickedAccount} onModel={(next) => setPickedModel({ model: next })} />
+            {queueing && draft.trim() !== "" ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => void submit()}
+                      disabled={!canQueue}
+                      aria-label="Queue message"
+                      className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-message-action text-message-action-foreground shadow-xs shadow-message-action/24 hover:bg-message-action-hover disabled:pointer-events-none disabled:bg-foreground/12 disabled:text-muted-foreground disabled:shadow-none"
+                    />
+                  }
+                >
+                  <ListPlusIcon className="size-4" aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipPopup>{view.queued === null ? "Sends when the agent finishes" : "A question is already waiting"}</TooltipPopup>
+              </Tooltip>
+            ) : null}
             {view.running ? (
               <button
                 type="button"

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { keptDrafts } from "./composerDraftStore.ts";
+import { keptDrafts, keptWaiting } from "./composerDraftStore.ts";
 
 const DAY = 24 * 60 * 60_000;
 
@@ -17,4 +17,11 @@ test("a draft survives a restart for a month, and storage another version wrote 
   assert.deepEqual(keptDrafts({ drafts: { older: { value: "Why?", at: now - DAY } } }, now), { older: { value: "Why?", attachments: [], at: now - DAY } });
   assert.deepEqual(keptDrafts({ drafts: { broken: { value: 7 } } }, now), {});
   assert.deepEqual(keptDrafts(undefined, now), {});
+});
+
+test("a waiting question this window queued survives a reload until the server can no longer have it", () => {
+  const now = Date.UTC(2026, 10, 14);
+  const waiting = (at: number) => ({ markdown: "Why?", files: [], sentText: "Why?", afterSeq: 3, at });
+  assert.deepEqual(keptWaiting({ waiting: { fresh: waiting(now - 60_000), old: waiting(now - 2 * DAY) } }, now), { fresh: waiting(now - 60_000) });
+  assert.deepEqual(keptWaiting({ drafts: {} }, now), {});
 });

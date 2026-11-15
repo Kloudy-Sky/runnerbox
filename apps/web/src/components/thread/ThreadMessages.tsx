@@ -7,13 +7,14 @@ import { useProposals } from "../../hooks/useProposals.ts";
 import { ProposalBlock } from "../proposals/ProposalBlock.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
+import { QueuedQuestion } from "./QueuedQuestion.tsx";
 import { SentAttachments } from "./SentAttachments.tsx";
 import { SentReferences } from "./SentReferences.tsx";
 
 // The thread under an item: the owner's questions and the agent's answers as Markdown, and each tool call as one
 // quiet line saying what it read, with the raw call behind it. Text that's still streaming fades in once and then sits still: no cursor.
-export function ThreadMessages({ view, error, environmentId }: { view: ThreadView; error: string | null; environmentId: string }) {
-  if (view.items.length === 0 && !view.partial && !error) return null;
+export function ThreadMessages({ view, error, environmentId, onCancelQueued }: { view: ThreadView; error: string | null; environmentId: string; onCancelQueued: () => void }) {
+  if (view.items.length === 0 && !view.partial && !error && !view.queued) return null;
   return (
     <div className="flex flex-col gap-3" data-slot="thread">
       {view.items.map((item) => (
@@ -24,6 +25,7 @@ export function ThreadMessages({ view, error, environmentId }: { view: ThreadVie
           <MessageMarkdown text={view.partial.text} from="agent" />
         </div>
       ) : null}
+      {view.queued ? <QueuedQuestion queued={view.queued} onCancel={onCancelQueued} /> : null}
       {error ? <p className="text-destructive">{error}</p> : null}
     </div>
   );
