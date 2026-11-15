@@ -48,15 +48,18 @@ test("reads every interval, counting the read's own time, until none of the inst
   assert.deepEqual(run.waits, [13_000, 13_000]);
 });
 
-test("a start while it runs doesn't start a second loop, and a failed read stops it until the next start", async () => {
-  const run = scripted([line("example-linux-slot1"), new Error("ssh failed"), line("example-linux-slot1"), ""]);
+test("reads before the container exists, or that fail, don't stop it until two intervals after the last start", async () => {
+  // A runner reports itself before `docker run`, so the first read finds nothing.
+  const run = scripted(["", line("example-linux-slot1"), "", new Error("ssh failed"), "", ""]);
   run.sampler.start();
   run.sampler.start();
   await run.settled();
   assert.equal(run.overlapped(), false);
-  assert.equal(run.reads(), 2);
+  // Empty at 0 s (inside the grace), found at 15 s, empty at 30 s (past it): stopped.
+  assert.equal(run.reads(), 3);
+  assert.equal(run.samples.length, 1);
+  // Started again: a failed read and an empty one inside the grace, then one past it.
   run.sampler.start();
   await run.settled();
-  assert.equal(run.reads(), 4);
-  assert.equal(run.samples.length, 2);
+  assert.equal(run.reads(), 6);
 });

@@ -324,24 +324,26 @@ async function keepImage(
   return null;
 }
 
-// One sample a minute of the host, the VM and every container in it, whether or not jobs are running.
 // Reads the VM's job containers every CONTAINER_SAMPLE_MS while any exist, into containers.ndjson.
 function startContainerSampler(config: VmInstall) {
   const log = createRotatingLog(join(stateDir(), config.name, "containers.ndjson"));
   const names = new Set(config.runners.flatMap((runner) => Array.from({ length: runner.slots }, (_, index) => containerName(config.name, runner.name, index + 1))));
-  return createContainerSampler({
+  const ours = (name: string) => names.has(name);
+  const sampler = createContainerSampler({
     read: () => readFromVm({ vm: config.vm, command: CONTAINERS_COMMAND }),
     append: (sample) => log.append(sample),
-    ours: (name) => names.has(name),
+    ours,
     intervalMs: CONTAINER_SAMPLE_MS,
     now: Date.now,
     wait: async (ms) => void (await wait(ms)),
   });
+  return { ...sampler, ours };
 }
 
+// One sample a minute of the host, the VM and every container in it, whether or not jobs are running.
 // `containers` is started again whenever a minute sample sees a job container, in case a failed
 // read stopped it mid-job.
-function startSampler(config: VmInstall, containers: { start: () => void } | null) {
+function startSampler(config: VmInstall, containers: { start: () => void; ours: (name: string) => boolean } | null) {
   const samples = createRotatingLog(join(stateDir(), config.name, "samples.ndjson"));
   const readProc = (file: string) => readFile(`/proc/${file}`, "utf8");
   const sample = createSampler({
@@ -352,7 +354,7 @@ function startSampler(config: VmInstall, containers: { start: () => void } | nul
     }),
     readVm: () => readFromVm({ vm: config.vm, command: VM_SAMPLE_COMMAND }),
     append: async (record) => {
-      if (record.containers?.some(({ name }) => name.startsWith(`${config.name}-`))) containers?.start();
+      if (containers && record.containers?.some(({ name }) => containers.ours(name))) containers.start();
       await samples.append(record);
     },
     now: Date.now,

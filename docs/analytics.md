@@ -25,7 +25,7 @@ Everything runnerbox records stays on the host, in `~/.local/state/runnerbox/` (
 
 With `jobVms`, `vm` is the builder and `containers` are its image builds. Job VMs aren't sampled yet.
 
-`containers.ndjson` has the same `containers` with its own `time`, read every 15 seconds so a short job gets more than one point. It's read only while one of the install's job containers exists, which includes a runner waiting for a job, and it stops on the first read with none or that fails. The next runner, or a minute sample that sees one, starts it again. One `docker stats --no-stream` took about 2 seconds, which is why it isn't more often. Job VMs and host installs have none.
+`containers.ndjson` has the same `containers` with its own `time`, read every 15 seconds so a short job gets more than one point. It's read only while one of the install's job containers exists, which includes a runner waiting for a job, and it stops on a read with none, or that fails, once 30 seconds have passed since it was last started, since a runner is reported before its container exists. The next runner, or a minute sample that sees one, starts it again. One `docker stats --no-stream` took about 2 seconds, which is why it isn't more often. Job VMs and host installs have none.
 
 A field that couldn't be read is absent, never `0`. A missing `host` means `/proc` wasn't readable; a missing `vm` means SSH failed. A sampler's first sample has no `cpuBusyPercent`.
 
