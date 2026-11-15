@@ -185,7 +185,7 @@ test("a running turn holds an update back, with what to do about it", async () =
         ),
       );
       assert.equal((await statusOf(server, token)).blocker, "turn-running");
-      assert.match(failure(await updateTo(server, token)), /A thread's agent is answering\. Stop the agent's turn, then update\./);
+      assert.match(failure(await updateTo(server, token)), /The agent is answering in a thread\. Stop it, then update\./);
       assert.deepEqual(asked, []);
     },
     provider,

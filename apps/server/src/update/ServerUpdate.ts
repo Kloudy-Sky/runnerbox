@@ -21,7 +21,7 @@ const BLOCKED: Record<UpdateBlocker, string> = {
   unsupervised: "This server wasn't started with runnerbox serve, so it can't restart itself on a new version.",
   "not-writable": "This server can't replace its own runnerbox.js, because its folder isn't writable.",
   updating: "An update is already running.",
-  "turn-running": "A thread's agent is answering. Stop the agent's turn, then update.",
+  "turn-running": "The agent is answering in a thread. Stop it, then update.",
   "monitor-running": "A monitor is looking into an item, which counts as an agent's turn. Stop it in that item's thread, then update.",
   "reproduce-running": "A reproduce container is running. Stop it in its thread, then update.",
 };
