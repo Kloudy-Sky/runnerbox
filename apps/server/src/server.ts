@@ -32,6 +32,7 @@ import * as Reproduces from "./reproduce/Reproduces.ts";
 import * as UpSocket from "./reproduce/UpSocket.ts";
 import * as Threads from "./threads/Threads.ts";
 import * as AccountStore from "./accounts/AccountStore.ts";
+import * as Providers from "./accounts/Providers.ts";
 import * as Drivers from "./threads/provider/Drivers.ts";
 
 export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string };
@@ -47,7 +48,7 @@ export const layerServices = (input: ServicesInput) => Monitors.layer.pipe(Layer
 
 // Everything but the monitor, which sits on top so a test can run it on a fake clock.
 export const layerCore = (input: ServicesInput) =>
-  Threads.layer.pipe(
+  Layer.mergeAll(Threads.layer, Providers.layer).pipe(
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
     Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer).pipe(Layer.provideMerge(UpSocket.layer))),

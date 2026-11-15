@@ -12,6 +12,7 @@ import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
 import * as Threads from "../threads/Threads.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
+import * as Providers from "../accounts/Providers.ts";
 import * as Attachments from "../attachments/Attachments.ts";
 import * as EnvironmentIdentity from "../environment/EnvironmentIdentity.ts";
 
@@ -36,6 +37,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       // Who approved, as `up` logs it: the session, never its token.
       const approver = { id: session.id, label: session.label };
       const accounts = yield* AccountStore.AccountStore;
+      const providers = yield* Providers.Providers;
       const attachments = yield* Attachments.Attachments;
       const identity = yield* EnvironmentIdentity.EnvironmentIdentity;
       // A turn's files are the ones this session staged, and its tools follow this session's scopes.
@@ -90,6 +92,8 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "accounts.save": (input) => accounts.save(input),
         "accounts.remove": ({ id }) => accounts.remove(id),
         "accounts.setDefault": ({ id }) => accounts.setDefault(id),
+        "providers.list": () => providers.list,
+        "providers.save": (input) => providers.save(input),
         "server.methods": () => Effect.succeed(answered),
         "server.about": () => Effect.succeed({ label: identity.descriptor.label, serverVersion: identity.descriptor.serverVersion, protocolVersion: identity.descriptor.protocolVersion }),
       };
