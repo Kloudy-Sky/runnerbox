@@ -148,7 +148,7 @@ const make = Effect.gen(function* () {
     Effect.catch(() => Effect.succeed(harnessesOf((_, label) => ({ provider: label, available: false, fix: "Couldn't read the accounts file on the server." })))),
   );
   const auth = yield* AuthStore.AuthStore;
-  const { baseUrl } = yield* LocalEndpoint.LocalEndpoint;
+  const endpoint = yield* LocalEndpoint.LocalEndpoint;
   const readers = yield* Effect.context<Inbox.Inbox | StateLogs.StateLogs | RunnerState.RunnerState>();
   const log = ThreadLog.make(fs, serverDir);
   const scope = yield* Effect.scope;
@@ -379,7 +379,7 @@ const make = Effect.gen(function* () {
               systemPrompt: systemPrompt(monitor ? "monitor" : reproducing ? "reproduce" : "owner"),
               prompt,
               images: images.map((each) => ({ mimeType: each.mimeType, base64: Buffer.from(each.bytes).toString("base64") })),
-              mcp: { url: `${baseUrl}/mcp`, token: grant.token },
+              mcp: { url: `${yield* endpoint.baseUrl}/mcp`, token: grant.token },
               reproduce: reproducing,
               propose: !monitor,
               account: { label: account.label, model: monitor?.model ?? model ?? account.model, apiKey: account.apiKey },

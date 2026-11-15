@@ -4,10 +4,13 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServer from "effect/http/HttpServer";
+import * as Deferred from "effect/Deferred";
 import * as Attachments from "./attachments/Attachments.ts";
 import * as AuthStore from "./auth/AuthStore.ts";
 import * as CloudLink from "./cloud/CloudLink.ts";
 import * as Connector from "./cloud/connector.ts";
+import * as ListeningPorts from "./config/ListeningPorts.ts";
 import * as LocalEndpoint from "./config/LocalEndpoint.ts";
 import * as ServerPaths from "./config/ServerPaths.ts";
 import * as EnvironmentIdentity from "./environment/EnvironmentIdentity.ts";
@@ -35,7 +38,7 @@ export type ServeOptions = { readonly host: string; readonly port: number; reado
 // Which agent provider threads use. Tests swap in a scripted one.
 type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
 
-type ServicesInput = { stateDir: string; host: string; port: number; label?: string | undefined; provider?: Provider | undefined };
+type ServicesInput = { stateDir: string; host: string; port: number; tunnelPort?: number | null | undefined; label?: string | undefined; provider?: Provider | undefined };
 
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
 // see the same instances.
@@ -48,11 +51,12 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provideMerge(Drivers.layer),
     Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer).pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
-    Layer.provide(LocalEndpoint.layer(input.host, input.port)),
+    Layer.provide(LocalEndpoint.layer(input.host)),
     Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer)),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),
     Layer.provideMerge(ServerPaths.layer(input.stateDir)),
+    Layer.provideMerge(ListeningPorts.layer({ port: input.port, tunnelPort: input.tunnelPort ?? null })),
     Layer.provideMerge(NodeServices.layer),
   );
 
@@ -71,11 +75,25 @@ const listener = (host: string, port: number) =>
   // Open sockets would hold a graceful shutdown open, and nothing here has work to finish.
   NodeHttpServer.layer(createServer, { host, port, gracefulShutdownTimeout: "1 second", websocket: { maxPayload: MAX_SOCKET_MESSAGE_BYTES } });
 
+// Serves `routes` on a listener and records the port it bound, which is the system's choice when
+// asked for 0.
+const serveOn = <E, R>(routes: Layer.Layer<never, E, R>, host: string, port: number, which: "local" | "tunnel") =>
+  Layer.merge(
+    HttpRouter.serve(routes, serveOptions),
+    Layer.effectDiscard(
+      Effect.gen(function* () {
+        const { address } = yield* HttpServer.HttpServer;
+        const ports = yield* ListeningPorts.ListeningPorts;
+        if ("port" in address) yield* Deferred.succeed(ports[which], address.port);
+      }),
+    ),
+  ).pipe(Layer.provide(listener(host, port)));
+
 // Both listeners. The tunnel listener always binds loopback, and only exists when linked.
 const layerListeners = (input: { host: string; port: number; tunnelPort: number | null }) =>
   Layer.mergeAll(
-    HttpRouter.serve(layerLocalRoutes, serveOptions).pipe(Layer.provide(listener(input.host, input.port))),
-    input.tunnelPort === null ? Layer.empty : HttpRouter.serve(layerTunnelRoutes, serveOptions).pipe(Layer.provide(listener("127.0.0.1", input.tunnelPort))),
+    serveOn(layerLocalRoutes, input.host, input.port, "local"),
+    input.tunnelPort === null ? Layer.empty : serveOn(layerTunnelRoutes, "127.0.0.1", input.tunnelPort, "tunnel"),
   );
 
 // The listeners over the shared services, exposing the services so tests can mint codes on the
