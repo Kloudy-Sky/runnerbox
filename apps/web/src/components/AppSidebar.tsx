@@ -1,149 +1,77 @@
-import type { InboxItem } from "@runnerbox/contracts";
-import { Button } from "./ui/button.tsx";
-import { Link, useParams, useRouterState } from "@tanstack/react-router";
-import { Activity, ChevronRight, Gauge, ListTree, Server, Settings } from "lucide-react";
-import { useDesktopUpdates } from "../hooks/useDesktopUpdates.ts";
-import { useInbox } from "../hooks/useInbox.ts";
-import { useMonitors } from "../hooks/useMonitors.ts";
-import { useRunnerState } from "../hooks/useRunnerState.ts";
-import { formatAge } from "../lib/format.ts";
-import type { RootSearch } from "../lib/search.ts";
-import { EnvironmentMenu } from "./EnvironmentMenu.tsx";
-import { RangePicker } from "./RangePicker.tsx";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible.tsx";
-import { Kbd } from "./ui/kbd.tsx";
-import { cn } from "../lib/utils.ts";
+import { Link, useRouterState } from "@tanstack/react-router";
+import { Activity, Gauge, Inbox, ListTree, Server, Settings } from "lucide-react";
 import type * as React from "react";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "./ui/sidebar.tsx";
+import { useInbox } from "../hooks/useInbox.ts";
+import { useRunnerState } from "../hooks/useRunnerState.ts";
+import { useSidebarShortcut } from "../hooks/useSidebarShortcut.ts";
+import type { RootSearch } from "../lib/search.ts";
+import { cn } from "../lib/utils.ts";
+import { EnvironmentMenu } from "./EnvironmentMenu.tsx";
+import { railFade } from "./railFade.ts";
+import { SidebarUpdateSlot } from "./SidebarUpdateSlot.tsx";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./ui/sidebar.tsx";
 
 const keep = (previous: RootSearch) => previous;
 
-// T3 Code's sidebar primitive has no group label or row badge; its app sidebar draws its own.
-function SidebarGroupLabel({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("flex h-7 items-center px-2.5 text-muted-foreground text-xs", className)} data-slot="sidebar-group-label" {...props} />;
+type Page = { readonly to: "/" | "/now" | "/runs" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
+
+// One row per page, as in Codex: an icon, its name and a count. The pages' own lists live on the
+// pages. Collapsed to its rail, a row keeps its icon, a tooltip and, for Needs you, a dot.
+function PageRow({ page, path }: { page: Page; path: string }) {
+  const Icon = page.icon;
+  // An inbox item opens from Needs you, so Needs you stays the open page.
+  const active = page.to === "/" ? path === "/" || path.startsWith("/item/") : path === page.to || path.startsWith(`${page.to}/`);
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton isActive={active} tooltip={page.label} render={<Link to={page.to} search={keep} />}>
+        <Icon />
+        <span className={railFade}>{page.label}</span>
+      </SidebarMenuButton>
+      {page.count ? <span className={cn("pointer-events-none absolute top-1.5 right-2 text-muted-foreground text-xs tabular-nums", railFade)}>{page.count}</span> : null}
+      {page.alert ? <span className="pointer-events-none absolute top-1.5 left-5 hidden size-1.5 rounded-full bg-destructive group-data-[collapsible=icon]:block" /> : null}
+    </SidebarMenuItem>
+  );
 }
 
-function SidebarMenuBadge({ className, ...props }: React.ComponentProps<"span">) {
-  return <span className={cn("pointer-events-none absolute top-1.5 right-2 text-muted-foreground text-xs tabular-nums", className)} data-slot="sidebar-menu-badge" {...props} />;
-}
-
-// The views to browse first, then what needs the owner and what's worth watching, like T3 Code's
-// list of threads: each item shows its state without opening it.
-export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
+export function AppSidebar() {
+  useSidebarShortcut();
   const inbox = useInbox().data;
-  const updates = useDesktopUpdates();
-  const unread = new Set(useMonitors().status?.unread ?? []);
   const path = useRouterState({ select: (state) => state.location.pathname });
   const installs = useRunnerState();
   const slots = installs?.filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots)) ?? [];
   const busy = slots.filter((slot) => slot.phase === "busy").length;
-  // The route's own param, so the open item is found whatever the URL's encoding of its id.
-  const { itemId } = useParams({ strict: false });
-  const isOpen = (item: InboxItem) => item.id === itemId;
+  const waiting = inbox?.items.length ?? 0;
 
-  const browse = [
-    { to: "/now", label: "Now", icon: Activity, badge: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
+  const pages: ReadonlyArray<Page> = [
+    { to: "/", label: "Needs you", icon: Inbox, count: waiting > 0 ? String(waiting) : null, alert: waiting > 0 },
+    { to: "/now", label: "Now", icon: Activity, count: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
     { to: "/runs", label: "All runs", icon: ListTree },
     { to: "/speed", label: "Speed and cost", icon: Gauge },
     { to: "/runners", label: "Runners", icon: Server },
-    { to: "/settings", label: "Settings", icon: Settings },
-  ] as const;
+  ];
 
   return (
-    <Sidebar aria-label="Navigation">
-      <SidebarHeader>
-        <EnvironmentMenu />
-      </SidebarHeader>
+    // A raised surface with no border, like Codex's.
+    <Sidebar aria-label="Navigation" collapsible="icon" className="group-data-[side=left]:border-r-0">
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Browse</SidebarGroupLabel>
           <SidebarMenu>
-            {browse.map(({ to, label, icon: Icon, ...rest }) => (
-              <SidebarMenuItem key={to}>
-                <SidebarMenuButton isActive={path === to || path.startsWith(`${to}/`)} render={<Link to={to} search={keep} />}>
-                  <Icon />
-                  <span>{label}</span>
-                </SidebarMenuButton>
-                {"badge" in rest && rest.badge ? <SidebarMenuBadge>{rest.badge}</SidebarMenuBadge> : null}
-              </SidebarMenuItem>
+            {pages.map((page) => (
+              <PageRow key={page.to} page={page} path={path} />
             ))}
           </SidebarMenu>
         </SidebarGroup>
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            <Link to="/" search={keep} className="hover:text-foreground">
-              Needs you
-            </Link>
-          </SidebarGroupLabel>
-          <SidebarMenu>
-            {inbox && inbox.items.length === 0 ? <li className="px-2.5 py-1 text-muted-foreground">Nothing right now.</li> : null}
-            {inbox?.items.map((item) => (
-              <SidebarMenuItem key={item.id}>
-                <SidebarMenuButton size="lg" isActive={isOpen(item)} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-start gap-2">
-                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-destructive" />
-                      <span className="line-clamp-2">{item.title}</span>
-                    </span>
-                    {unread.has(item.id) ? <span className="block pl-3.5 text-muted-foreground text-xs">Looked into</span> : null}
-                  </span>
-                  <span className="shrink-0 pt-px text-muted-foreground text-xs">{formatAge(item.at)}</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
-        {inbox && inbox.quiet.length > 0 ? (
-          <SidebarGroup>
-            <SidebarGroupLabel>Watching</SidebarGroupLabel>
-            <SidebarMenu>
-              {inbox.quiet.map((group) => (
-                <SidebarMenuItem key={group.kind}>
-                  <Collapsible defaultOpen={group.items.some(isOpen)}>
-                    <SidebarMenuButton render={<CollapsibleTrigger />} className="group/trigger">
-                      <ChevronRight className="transition-transform duration-150 group-data-panel-open/trigger:rotate-90" />
-                      {group.kind === "flaky" ? <span className="size-1.5 shrink-0 rounded-full bg-warning" /> : null}
-                      <span>{group.title}</span>
-                    </SidebarMenuButton>
-                    <CollapsiblePanel>
-                      <SidebarMenu className="py-0.5 pl-6">
-                        {group.items.map((item) => (
-                          <SidebarMenuItem key={item.id}>
-                            <SidebarMenuButton isActive={isOpen(item)} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
-                              <span className="text-muted-foreground">{item.title}</span>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        ))}
-                      </SidebarMenu>
-                    </CollapsiblePanel>
-                  </Collapsible>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
-        ) : null}
       </SidebarContent>
       <SidebarFooter>
-        {updates?.state.status === "ready" ? (
-          <Button variant="ghost" size="xs" className="justify-start" title={`runnerbox ${updates.state.pending ?? ""} is downloaded`} onClick={() => void updates.actions.install()}>
-            Restart to update
-          </Button>
-        ) : null}
-        <div className="flex items-center justify-between">
-          <RangePicker />
-          <Button variant="ghost-muted" size="xs" onClick={onOpenCommand} aria-label="Jump to a page, item or run" title="Jump to a page, item or run">
-            <Kbd>⌘K</Kbd>
-          </Button>
-        </div>
+        <SidebarMenu>
+          <PageRow page={{ to: "/settings", label: "Settings", icon: Settings }} path={path} />
+        </SidebarMenu>
+        <SidebarUpdateSlot />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <EnvironmentMenu />
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
   );

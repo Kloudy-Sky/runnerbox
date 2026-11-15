@@ -19,6 +19,7 @@ body,
 
 /* A charcoal canvas (#141414) where T3 Code's is black, and white primary text. Raised surfaces keep
    T3 Code's small lift, measured from charcoal instead of near-black, so they still sit above it.
+   The sidebar sits a step above the canvas with no border, as Codex's does.
    Same selector shape as T3 Code's dark block, and later, so it wins. */
 :root {
   @variant dark {
@@ -30,9 +31,9 @@ body,
     --popover-foreground: #ffffff;
     --surface-raised: var(--card);
     --message-surface: color-mix(in srgb, #141414 92%, var(--color-white));
-    --sidebar: #141414;
+    --sidebar: #1a1a1a;
     --sidebar-foreground: #ffffff;
-    --sidebar-stage-fade: #141414;
+    --sidebar-stage-fade: #1a1a1a;
     --app-chrome-background: #141414;
   }
 }

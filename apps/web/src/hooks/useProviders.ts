@@ -21,7 +21,10 @@ export function useProviders() {
   // The composer and monitors read accounts too, so a change refreshes every list of them.
   const refresh = () => Promise.all(["providers", "accounts", "threads.harnesses"].map((key) => queryClient.invalidateQueries({ queryKey: [environmentId, key] })));
   // An older server runs Claude alone, and takes it as `accounts.save` names it.
+  // Two runs, not one with a choice inside: each method answers its own account shape.
   const save = (input: SaveProviderAccount) =>
-    runtime.run(environmentId, (client) => (capabilities.providers ? client["providers.save"](input) : client["accounts.save"]({ ...input, driver: "claude" })));
+    capabilities.providers
+      ? runtime.run(environmentId, (client) => client["providers.save"](input))
+      : runtime.run(environmentId, (client) => client["accounts.save"]({ ...input, driver: "claude" }));
   return { providers, loaded, error: capabilities.providers ? current.error : accounts.error, refresh, save, environmentId };
 }
