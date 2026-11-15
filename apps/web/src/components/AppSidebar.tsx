@@ -1,8 +1,9 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, Gauge, Inbox, ListTree, Server, Settings } from "lucide-react";
+import { Activity, Gauge, GitPullRequest, Inbox, ListTree, Server, Settings } from "lucide-react";
 import type * as React from "react";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRunnerState } from "../hooks/useRunnerState.ts";
+import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 import { useSidebarShortcut } from "../hooks/useSidebarShortcut.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { cn } from "../lib/utils.ts";
@@ -13,7 +14,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarMenu, Side
 
 const keep = (previous: RootSearch) => previous;
 
-type Page = { readonly to: "/" | "/now" | "/runs" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
+type Page = { readonly to: "/" | "/now" | "/runs" | "/reviews" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
 
 // One row per page, as in Codex: an icon, its name and a count. The pages' own lists live on the
 // pages. Collapsed to its rail, a row keeps its icon, a tooltip and, for Needs you, a dot.
@@ -41,11 +42,14 @@ export function AppSidebar() {
   const slots = installs?.filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots)) ?? [];
   const busy = slots.filter((slot) => slot.phase === "busy").length;
   const waiting = inbox?.items.length ?? 0;
+  const { reviews } = useServerCapabilities();
 
   const pages: ReadonlyArray<Page> = [
     { to: "/", label: "Needs you", icon: Inbox, count: waiting > 0 ? String(waiting) : null, alert: waiting > 0 },
     { to: "/now", label: "Now", icon: Activity, count: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
     { to: "/runs", label: "All runs", icon: ListTree },
+    // Left out on a server older than reviews, which would have nothing to show.
+    ...(reviews ? [{ to: "/reviews", label: "Reviews", icon: GitPullRequest } as const] : []),
     { to: "/speed", label: "Speed and cost", icon: Gauge },
     { to: "/runners", label: "Runners", icon: Server },
   ];

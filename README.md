@@ -171,6 +171,8 @@ Jobs use the tools already on the Mac, read-only: Xcode's command line tools and
 
 A desktop app shows the same history, plus what CI needs from you, for one or more machines. Each machine runs `runnerbox serve`, which reads the logs above and answers over HTTP and WebSocket. It changes nothing. While the app shows the jobs waiting for this machine's runners, `serve` also asks GitHub about them every 20 seconds, with the read-only token in `~/.config/runnerbox/report.env`, only if that file is owner-only. Without it, that part of the app stays hidden.
 
+The app's Reviews page lists the open pull requests on the repositories you pick. `serve` reads them through a GitHub App you make yourself: Settings, then Reviews, opens GitHub with the permissions filled in and takes the App's ID and private key. The key is kept owner-only on the server's machine and never sent back, and the tokens `serve` makes from it can only read pull requests. [docs/threat-model.md](docs/threat-model.md) has the rows.
+
 ```bash
 node runnerbox.js serve    # on the machine with the logs: prints a pairing code in a terminal
 node runnerbox.js pair     # a fresh code, valid once for 15 minutes

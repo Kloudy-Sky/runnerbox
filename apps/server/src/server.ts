@@ -35,6 +35,8 @@ import type { CodexProviderAdapter, ProviderAdapter } from "./threads/provider/P
 import * as Monitors from "./monitors/Monitors.ts";
 import * as Proposals from "./proposals/Proposals.ts";
 import * as Reproduces from "./reproduce/Reproduces.ts";
+import * as GitHubApp from "./reviews/GitHubApp.ts";
+import * as Reviews from "./reviews/Reviews.ts";
 import * as UpSocket from "./reproduce/UpSocket.ts";
 import * as Threads from "./threads/Threads.ts";
 import * as AccountStore from "./accounts/AccountStore.ts";
@@ -87,7 +89,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, CloudLink.layer, RunnerQueue.layer)),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHubApp.layer)))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
     Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),
