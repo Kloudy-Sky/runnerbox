@@ -26,15 +26,16 @@ const make = Effect.gen(function* () {
     const all = yield* accounts.listAll;
     return yield* Effect.forEach(drivers.running, (driver) =>
       Effect.gen(function* () {
-        const { label } = HARNESSES[driver];
+        const { label, acceptsKeys } = HARNESSES[driver];
         const own = all.filter((account) => account.driver === driver);
-        return { driver, label, status: driverStatus(label, own), models: yield* drivers.get(driver).models, accounts: own } satisfies Provider;
+        return { driver, label, status: driverStatus(label, own), models: yield* drivers.get(driver).models, accounts: own, acceptsKeys } satisfies Provider;
       }),
     );
   });
 
   const save = Effect.fn("Providers.save")(function* ({ driver, ...input }: SaveProviderAccount) {
     if (!runs(driver)) return yield* new AccountError({ reason: "unknown_driver" });
+    if (input.apiKey !== undefined && !HARNESSES[driver].acceptsKeys) return yield* new AccountError({ reason: "login_only" });
     return yield* accounts.saveAny({ ...input, driver });
   });
 

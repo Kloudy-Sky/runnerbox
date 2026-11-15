@@ -21,32 +21,36 @@ const withClient = async <A, E>(server: Server, use: (client: Client) => Effect.
 };
 const codex = () => makeFakeProvider({ turns: [], models: HARNESSES.codex.models.slice(0, 2) });
 
-test("a Codex account is kept apart from Claude's, so accounts.json and accounts.list stay as older servers and apps read them", async () => {
+test("a Codex account is kept apart from Claude's, so accounts.json and accounts.list stay as older servers and apps read them, and takes no API key", async () => {
   const server = await startTestServer({ provider: makeFakeProvider({ turns: [] }), codex: codex() });
   try {
-    const { saved, providers, accounts } = await withClient(server, (client) =>
+    const { refused, saved, providers, accounts } = await withClient(server, (client) =>
       Effect.gen(function* () {
         yield* client["providers.save"]({ driver: "claude", label: "Claude, API", model: null, apiKey: "sk-ant-example-0000000000-a1b2" });
-        const saved = yield* client["providers.save"]({ driver: "codex", label: "Codex, API", model: "gpt-6.1-sol", apiKey: KEY });
+        const refused = yield* Effect.flip(client["providers.save"]({ driver: "codex", label: "Codex, API", model: null, apiKey: KEY }));
+        const saved = yield* client["providers.save"]({ driver: "codex", label: "Codex, sign-in", model: "gpt-6.1-sol" });
         yield* client["accounts.setDefault"]({ id: saved.id });
-        return { saved, providers: yield* client["providers.list"](), accounts: yield* client["accounts.list"]() };
+        return { refused, saved, providers: yield* client["providers.list"](), accounts: yield* client["accounts.list"]() };
       }),
     );
     assert.deepEqual(
       providers.map((provider) => [provider.driver, provider.models.length, provider.accounts.map((account) => account.label)]),
       [
         ["claude", 3, ["Claude, subscription", "Claude, API"]],
-        ["codex", 2, ["Codex, API"]],
+        ["codex", 2, ["Codex, sign-in"]],
       ],
     );
-    assert.deepEqual([saved.keyLast4, saved.isDefault], ["e5f6", false]);
+    assert.equal(refused._tag === "AccountError" && refused.reason, "login_only", "a Codex account takes no API key, for now");
+    assert.deepEqual(providers.map((provider) => provider.acceptsKeys), [true, false]);
+    assert.deepEqual([saved.keyLast4, saved.billing, saved.isDefault], [null, "subscription", false]);
     assert.ok(providers[1]!.accounts[0]!.isDefault, "a Codex account can be the default");
     assert.deepEqual(accounts.map((account) => account.driver), ["claude", "claude"]);
     const serverDir = join(server.stateDir, ".server");
     const claudeFile = await readFile(join(serverDir, "accounts.json"), "utf8");
     assert.ok(!claudeFile.includes("codex") && !claudeFile.includes(KEY), "accounts.json holds only Claude's accounts");
     const othersFile = join(serverDir, "provider-accounts.json");
-    assert.ok((await readFile(othersFile, "utf8")).includes(KEY));
+    assert.ok((await readFile(othersFile, "utf8")).includes("Codex, sign-in"));
+    assert.ok(!(await readFile(othersFile, "utf8")).includes(KEY), "the refused key was never written");
     assert.equal((await stat(othersFile)).mode & 0o777, 0o600);
   } finally {
     await server.close();
@@ -57,7 +61,7 @@ test("on a server that doesn't run Codex, its accounts aren't listed, a turn nam
   const first = await startTestServer({ provider: makeFakeProvider({ turns: [] }), codex: codex() });
   const saved = await withClient(first, (client) =>
     Effect.gen(function* () {
-      const saved = yield* client["providers.save"]({ driver: "codex", label: "Codex, API", model: null, apiKey: KEY });
+      const saved = yield* client["providers.save"]({ driver: "codex", label: "Codex, sign-in", model: null });
       yield* client["accounts.setDefault"]({ id: saved.id });
       return saved;
     }),
