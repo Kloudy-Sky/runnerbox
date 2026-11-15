@@ -48,11 +48,11 @@ import { builtInReleaseKeys } from "./update/supervisor/releaseKeys.ts";
 import type { ReleaseKey } from "./update/supervisor/signature.ts";
 import * as Supervision from "./update/Supervision.ts";
 
-export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string; readonly codex?: boolean };
+export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string };
 
 // Which agent provider threads use. Tests swap in a scripted one.
 type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
-// Codex's, given only to a server that runs Codex.
+// Codex's. `serve` always runs it; a test leaves it out unless it needs Codex.
 type CodexProvider = Layer.Layer<CodexProviderAdapter, never, ServerPaths.ServerPaths>;
 
 // Where updates come from and who carries them out. Tests swap in a local release server and a
@@ -152,7 +152,7 @@ export const layerApp = (input: {
 
 // `serve`: the listeners, with the tunnel one on the port the link chose, and for a linked
 // environment its connector, all over one set of services.
-export const layerServer = ({ host, port, stateDir, label, codex }: ServeOptions) =>
+export const layerServer = ({ host, port, stateDir, label }: ServeOptions) =>
   Layer.unwrap(
     Effect.gen(function* () {
       const link = yield* CloudLink.CloudLink;
@@ -160,7 +160,7 @@ export const layerServer = ({ host, port, stateDir, label, codex }: ServeOptions
       const tunnelPort = state?.tunnelPort ?? null;
       return Layer.mergeAll(layerListeners({ host, port, tunnelPort }), Connector.layer, layerReady(tunnelPort !== null));
     }),
-  ).pipe(Layer.provide(layerServices({ stateDir, host, port, label, codex: codex ? CodexAdapter.layer : undefined })));
+  ).pipe(Layer.provide(layerServices({ stateDir, host, port, label, codex: CodexAdapter.layer })));
 
 // Tells the supervisor once every listener this server opens is accepting, which is what puts a
 // new version in place after an update.

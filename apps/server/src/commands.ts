@@ -150,9 +150,7 @@ export function runServerCommand(args: string[]) {
     const code = yield* store.createPairingCode(ALL_SCOPES);
     console.log(`Pairing code: ${code.code} (expires ${code.expiresAt})`);
   });
-  // Codex runs only where the owner turns it on, until its turns have passed a live check.
-  const codex = process.env.RUNNERBOX_EXPERIMENTAL_CODEX === "1";
-  const server = layerServer({ host: values.host, port, stateDir: dir, codex, ...(values.label ? { label: values.label } : {}) });
+  const server = layerServer({ host: values.host, port, stateDir: dir, ...(values.label ? { label: values.label } : {}) });
   const startup = Layer.effectDiscard(announce).pipe(
     Layer.provide(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(values.label)).pipe(Layer.provideMerge(paths), Layer.provideMerge(NodeServices.layer))),
   );
