@@ -73,7 +73,9 @@ export function typicalBuildMs(events: ReadonlyArray<LauncherEvent>, install: st
   return durations.length === 0 ? null : (durations[Math.floor(durations.length / 2)] ?? null);
 }
 
-// A tool is old when the newest release came out more than half a year after the installed one.
+// A tool is old when the newest release came out more than half a year after the installed one:
+// long enough that routine releases of a pinned tool don't flag it, short enough to catch one like
+// gh 2.45 before GitHub's API leaves it behind.
 const OLD_AFTER_MS = 182 * DAY_MS;
 const monthYear = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", year: "numeric" });
 
