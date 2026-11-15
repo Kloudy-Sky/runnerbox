@@ -1,7 +1,7 @@
 import type { LauncherEvent } from "@runnerbox/contracts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import { runnerType } from "runnerbox/src/tracking/report.ts";
-import { coveredMs, peakOverlap, type Span } from "./intervals.ts";
+import { coveredMs, peakOverlap, type Span, union } from "./intervals.ts";
 import { at, durationMs, median, present } from "./jobs.ts";
 import { type InboxInput, machineCauses } from "./rules.ts";
 
@@ -21,15 +21,16 @@ export type WaitCause = {
   kinds: string[];
   // Their slots together, or null when unknown.
   slots: number | null;
-  // Summed over the jobs: how long they waited, and how much of that a memory wait or full slots covered.
+  // Clock time while any of the jobs waited (two waiting at once count once), and how much of
+  // that a memory wait or full slots covered.
   waitedMs: number;
   memoryMs: number;
   busyMs: number;
   // The most jobs on the label waiting for a runner at once.
   peak: number;
   typicalMs: number | null;
-  // The samples show the machine low on memory while the label's jobs ran.
-  tight: boolean;
+  // Which machine the samples show low on memory while the label's jobs ran, if any.
+  tight: "VM" | "host" | null;
   waits: MemoryWait[];
   cause: "memory" | "slots" | "unknown";
 };
@@ -52,15 +53,37 @@ function kindsServing(label: string, input: InboxInput) {
   return slots;
 }
 
+// Every kind an install is known to have, live or from its tagged runners.
+const kindsOf = (install: string, input: InboxInput) =>
+  new Set([
+    ...input.installs.filter((each) => each.install === install).flatMap((each) => each.kinds.map((kind) => kind.name)),
+    ...input.events.flatMap((event) => (event.install === install && event.event === "runner" && present(event.runnerType) ? [event.runnerType] : [])),
+  ]);
+
+// A memory wait held up `served` kinds when it was tagged with one of them. An `up` from before
+// kinds (#15) tagged nothing and ran one kind per install, so an untagged wait counts when its
+// install has only ever had one kind and that kind is served.
+function heldUp(event: MemoryWait, served: ReadonlyMap<string, number>, input: InboxInput) {
+  if (present(event.runnerType)) return served.has(kindKey(event.install, event.runnerType));
+  const kinds = [...kindsOf(event.install, input)];
+  return kinds.length === 1 && served.has(kindKey(event.install, kinds[0]!));
+}
+
+// The machine the samples show short of memory while any of `jobs` ran: the VM first, since a
+// kind's slots draw on it.
+function tightOn(jobs: readonly JobRecord[], input: InboxInput): WaitCause["tight"] {
+  const sources = new Set(jobs.flatMap((job) => machineCauses(job, { machine: input.machine, events: [] }).map((cause) => cause.source)));
+  return sources.has("vm_memory") || sources.has("swap") ? "VM" : sources.has("host_memory") ? "host" : null;
+}
+
 export function waitCause(label: string, waiting: readonly JobRecord[], input: InboxInput): WaitCause {
   const served = kindsServing(label, input);
-  const windows: Span[] = waiting.map((job) => ({ start: Date.parse(job.createdAt), end: Date.parse(at(job)) }));
+  const windows = union(waiting.map((job) => ({ start: Date.parse(job.createdAt), end: Date.parse(at(job)) })));
   const overlaps = (span: Span) => windows.some((window) => span.start < window.end && span.end > window.start);
   const waits = input.events.filter(
     (event): event is MemoryWait =>
       event.event === "memory_wait" &&
-      present(event.runnerType) &&
-      served.has(kindKey(event.install, event.runnerType)) &&
+      heldUp(event, served, input) &&
       overlaps({ start: Date.parse(event.startedAt), end: Date.parse(event.startedAt) + event.durationMs }),
   );
   const waitSpans = waits.map((event) => ({ start: Date.parse(event.startedAt), end: Date.parse(event.startedAt) + event.durationMs }));
@@ -83,9 +106,7 @@ export function waitCause(label: string, waiting: readonly JobRecord[], input: I
     busyMs,
     peak: peakOverlap(windows, queued),
     typicalMs: median(ran.filter((job) => job.conclusion === "success").map(durationMs).filter(present)),
-    tight: ran.some(
-      (job) => overlaps({ start: Date.parse(job.startedAt!), end: Date.parse(job.completedAt!) }) && machineCauses(job, { machine: input.machine, events: [] }).length > 0,
-    ),
+    tight: tightOn(ran.filter((job) => overlaps({ start: Date.parse(job.startedAt!), end: Date.parse(job.completedAt!) })), input),
     waits,
     cause: share(memoryMs) >= MEMORY_SHARE ? "memory" : slots && share(busyMs) >= BUSY_SHARE ? "slots" : "unknown",
   };

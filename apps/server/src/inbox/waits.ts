@@ -28,7 +28,7 @@ const slotCount = (slots: number) => (slots === 1 ? "one slot" : `${slots} slots
 function whyFor(cause: WaitCause, slots: number) {
   const runners = runnersOf(cause);
   const { peak, typicalMs } = cause;
-  const memoryFor = cause.memoryMs >= cause.waitedMs * WHOLE_TIME_SHARE ? "the whole time these jobs waited" : `${plainDuration(cause.memoryMs)} of the ${plainDuration(cause.waitedMs)} these jobs waited in all`;
+  const memoryFor = cause.memoryMs >= cause.waitedMs * WHOLE_TIME_SHARE ? "the whole time these jobs waited" : `${plainDuration(cause.memoryMs)} of the ${plainDuration(cause.waitedMs)} these jobs were waiting`;
   if (cause.cause === "memory") return `The machine was short of free memory for ${runners} for ${memoryFor}, so it couldn't start more of them.`;
   if (cause.cause === "slots") {
     const clearing = typicalMs === null ? "" : ` A typical job there takes ${plainDuration(typicalMs)}, so ${slotCount(slots)} need about ${plainDuration((peak * typicalMs) / slots)} to clear ${peak}.`;
@@ -46,7 +46,7 @@ function whyFor(cause: WaitCause, slots: number) {
 function actionFor(cause: WaitCause) {
   if (cause.cause === "memory") return ADVICE.memory;
   if (cause.cause === "slots") {
-    const memory = cause.tight ? " More slots need more memory, and the VM ran low while these jobs ran, so give it more memory too." : "";
+    const memory = cause.tight ? ` More slots need more memory, and the ${cause.tight} ran low while these jobs ran, so give it more memory too.` : "";
     return `Give ${runnersOf(cause)} more slots, or move short jobs to a lighter kind of runner so they don't wait behind long ones.${memory}`;
   }
   return "Check that runnerbox is running on the machine and that its runners are listening for these labels.";

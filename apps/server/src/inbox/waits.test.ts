@@ -85,6 +85,17 @@ test("more slots are said to need more memory only when the samples show it ran 
   const item = waitItem({ jobs: burst(), machine });
   assert.match(item.why, /^The linux runners have 2 slots/);
   assert.match(item.action, /More slots need more memory, and the VM ran low while these jobs ran, so give it more memory too\.$/);
+  // Low on the host only: it names the host, not the VM.
+  const host = waitItem({ jobs: burst(), machine: (candidate) => (candidate.runner ? { samples: 10, hostLowMiB: 2_000, hostTotalMiB: 65_536 } : undefined) });
+  assert.match(host.action, /and the host ran low while these jobs ran/);
+});
+
+test("a memory wait from an up that tagged no kinds counts on an install that only ever had one kind", () => {
+  const untagged: LauncherEvent = { install: "example", event: "memory_wait", slot: 1, startedAt: iso(BURST - 5 * MINUTE), durationMs: 30 * MINUTE };
+  const one = { ...install(), kinds: install().kinds.filter((kind) => kind.name === "linux") };
+  assert.match(waitItem({ jobs: [starved(BURST, 25 * MINUTE)], events: [untagged], installs: [one] }).why, /^The machine was short of free memory for the linux runners/);
+  // With three kinds there's no telling whose wait it was, so it isn't blamed.
+  assert.match(waitItem({ jobs: [starved(BURST, 25 * MINUTE)], events: [untagged] }).why, /^The logs don't show why/);
 });
 
 test("memory waits seconds long are not blamed for jobs that waited many minutes", () => {
@@ -94,7 +105,7 @@ test("memory waits seconds long are not blamed for jobs that waited many minutes
   const item = waitItem({ jobs, events });
   assert.equal(
     item.why,
-    "The logs don't show why. The linux runners have 2 slots, and they were never all busy at once while these jobs waited. The machine was short of free memory for them for 28 seconds of the 50 minutes these jobs waited in all, too little to explain it.",
+    "The logs don't show why. The linux runners have 2 slots, and they were never all busy at once while these jobs waited. The machine was short of free memory for them for 14 seconds of the 25 minutes these jobs were waiting, too little to explain it.",
   );
   assert.equal(item.action, "Check that runnerbox is running on the machine and that its runners are listening for these labels.");
   assert.equal(item.evidence.launcher.length, 2);

@@ -2,6 +2,17 @@
 
 export type Span = { start: number; end: number };
 
+// The same time as `spans`, as non-overlapping spans: two jobs waiting at once count that time once.
+export function union(spans: readonly Span[]) {
+  const merged: Span[] = [];
+  for (const span of spans.toSorted((a, b) => a.start - b.start)) {
+    const last = merged.at(-1);
+    if (last && span.start <= last.end) last.end = Math.max(last.end, span.end);
+    else merged.push({ ...span });
+  }
+  return merged;
+}
+
 // How long, inside `within`, at least `depth` of `spans` overlapped at once. Depth 1 is plain
 // coverage; depth N is "all N slots were taken".
 export function coveredMs(within: Span, spans: readonly Span[], depth = 1) {
