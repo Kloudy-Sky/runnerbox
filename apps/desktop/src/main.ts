@@ -78,11 +78,16 @@ const updates = ManagedRuntime.make(
 );
 const withUpdates = <A>(use: (service: DesktopUpdates["Service"]) => Effect.Effect<A>) => updates.runPromise(Effect.flatMap(DesktopUpdates, use));
 
+const isAppPage = (url: string) => url.startsWith(`${ORIGIN}/`) || Boolean(DEV_URL && url.startsWith(DEV_URL));
+
 // Only the app's own page may call main; anything else that loads in a window gets nothing.
 const fromApp = (event: IpcMainInvokeEvent) => {
-  const url = event.senderFrame?.url ?? "";
-  if (!url.startsWith(`${ORIGIN}/`) && !(DEV_URL && url.startsWith(DEV_URL))) throw new Error("IPC from an unknown page");
+  if (!isAppPage(event.senderFrame?.url ?? "")) throw new Error("IPC from an unknown page");
 };
+
+// The one permission granted: notifications, to the app's own page, which only asks once the owner
+// turns them on in Settings. Camera, microphone, location and the rest are always refused.
+const permitted = (permission: string, url: string) => permission === "notifications" && isAppPage(url);
 
 function registerIpc() {
   ipcMain.handle(CHANNELS.catalogList, (event) => {
@@ -198,7 +203,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback, details) => callback(permitted(permission, details.requestingUrl)));
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => permitted(permission, `${requestingOrigin}/`));
   serveBundledUi();
   registerIpc();
   createWindow();
