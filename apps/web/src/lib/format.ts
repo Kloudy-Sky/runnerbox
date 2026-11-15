@@ -21,3 +21,7 @@ export const formatMiB = (value: number | null | undefined) =>
 export const formatPercent = (part: number, whole: number) => (whole === 0 ? "-" : `${((part / whole) * 100).toFixed(1)}%`);
 
 export const jobName = (row: { workflow: string | null; job: string }) => (row.workflow ? `${row.workflow} / ${row.job}` : row.job);
+
+// A file's size as people read it: bytes, KB or MB.
+export const formatBytes = (bytes: number) =>
+  bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
