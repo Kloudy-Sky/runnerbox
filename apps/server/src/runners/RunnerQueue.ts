@@ -16,7 +16,7 @@ import * as RunnerState from "./RunnerState.ts";
 const DAY_MS = 86_400_000;
 // A repo counts as active by its newest job in this window, for choosing which to poll.
 const ACTIVE_DAYS = 14;
-const OFF: QueueView = { status: "off", reason: null, waiting: [], resumesAt: null, reposLeftOut: 0, checkedAt: null };
+const OFF: QueueView = { status: "off", reason: null, waiting: [], resumesAt: null, reposLeftOut: 0, runsLeftOut: 0, checkedAt: null };
 
 // The jobs GitHub has queued for this machine's labels. It calls GitHub only while someone watches
 // `changes`, and for a minute after the last one leaves, with the read-only token from report.env.
@@ -26,7 +26,7 @@ const make = Effect.gen(function* () {
   const config = yield* QueueConfig;
   const logs = yield* StateLogs.StateLogs;
   const runnerState = yield* RunnerState.RunnerState;
-  const get = createGitHubReader(config.apiBase);
+  const github = createGitHubReader(config.apiBase);
   const view = yield* SubscriptionRef.make(OFF);
   const watchers = yield* Ref.make(0);
   const lastLeft = yield* Ref.make(Number.NEGATIVE_INFINITY);
@@ -59,9 +59,12 @@ const make = Effect.gen(function* () {
 
     let outcome: Outcome = { kind: "ok", budget: null };
     const waiting: WaitingJob[] = [];
-    // A failed reply ends this look; the rest of the repos wait for the next.
+    let runsLeftOut = 0;
+    let forbidden = 0;
+    // A failed reply ends this look; the rest of the repos wait for the next. A repo that refuses the
+    // token for itself is skipped, and the others are still asked.
     const fetch = (path: string) =>
-      Effect.promise(() => get(path, read.token)).pipe(
+      Effect.promise(() => github.get(path, read.token)).pipe(
         Effect.map((reply) => {
           if (reply.kind === "ok") outcome = { kind: "ok", budget: reply.budget ?? (outcome.kind === "ok" ? outcome.budget : null) };
           else if (reply.kind === "limited") outcome = { kind: "limited", untilMs: reply.untilMs };
@@ -73,21 +76,25 @@ const make = Effect.gen(function* () {
     // With no runner labels live, nothing could match, so GitHub isn't asked.
     if (labels.size > 0) {
       polling: for (const repo of repos) {
-        const replies: unknown[] = [];
-        for (const status of ["queued", "in_progress"]) {
-          const reply = yield* fetch(`repos/${repo}/actions/runs?status=${status}&per_page=20`);
-          if (reply.kind === "missing") continue polling;
-          if (reply.kind !== "ok") break polling;
-          replies.push(reply.body);
-        }
-        for (const id of runIds(replies)) {
+        const queued = yield* fetch(`repos/${repo}/actions/runs?status=queued&per_page=20`);
+        if (queued.kind === "forbidden") forbidden += 1;
+        if (queued.kind === "missing" || queued.kind === "forbidden") continue;
+        if (queued.kind !== "ok") break polling;
+        const inProgress = yield* fetch(`repos/${repo}/actions/runs?status=in_progress&per_page=20`);
+        if (inProgress.kind === "missing" || inProgress.kind === "forbidden") continue;
+        if (inProgress.kind !== "ok") break polling;
+        const runs = runIds(queued.body, inProgress.body);
+        runsLeftOut += runs.leftOut;
+        for (const id of runs.ids) {
           const reply = yield* fetch(`repos/${repo}/actions/runs/${id}/jobs?filter=latest&per_page=100`);
-          if (reply.kind === "missing") continue;
+          if (reply.kind === "missing" || reply.kind === "forbidden") continue;
           if (reply.kind !== "ok") break polling;
           waiting.push(...waitingJobs(repo, reply.body, labels));
         }
       }
+      if (repos.length > 0 && forbidden === repos.length) outcome = { kind: "forbidden" };
     }
+    github.prune();
 
     const now = yield* Clock.currentTimeMillis;
     const next = afterPoll(outcome, yield* Ref.get(failures), timing, now);
@@ -100,6 +107,7 @@ const make = Effect.gen(function* () {
       // A failed look keeps the last list it had rather than showing nothing waiting.
       waiting: outcome.kind === "ok" ? waiting.toSorted((a, b) => Date.parse(a.since) - Date.parse(b.since)) : previous.waiting,
       reposLeftOut: leftOut,
+      runsLeftOut: outcome.kind === "ok" ? runsLeftOut : previous.runsLeftOut,
       checkedAt: outcome.kind === "ok" ? new Date(now).toISOString() : previous.checkedAt,
     });
     return next.delayMs;

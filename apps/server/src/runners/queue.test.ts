@@ -10,7 +10,8 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { startTestServer } from "../testing/testServer.ts";
-import { afterPoll, reposToPoll } from "./queueRules.ts";
+import { createGitHubReader } from "../github/githubReader.ts";
+import { afterPoll, reposToPoll, runIds, waitingJobs } from "./queueRules.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-queue-"));
 after(() => rm(dir, { recursive: true, force: true }));
@@ -31,7 +32,7 @@ async function until(ready: () => boolean, what: string, timeoutMs = 5000) {
 // a request repeating it gets a 304, and `script` sets the budget headers or a refusal.
 async function fakeGitHub() {
   const requests: { path: string; etag: string | undefined; auth: string | undefined }[] = [];
-  const script = { remaining: 4000, limit: 5000, refuse: null as null | { status: number; retryAfter?: number } };
+  const script = { remaining: 4000, limit: 5000, refuse: null as null | { status: number; retryAfter?: number; body?: string }, forbid: null as string | null };
   const jobs = {
     jobs: [
       { name: "test", workflow_name: "ci", status: "queued", labels: ["self-hosted", "example-linux"], created_at: "2026-11-15T12:00:00Z", html_url: "https://github.com/owner/name/actions/runs/1/job/11" },
@@ -53,9 +54,10 @@ async function fakeGitHub() {
     requests.push({ path, etag: typeof etag === "string" ? etag : undefined, auth: request.headers.authorization });
     const rate = { "x-ratelimit-remaining": String(script.remaining), "x-ratelimit-limit": String(script.limit), "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600) };
     if (script.refuse) {
-      response.writeHead(script.refuse.status, { ...rate, ...(script.refuse.retryAfter ? { "retry-after": String(script.refuse.retryAfter) } : {}) }).end("{}");
+      response.writeHead(script.refuse.status, { ...rate, ...(script.refuse.retryAfter ? { "retry-after": String(script.refuse.retryAfter) } : {}) }).end(script.refuse.body ?? "{}");
       return;
     }
+    if (script.forbid && path.startsWith(`/repos/${script.forbid}/`)) return void response.writeHead(403, rate).end(JSON.stringify({ message: "Resource protected by organization SAML enforcement." }));
     const reply = body(path);
     if (!reply) return void response.writeHead(404, rate).end("{}");
     const tag = `"${path}"`;
@@ -207,4 +209,70 @@ test("errors back off, doubling up to the cap, and a good reply resets the pace"
   }
   assert.deepEqual(delays, [40_000, 80_000, 160_000, 300_000, 300_000, 300_000]);
   assert.equal(afterPoll({ kind: "ok", budget: null }, failures, timing, 0).delayMs, 20_000);
+});
+
+test("a repo that refuses the token is skipped and the others still polled, but a secondary limit stops it all", async () => {
+  const { github, views, watch, stop, close } = await setup();
+  try {
+    github.script.forbid = "owner/other";
+    const fiber = watch();
+    await until(() => views.at(-1)?.status === "watching" && views.at(-1)?.waiting.length === 1, "owner/name's job despite owner/other's 403");
+    await stop(fiber);
+  } finally {
+    await close();
+  }
+
+  const secondary = await setup();
+  try {
+    secondary.github.script.refuse = { status: 403, body: JSON.stringify({ message: "You have exceeded a secondary rate limit." }) };
+    const fiber = secondary.watch();
+    await until(() => secondary.views.at(-1)?.status === "paused", "a pause for the secondary limit");
+    const resumesAt = Date.parse(secondary.views.at(-1)?.resumesAt ?? "");
+    assert.ok(resumesAt - Date.now() > 50_000, "at least the minute GitHub asks for");
+    await secondary.stop(fiber);
+  } finally {
+    await secondary.close();
+  }
+});
+
+test("queued runs come first, the longest waiting first, and the queued runs that don't fit are counted", () => {
+  const run = (id: number, minute: number) => ({ id, created_at: `2026-11-15T12:${String(minute).padStart(2, "0")}:00Z` });
+  const queued = { workflow_runs: Array.from({ length: 12 }, (_, index) => run(100 + index, 50 - index)) };
+  const inProgress = { workflow_runs: [run(1, 59)] };
+  const { ids, leftOut } = runIds(queued, inProgress);
+  assert.equal(ids.length, 10);
+  assert.equal(ids[0], 111, "the oldest queued run first");
+  assert.ok(!ids.includes(1), "in-progress runs only fill what's left");
+  assert.equal(leftOut, 2);
+});
+
+test("a job's names are cut short and its link kept only for a github.com page", () => {
+  const body = {
+    jobs: [
+      { name: "x".repeat(300), workflow_name: "w".repeat(300), status: "queued", labels: ["example-linux"], created_at: "2026-11-15T12:00:00Z", html_url: "https://example.com/phish" },
+    ],
+  };
+  const [job] = waitingJobs("owner/name", body, new Set(["example-linux"]));
+  assert.equal(job?.job.length, 100);
+  assert.equal(job?.workflow?.length, 100);
+  assert.equal(job?.url, null);
+});
+
+test("the ETag cache keeps only what the last look asked for", async () => {
+  const github = await fakeGitHub();
+  try {
+    const reader = createGitHubReader(github.apiBase);
+    const a = "repos/owner/name/actions/runs?status=queued&per_page=20";
+    const b = "repos/owner/name/actions/runs/1/jobs?filter=latest&per_page=100";
+    await reader.get(a, TOKEN);
+    reader.prune();
+    await reader.get(b, TOKEN);
+    reader.prune();
+    await reader.get(a, TOKEN);
+    assert.equal(github.requests.at(-1)?.etag, undefined, "a path the last look didn't ask for was dropped");
+    await reader.get(b, TOKEN);
+    assert.equal(github.requests.at(-1)?.etag, `"/${b}"`, "one it did ask for was kept");
+  } finally {
+    await github.close();
+  }
 });

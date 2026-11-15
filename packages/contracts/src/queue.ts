@@ -23,8 +23,10 @@ export const QueueView = Schema.Struct({
   waiting: Schema.Array(WaitingJob),
   // When checking starts again, while paused.
   resumesAt: Schema.NullOr(Schema.String),
-  // Repos with job history beyond the ones polled, which are the most recently active.
+  // Repos with job history beyond the ones polled, which are the most recently active, and queued
+  // runs beyond the ones looked inside, the longest waiting. Their jobs may be missing.
   reposLeftOut: Schema.Number,
+  runsLeftOut: Schema.Number,
   checkedAt: Schema.NullOr(Schema.String),
 });
 export type QueueView = typeof QueueView.Type;

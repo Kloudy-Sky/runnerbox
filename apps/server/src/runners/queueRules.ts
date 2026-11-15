@@ -32,13 +32,15 @@ const Jobs = Schema.Struct({
   ),
 });
 
-// The newest runs across the replies for queued and in-progress runs, at most MAX_RUNS_PER_REPO.
-export function runIds(replies: ReadonlyArray<unknown>) {
-  const runs = replies.flatMap((body) => Option.match(Schema.decodeUnknownOption(Runs)(body), { onNone: () => [], onSome: (decoded) => decoded.workflow_runs }));
-  return [...new Map(runs.map((run) => [run.id, run])).values()]
-    .toSorted((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-    .slice(0, MAX_RUNS_PER_REPO)
-    .map((run) => run.id);
+// The runs to look inside, at most MAX_RUNS_PER_REPO: queued runs first, the longest waiting first,
+// since those are where jobs wait, then the newest in-progress runs, whose later jobs may still be
+// queued. `leftOut` counts the queued runs that didn't fit.
+export function runIds(queued: unknown, inProgress: unknown) {
+  const runs = (body: unknown) => Option.match(Schema.decodeUnknownOption(Runs)(body), { onNone: () => [], onSome: (decoded) => decoded.workflow_runs });
+  const waiting = runs(queued).toSorted((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+  const running = runs(inProgress).toSorted((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const ids = [...new Set([...waiting, ...running].map((run) => run.id))];
+  return { ids: ids.slice(0, MAX_RUNS_PER_REPO), leftOut: Math.max(0, waiting.length - MAX_RUNS_PER_REPO) };
 }
 
 const cut = (text: string) => (text.length > NAME_CHARS ? `${text.slice(0, NAME_CHARS - 1)}…` : text);
@@ -61,6 +63,8 @@ export function waitingJobs(repo: string, body: unknown, labels: ReadonlySet<str
 export type Timing = { pollMs: number; slowMs: number; maxBackoffMs: number };
 export type Outcome =
   | { kind: "ok"; budget: Budget | null }
+  // Every repo polled refused the token, each for itself.
+  | { kind: "forbidden" }
   | { kind: "limited"; untilMs: number }
   | { kind: "refused"; status: number }
   | { kind: "error"; message: string };
@@ -88,6 +92,8 @@ export function afterPoll(outcome: Outcome, failures: number, timing: Timing, no
       return pause(outcome.untilMs, "GitHub asked Runnerbox to wait before checking again.");
     case "refused":
       return backOff(`GitHub refused the token in report.env (${outcome.status}).`);
+    case "forbidden":
+      return backOff("The token in report.env can't read any of these repositories' Actions.");
     case "error":
       return backOff(`Couldn't check GitHub: ${outcome.message}.`);
     case "ok": {
