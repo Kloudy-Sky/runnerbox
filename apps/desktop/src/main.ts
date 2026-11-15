@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { SavedEnvironment, SshRoute, UpdateChannel } from "@runnerbox/client-runtime";
+import { opensInBrowser, SavedEnvironment, SshRoute, UpdateChannel } from "@runnerbox/client-runtime";
 import { app, BrowserWindow, type IpcMainInvokeEvent, ipcMain, protocol, safeStorage, session, shell } from "electron";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,7 +9,6 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Schema from "effect/Schema";
 import { createCatalog, type TokenCipher } from "./catalog.ts";
 import { createConnect } from "./connect.ts";
-import { opensInBrowser } from "./externalLinks.ts";
 import { CHANNELS } from "./ipc/channels.ts";
 import { createTunnels } from "./ssh/tunnels.ts";
 import { DesktopUpdates, layer as desktopUpdatesLayer } from "./updates/DesktopUpdates.ts";
