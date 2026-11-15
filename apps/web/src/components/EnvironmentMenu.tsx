@@ -6,6 +6,7 @@ import { activeRoute } from "../lib/routes.ts";
 import { runtime } from "../runtime.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { usePreferences } from "../state/preferences.ts";
+import { useRestarting } from "../state/serverUpdates.ts";
 import { ConnectionState } from "./ConnectionState.tsx";
 import { Menu, MenuGroup, MenuGroupLabel, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu.tsx";
 
@@ -15,6 +16,7 @@ export function EnvironmentMenu() {
   const { environment, connection } = useActiveEnvironment();
   const environments = useStore(runtime.store, (state) => state.environments);
   const connections = useStore(runtime.store, (state) => state.connections);
+  const restarting = useRestarting();
   const setActive = usePreferences((state) => state.setActive);
   const navigate = useNavigate();
   const route = environment ? activeRoute(environment, connection) : undefined;
@@ -25,7 +27,7 @@ export function EnvironmentMenu() {
           <span className="block truncate font-medium">{environment?.label ?? "No environment"}</span>
           {environment ? (
             <span className="flex items-center gap-2 text-xs">
-              <ConnectionState connection={connection} route={route} />
+              <ConnectionState connection={connection} route={route} restarting={restarting.has(environment.environmentId)} />
             </span>
           ) : null}
         </span>
@@ -37,7 +39,7 @@ export function EnvironmentMenu() {
           {environments.map((saved) => (
             <MenuItem key={saved.environmentId} onClick={() => setActive(saved.environmentId)}>
               <span className={saved.environmentId === environment?.environmentId ? "flex-1 font-medium" : "flex-1"}>{saved.label}</span>
-              <ConnectionState connection={connections[saved.environmentId]} className="text-xs" />
+              <ConnectionState connection={connections[saved.environmentId]} restarting={restarting.has(saved.environmentId)} className="text-xs" />
             </MenuItem>
           ))}
         </MenuGroup>

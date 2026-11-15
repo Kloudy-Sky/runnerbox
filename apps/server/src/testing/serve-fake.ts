@@ -1,10 +1,13 @@
 // Serves fixture logs with a scripted agent, for driving the app's threads by hand without a
 // Claude login:
-//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex]
+//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex] [--updates commit|rollback]
 // `--older` answers as a server from before the composer's model menu, attachments, references,
 // queue and delete, to see the app hold back what such a server can't do. `--codex` runs the real
 // Codex adapter beside the scripted Claude one, with a Codex home under <dir>, signed in with
 // `XDG_STATE_HOME=<dir> runnerbox codex-login`; it reaches the machine's `codex`, not the fixtures.
+// `--updates` lets the app update it from a local release, ending as the flag says, and restarts
+// it on the same port for that (fakeUpdates.ts). Stamp apps/server's version below the app's to
+// see the app offer it.
 // It writes fixtures under <dir>, prints a pairing code, and runs until stopped. Never point it
 // at a real state directory. Keep <dir> short: the reproduce socket's path must fit in about
 // 100 characters.
@@ -13,19 +16,22 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { ALL_SCOPES } from "@runnerbox/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as AuthStore from "../auth/AuthStore.ts";
 import * as QueueConfig from "../runners/QueueConfig.ts";
 import { layerApp } from "../server.ts";
 import * as CodexAdapter from "../threads/provider/CodexAdapter.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
+import { fakeUpdates } from "./fakeUpdates.ts";
 import { startFakeUp } from "./fakeUp.ts";
 import { startFakeGitHub } from "./fakeGitHub.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
 
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false }, codex: { type: "boolean", default: false } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false }, codex: { type: "boolean", default: false }, updates: { type: "string" } } });
 // What a server from before the composer work doesn't answer.
 const OLDER_SERVER_LACKS = [
   "server.methods",
@@ -102,10 +108,31 @@ await startFakeUp(join(stateDir, "example"), {
       : { exitCode: 0, output: " Test Files  38 passed (38)\n      Tests  214 passed (214)\n   Duration  3m 02s\n" },
 });
 
+// Set by an update the app runs, to stop the server and start it again.
+let restart = Deferred.makeUnsafe<void>();
+if (values.updates !== undefined && values.updates !== "commit" && values.updates !== "rollback") throw new Error("--updates is commit or rollback.");
+const updates = values.updates ? await fakeUpdates(join(resolve(target), "install"), stateDir, values.updates, () => Deferred.doneUnsafe(restart, Exit.void)) : undefined;
+
+const serve = (first: boolean) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const context = yield* Layer.build(
+        layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, ...(values.codex ? { codex: CodexAdapter.layer } : {}), withoutMethods: values.older ? OLDER_SERVER_LACKS : [], queue: QueueConfig.layerTest(FAKE_GITHUB), ...(updates ? { updates } : {}) }),
+      );
+      if (first) {
+        const { code } = yield* Context.get(context, AuthStore.AuthStore).createPairingCode(ALL_SCOPES);
+        console.log(`Serving fixtures from ${stateDir} on http://127.0.0.1:${values.port}. Pairing code: ${code}`);
+      } else console.log("Restarted after an update.");
+      yield* Deferred.await(restart);
+    }),
+  );
+
 const program = Effect.gen(function* () {
-  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, ...(values.codex ? { codex: CodexAdapter.layer } : {}), withoutMethods: values.older ? OLDER_SERVER_LACKS : [], queue: QueueConfig.layerTest(FAKE_GITHUB) }));
-  const { code } = yield* Context.get(context, AuthStore.AuthStore).createPairingCode(ALL_SCOPES);
-  console.log(`Serving fixtures from ${stateDir} on http://127.0.0.1:${values.port}. Pairing code: ${code}`);
-  return yield* Effect.never;
+  for (let first = true; ; first = false) {
+    yield* serve(first);
+    restart = Deferred.makeUnsafe<void>();
+    // A real restart takes a moment, long enough for the app to see the socket go.
+    yield* Effect.sleep("1500 millis");
+  }
 });
-Effect.runFork(Effect.scoped(program));
+Effect.runFork(program);

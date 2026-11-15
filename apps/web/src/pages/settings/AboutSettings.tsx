@@ -1,6 +1,7 @@
 import { PROTOCOL_VERSION } from "@runnerbox/contracts";
 import packageJson from "../../../package.json" with { type: "json" };
 import { ServerUpdateCommand } from "../../components/ServerUpdateCommand.tsx";
+import { ServerUpdateControls, StaleRunnersSettings } from "../../components/settings/ServerUpdateSettings.tsx";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "../../components/settings/settingsLayout.tsx";
 import { UpdatesGroup } from "../../components/settings/UpdatesGroup.tsx";
 import { useDesktopUpdates } from "../../hooks/useDesktopUpdates.ts";
@@ -40,7 +41,7 @@ export function AboutSettings() {
           title={`Server on ${environment?.label ?? "no environment"}`}
           description={
             behind
-              ? "Older than this app. Update it on that machine with the command below."
+              ? "Older than this app."
               : about.data
                 ? `Speaks protocol ${about.data.protocolVersion}.`
                 : incompatible
@@ -49,13 +50,16 @@ export function AboutSettings() {
           }
           control={<span className="font-mono text-xs">{about.data?.serverVersion ?? "-"}</span>}
         >
-          {behind || (incompatible && appVersion !== "0.0.0") ? (
+          {environment && about.data ? (
+            <ServerUpdateControls environment={environment} serverVersion={about.data.serverVersion} appVersion={appVersion} />
+          ) : incompatible && appVersion !== "0.0.0" ? (
             <div className="pt-2 pb-2">
               <ServerUpdateCommand appVersion={appVersion} />
             </div>
           ) : null}
         </SettingsRow>
       </SettingsSection>
+      {environment ? <StaleRunnersSettings environment={environment} /> : null}
       {updates ? <UpdatesGroup updates={updates} /> : null}
       <SettingsSection title="When a server is incompatible">
         <p className={cn("px-3 py-3 text-xs leading-normal sm:px-4", incompatible ? "text-foreground" : "text-muted-foreground")}>
