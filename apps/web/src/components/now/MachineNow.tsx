@@ -39,7 +39,7 @@ export function MachineNow(props: {
       <Collapsible>
         <CollapsibleTrigger className="group/lanes flex items-center gap-1 text-muted-foreground hover:text-foreground">
           <ChevronRight className="size-3.5 transition-transform duration-150 group-data-panel-open/lanes:rotate-90" />
-          The last hour, slot by slot
+          The last hour, runner by runner
         </CollapsibleTrigger>
         <CollapsiblePanel>
           <div className="pt-2">

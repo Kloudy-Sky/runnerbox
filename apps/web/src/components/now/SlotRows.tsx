@@ -1,9 +1,9 @@
 import type { InstallState } from "@runnerbox/contracts";
 import { formatAge } from "../../lib/format.ts";
-import { PHASE } from "../InstallState.tsx";
+import { runnerPhase } from "../../lib/runnerWords.ts";
 
-// Each kind's slots, two lines each so they fit a narrow window: what the slot is doing and for how
-// long, then the job it's on, or the machine's reason when it gives one.
+// Each kind's runners, two lines each so they fit a narrow window: what the runner is doing and
+// for how long, then the machine's reason when it gives one.
 export function SlotRows({ install, now }: { install: InstallState; now: number }) {
   return (
     <div className="flex flex-col gap-2">
@@ -13,16 +13,15 @@ export function SlotRows({ install, now }: { install: InstallState; now: number 
             {kind.name} <span className="text-muted-foreground/70">· {kind.label}</span>
           </div>
           {kind.slots.map((slot) => {
-            const [label, color] = PHASE[slot.phase];
+            const { text, tone } = runnerPhase(slot.phase, slot.job);
             return (
               <div key={slot.slot} className="py-0.5 pl-3">
-                <div className="flex items-baseline gap-2">
-                  <span className="w-11 shrink-0 text-muted-foreground">slot {slot.slot}</span>
-                  <span className={color}>{label}</span>
-                  <span className="text-muted-foreground tabular-nums">{formatAge(slot.since, now)}</span>
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <span className="w-15 shrink-0 text-muted-foreground">runner {slot.slot}</span>
+                  <span className={`min-w-0 truncate ${tone}`}>{text}</span>
+                  <span className="shrink-0 text-muted-foreground tabular-nums">{formatAge(slot.since, now)}</span>
                 </div>
-                {slot.job ? <div className="truncate pl-13">{slot.job}</div> : null}
-                {slot.detail ? <div className="pl-13 text-muted-foreground">{slot.detail}</div> : null}
+                {slot.detail ? <div className="pl-17 text-muted-foreground">{slot.detail}</div> : null}
               </div>
             );
           })}

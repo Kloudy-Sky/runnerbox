@@ -4,9 +4,11 @@ import { LastHour } from "../components/now/LastHour.tsx";
 import { MachineNow } from "../components/now/MachineNow.tsx";
 import { PinnedItems } from "../components/now/PinnedItems.tsx";
 import { SlotRows } from "../components/now/SlotRows.tsx";
+import { WaitingJobs } from "../components/now/WaitingJobs.tsx";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRepo } from "../hooks/useRepo.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
+import { useRunnerQueue } from "../hooks/useRunnerQueue.ts";
 import { listening, useRunnerState } from "../hooks/useRunnerState.ts";
 import { typicalBuildMs } from "../lib/imageFacts.ts";
 import { lanes, lastHour } from "../lib/now.ts";
@@ -18,6 +20,7 @@ const keep = (previous: RootSearch) => previous;
 // what needs the owner first, then the runners, what just finished, and the machine itself.
 export function NowPage() {
   const installs = useRunnerState();
+  const queue = useRunnerQueue();
   const inbox = useInbox().data;
   const { repo } = useRepo();
   // Finished things change by the minute at most: runners ending, samples, and synced jobs.
@@ -58,6 +61,12 @@ export function NowPage() {
             <SlotRows install={install} now={now} />
           </div>
         ))}
+        {queue && queue.status !== "off" && live.length > 0 ? (
+          <>
+            <Heading>{queue.waiting.length > 0 ? `Waiting for a runner, ${queue.waiting.length}` : "Waiting for a runner"}</Heading>
+            <WaitingJobs queue={queue} now={now} />
+          </>
+        ) : null}
         {repo && live.length > 0 ? (
           <>
             <Heading>Last hour in {repo}</Heading>
