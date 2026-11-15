@@ -10,7 +10,7 @@ import { RunsPage } from "./pages/RunsPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
 import { AboutSettings } from "./pages/settings/AboutSettings.tsx";
 import { AccessSettings } from "./pages/settings/AccessSettings.tsx";
-import { AccountsSettings } from "./pages/settings/AccountsSettings.tsx";
+import { ProvidersSettings } from "./pages/settings/ProvidersSettings.tsx";
 import { ChangesSettings } from "./pages/settings/ChangesSettings.tsx";
 import { ConnectionsSettings } from "./pages/settings/ConnectionsSettings.tsx";
 import { MonitorsSettings } from "./pages/settings/MonitorsSettings.tsx";
@@ -40,8 +40,10 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/speed", component: SpeedPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runners", component: RunnersPage }),
   settingsRoute.addChildren([
-    createRoute({ getParentRoute: () => settingsRoute, path: "/", beforeLoad: () => { throw redirect({ to: "/settings/accounts", search: true }); } }),
-    createRoute({ getParentRoute: () => settingsRoute, path: "/accounts", component: AccountsSettings }),
+    createRoute({ getParentRoute: () => settingsRoute, path: "/", beforeLoad: () => { throw redirect({ to: "/settings/providers", search: true }); } }),
+    createRoute({ getParentRoute: () => settingsRoute, path: "/providers", component: ProvidersSettings }),
+    // Its name before providers, so saved links still land on it.
+    createRoute({ getParentRoute: () => settingsRoute, path: "/accounts", beforeLoad: () => { throw redirect({ to: "/settings/providers", search: true }); } }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/connections", component: ConnectionsSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/access", component: AccessSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/changes", component: ChangesSettings }),

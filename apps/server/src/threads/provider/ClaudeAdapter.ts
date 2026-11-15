@@ -132,7 +132,7 @@ const make = Effect.gen(function* () {
         return lines.pipe(
           Stream.mapEffect((line) => {
             const { events, error } = decodeLine(line);
-            if (error !== null) return Effect.fail(failed(input.account.apiKey !== null && KEY_REFUSED.test(error) ? `The API key for "${input.account.label}" was refused. Replace it in Settings, Accounts.` : error));
+            if (error !== null) return Effect.fail(failed(input.account.apiKey !== null && KEY_REFUSED.test(error) ? `The API key for "${input.account.label}" was refused. Replace it in Settings, Providers.` : error));
             if (events.some((event) => event._tag === "Done")) finished = true;
             return Effect.succeed<ReadonlyArray<ProviderEvent>>(events);
           }),

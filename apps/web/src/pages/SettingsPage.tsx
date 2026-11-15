@@ -6,7 +6,7 @@ import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSepara
 import type { RootSearch } from "../lib/search.ts";
 
 const SECTIONS = [
-  { to: "/settings/accounts", label: "Accounts", icon: KeyRound },
+  { to: "/settings/providers", label: "Providers", icon: KeyRound },
   { to: "/settings/connections", label: "Connections", icon: Plug },
   { to: "/settings/access", label: "Access", icon: ShieldCheck },
   { to: "/settings/changes", label: "Changes", icon: SlidersHorizontal },
