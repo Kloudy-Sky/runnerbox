@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
 import { createProof, createProofKey } from "@runnerbox/connect/dpop";
@@ -251,3 +253,34 @@ test("a turn runs on the model the composer picked, over the account's own, and 
     // The log keeps the pick, so the composer can offer it again, and nothing when there wasn't one.
     assert.deepEqual(items.flatMap((item) => (item._tag === "UserMessage" ? [item.model ?? null] : [])), ["haiku", null]);
   }));
+
+test("after a restart, a thread's first watcher gets the line saying the turn was cut off once, not twice", async () => {
+  const first = await startTestServer({ provider: makeFakeProvider({ turns: [[{ text: "Starting " }, { hang: true }]] }) });
+  const { token } = await appSession(first);
+  const threadId = await withClient(first, token, (client) =>
+    Effect.gen(function* () {
+      const { thread } = yield* newThread(client);
+      yield* client["threads.startTurn"]({ id: thread.id, text: "First question" });
+      yield* Effect.sleep(50);
+      return thread.id;
+    }),
+  );
+  await first.close(false);
+  // As though the server had been killed mid-turn: no end was logged.
+  const log = join(first.stateDir, ".server", "threads", `${threadId}.ndjson`);
+  const lines = (await readFile(log, "utf8")).trimEnd().split("\n");
+  await writeFile(log, `${lines.filter((line) => !line.includes('"TurnEnded"')).join("\n")}\n`);
+  const second = await startTestServer({ stateDir: first.stateDir, provider: makeFakeProvider({ turns: [] }) });
+  try {
+    // The first look at the thread since the restart is the one that logs the cut-off turn's end.
+    const events = await withClient(second, token, (client) =>
+      client["threads.subscribe"]({ id: threadId }).pipe(Stream.interruptWhen(Effect.sleep(300)), Stream.runCollect, Effect.map((chunk) => [...chunk])),
+    );
+    const snapshot = events[0];
+    assert.equal(snapshot?._tag, "Snapshot");
+    const seen = [...(snapshot?._tag === "Snapshot" ? snapshot.detail.items : []), ...events.slice(1)].flatMap((event) => ("seq" in event ? [event.seq] : []));
+    assert.deepEqual(seen, [...new Set(seen)], "no item arrives twice");
+  } finally {
+    await second.close();
+  }
+});

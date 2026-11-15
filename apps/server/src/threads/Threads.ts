@@ -448,8 +448,10 @@ const make = Effect.gen(function* () {
     Stream.unwrap(
       lock.withPermits(1)(
         Effect.gen(function* () {
-          const subscription = yield* PubSub.subscribe(events);
+          // Loaded first: loading can log a turn the server stopped under, and that belongs in the
+          // snapshot, not again on the stream. Holding the lock, nothing else is published between.
           const file = yield* loadUnlocked(id);
+          const subscription = yield* PubSub.subscribe(events);
           const turn = running.get(id);
           const snapshot: ThreadEvent = {
             _tag: "Snapshot",
