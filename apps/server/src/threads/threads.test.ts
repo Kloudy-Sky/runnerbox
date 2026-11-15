@@ -219,7 +219,8 @@ test("a thread on a run starts from that attempt's steps, attempts and verdict",
         return { run, thread };
       }),
     );
-    assert.equal(thread.title, `${run.workflow} / ${run.job} #${run.runId}`);
+    // The fixtures retried it on the same commit, so the title says which attempt this is.
+    assert.equal(thread.title, `${run.workflow} / ${run.job} #${run.runId}, attempt ${run.attempt}`);
     const packet = JSON.parse(/<evidence>\n(.*)\n<\/evidence>/.exec(fake.inputs[0]?.prompt ?? "")?.[1] ?? "{}");
     assert.equal(packet.ruleVerdict, "infra");
     assert.ok(packet.evidence.steps.length > 0 && packet.evidence.attempts.length > 0 && packet.evidence.machine !== null);

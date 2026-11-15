@@ -181,7 +181,8 @@ export function runEvidence(jobId: number, input: InboxInput) {
   const unit = isFailure(job) ? classifyFailures(attempts, input).find((candidate) => candidate.key === unitKey(job)) : undefined;
   const evidence = evidenceFor(job, attempts, input.jobs, input);
   return {
-    title: `${jobName(job)} #${job.runId}${job.attempt > 1 ? ` attempt ${job.attempt}` : ""}`,
+    // When the job ran more than once on its commit, every attempt says which it is, the first too.
+    title: `${jobName(job)} #${job.runId}${attempts.length > 1 || job.attempt > 1 ? `, attempt ${job.attempt}` : ""}`,
     job,
     verdict: unit?.verdict ?? null,
     evidence: { ...evidence, reasons: unit?.reasons ?? [] },

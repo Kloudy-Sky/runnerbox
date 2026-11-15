@@ -15,6 +15,11 @@ test("a reference picked with @ goes as @label in the text and as a thread or ru
   assert.equal(sent.tooMany, false);
 });
 
+test("a retried run's attempt stays in its chip and in the sent text", () => {
+  const retry = referenceToken({ kind: "run", repo: "owner/name", jobId: 5218, days: 7, label: "ci / test #5217, attempt 2", detail: "" });
+  assert.equal(withReferences(`Was it ${retry}?`).text, "Was it @ci / test #5217, attempt 2 ?");
+});
+
 test("more references than the server takes are caught before sending", () => {
   const tokens = ["0123456789abcde0", "0123456789abcde1", "0123456789abcde2", "0123456789abcde3"].map((id) => referenceToken({ kind: "thread", id, label: id, detail: "" }));
   assert.equal(withReferences(tokens.join("")).tooMany, true);
