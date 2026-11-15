@@ -20,6 +20,11 @@ const Slot = type({
   "job?": "string | null",
 });
 
+// The memory, in MiB, the host and the VM must each have available before a slot registers. `vmMiB`
+// is 0 when there's no VM to check.
+const Floor = type({ hostMiB: "number", vmMiB: "number" });
+type Floor = typeof Floor.infer;
+
 export const SlotStateFile = type({
   v: "1",
   install: "string",
@@ -27,6 +32,9 @@ export const SlotStateFile = type({
   startedAt: "string",
   updatedAt: "string",
   stopping: "boolean",
+  // The install's floor, which every kind without its own waits for. A file from an older `up`
+  // doesn't say.
+  "memoryFloor?": Floor,
   kinds: type({
     name: "string",
     label: "string",
@@ -41,17 +49,20 @@ export const SlotStateFile = type({
     // Where its jobs run, which says whether they're sampled: only containers in the install's VM
     // are. A file from an older `up` doesn't say.
     "runsIn?": "'container' | 'job_vm' | 'host'",
+    // The kind's own floor, only when it sets one.
+    "memoryFloor?": Floor,
     slots: Slot.array(),
   }).array(),
 });
 export type SlotStateFile = typeof SlotStateFile.infer;
 
 export type RunsIn = "container" | "job_vm" | "host";
-type Kind = { name: string; label: string; slots: number; image?: string | { rebuildDays?: number }; runsIn?: RunsIn };
+type Kind = { name: string; label: string; slots: number; image?: string | { rebuildDays?: number }; runsIn?: RunsIn; memoryFloor?: Floor };
 
 // Keeps the file in step with every report. Writes go to a temporary file renamed over the old,
 // so a reader never sees half of one, and reports that arrive mid-write are folded into the next.
-export function createSlotState(path: string, install: string, kinds: readonly Kind[], now: () => number = Date.now) {
+// `memoryFloor` is the install's, which kinds without their own wait for.
+export function createSlotState(path: string, install: string, kinds: readonly Kind[], now: () => number = Date.now, memoryFloor?: Floor) {
   const iso = () => new Date(now()).toISOString();
   const state: SlotStateFile = {
     v: 1,
@@ -60,7 +71,8 @@ export function createSlotState(path: string, install: string, kinds: readonly K
     startedAt: iso(),
     updatedAt: iso(),
     stopping: false,
-    kinds: kinds.map(({ name, label, slots, image, runsIn }) => ({
+    ...(memoryFloor ? { memoryFloor } : {}),
+    kinds: kinds.map(({ name, label, slots, image, runsIn, memoryFloor: ownFloor }) => ({
       name,
       label,
       image: null,
@@ -71,6 +83,7 @@ export function createSlotState(path: string, install: string, kinds: readonly K
       builtAt: null,
       tools: null,
       ...(runsIn ? { runsIn } : {}),
+      ...(ownFloor ? { memoryFloor: ownFloor } : {}),
       slots: Array.from({ length: slots }, (_, index) => ({ slot: index + 1, phase: "minting" as const, since: iso(), runner: null, detail: null, job: null })),
     })),
   };

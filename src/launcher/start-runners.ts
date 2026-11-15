@@ -70,14 +70,14 @@ export async function startRunners(configPath: string) {
   // sampled yet, so with them the VM's containers are only image builds.
   const containers = "vm" in config && !config.jobVms ? startContainerSampler(config) : null;
   if ("vm" in config) startSampler(config, containers);
-  // What each slot is doing now, for `runnerbox serve` to show live.
-  const runsIn: RunsIn = !("vm" in config) ? "host" : config.jobVms ? "job_vm" : "container";
-  const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners.map((runner) => ({ ...runner, runsIn })));
-  void slotState.flush();
-  every(HEARTBEAT_MS, slotState.heartbeat);
   // Every runner type checks the install's floor unless it sets its own, so together they can't
   // overload the machines. A host install has no VM, so its VM floor is 0, which skips that check.
   const installFloor: MemoryFloor = { vmMiB: 0, ...config.memoryFloor };
+  // What each slot is doing now, for `runnerbox serve` to show live.
+  const runsIn: RunsIn = !("vm" in config) ? "host" : config.jobVms ? "job_vm" : "container";
+  const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners.map((runner) => ({ ...runner, runsIn })), Date.now, installFloor);
+  void slotState.flush();
+  every(HEARTBEAT_MS, slotState.heartbeat);
   const roomForJob = (floor: MemoryFloor, starting?: string) =>
     checkMemoryFloor([
       { name: "machine", floorMiB: floor.hostMiB, availableMiB: hostAvailableMiB },
