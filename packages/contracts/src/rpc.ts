@@ -9,6 +9,7 @@ import { JobResources } from "./resources.ts";
 import { JobTrend, KindUsageReport } from "./usage.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { QueueView } from "./queue.ts";
+import { RunnersExplained } from "./runnersExplained.ts";
 import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, ChunkReceived, StageAttachment } from "./attachments.ts";
 import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
@@ -73,6 +74,7 @@ export const RPC_METHODS = {
   runnersState: "runners.state",
   runnersSubscribeState: "runners.subscribeState",
   runnersSubscribeQueue: "runners.subscribeQueue",
+  runnersExplain: "runners.explain",
   accessSessions: "access.sessions",
   accessCreatePairingCode: "access.createPairingCode",
   accessRevokeSession: "access.revokeSession",
@@ -172,6 +174,8 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   // Jobs GitHub has queued for this machine's labels, now and whenever that changes. Watching it
   // is what makes the server poll GitHub, with the token report.env holds.
   Rpc.make(RPC_METHODS.runnersSubscribeQueue, { success: QueueView, stream: true }),
+  // Each install's runners in plain words: what they're doing now and what happened in `days`.
+  Rpc.make(RPC_METHODS.runnersExplain, { payload: { days: Days }, success: RunnersExplained, error: ReadError }),
   Rpc.make(RPC_METHODS.accessSessions, { success: Schema.Array(SessionSummary), error: AuthorizationError }),
   Rpc.make(RPC_METHODS.accessCreatePairingCode, {
     payload: { scopes: Schema.Array(AuthScopeSchema) },
@@ -283,6 +287,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.runnersSubscribeState]: RUNNERS,
   // Job names are history, and the labels come from runner state.
   [RPC_METHODS.runnersSubscribeQueue]: ["history:read", "runners:read"],
+  // Its episodes say which jobs passed, from the job log.
+  [RPC_METHODS.runnersExplain]: ["history:read", "runners:read"],
   [RPC_METHODS.accessSessions]: ACCESS,
   [RPC_METHODS.accessCreatePairingCode]: ACCESS,
   [RPC_METHODS.accessRevokeSession]: ACCESS,

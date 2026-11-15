@@ -8,6 +8,7 @@ import type { LogReadError } from "../history/StateLogs.ts";
 import * as Inbox from "../inbox/Inbox.ts";
 import * as LauncherLogs from "../runners/LauncherLogs.ts";
 import * as RunnerQueue from "../runners/RunnerQueue.ts";
+import * as RunnersExplained from "../runners/RunnersExplained.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
 import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
@@ -30,6 +31,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const launcher = yield* LauncherLogs.LauncherLogs;
       const runnerState = yield* RunnerState.RunnerState;
       const queue = yield* RunnerQueue.RunnerQueue;
+      const explained = yield* RunnersExplained.RunnersExplained;
       const inbox = yield* Inbox.Inbox;
       const auth = yield* AuthStore.AuthStore;
       const threads = yield* Threads.Threads;
@@ -65,6 +67,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "runners.events": ({ days }) => launcher.events(days).pipe(toWire),
         "runners.samples": ({ days, maxPoints }) => launcher.samples(days, maxPoints).pipe(toWire),
         "runners.state": () => runnerState.current.pipe(toWire),
+        "runners.explain": ({ days }) => explained.explain(days).pipe(toWire),
         "runners.subscribeState": () => runnerState.changes.pipe(Stream.mapError((error) => new StateReadError({ what: error.what }))),
         "runners.subscribeQueue": () => queue.changes,
         "access.sessions": () => auth.list(session.id).pipe(Effect.orDie),

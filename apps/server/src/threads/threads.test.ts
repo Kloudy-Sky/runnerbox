@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
 import { createProof, createProofKey } from "@runnerbox/connect/dpop";
-import { ALL_SCOPES, type ThreadEvent } from "@runnerbox/contracts";
+import { ALL_SCOPES, RUNNERS_QUESTION, type ThreadEvent } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
@@ -224,6 +224,27 @@ test("a thread on a run starts from that attempt's steps, attempts and verdict",
     const packet = JSON.parse(/<evidence>\n(.*)\n<\/evidence>/.exec(fake.inputs[0]?.prompt ?? "")?.[1] ?? "{}");
     assert.equal(packet.ruleVerdict, "infra");
     assert.ok(packet.evidence.steps.length > 0 && packet.evidence.attempts.length > 0 && packet.evidence.machine !== null);
+  }));
+
+test("a thread on an install's runners starts from what the Runners page shows, asking the fixed question", () =>
+  withServer([[{ text: "Looked." }]], async (server, fake) => {
+    const { token } = await appSession(server);
+    const { page, thread } = await withClient(server, token, (client) =>
+      Effect.gen(function* () {
+        const page = yield* client["runners.explain"]({ days: 7 });
+        const thread = yield* client["threads.create"]({ subject: { _tag: "runners", install: "example" }, days: 7 });
+        const listening = yield* untilTurnEnds(client["threads.subscribe"]({ id: thread.id })).pipe(Effect.forkChild);
+        yield* Effect.sleep(50);
+        yield* client["threads.startTurn"]({ id: thread.id, text: RUNNERS_QUESTION });
+        yield* Fiber.join(listening);
+        return { page, thread };
+      }),
+    );
+    assert.equal(thread.title, "Runners on example");
+    const packet = JSON.parse(/<evidence>\n(.*)\n<\/evidence>/.exec(fake.inputs[0]?.prompt ?? "")?.[1] ?? "{}");
+    assert.equal(packet.headline, page.installs[0]?.headline);
+    assert.ok(packet.runners.length > 0 && packet.episodes.length > 0);
+    assert.ok(fake.inputs[0]?.prompt.endsWith(`Owner: ${RUNNERS_QUESTION}`));
   }));
 
 test("a turn runs on the model the composer picked, over the account's own, and only on one the server offers", () =>

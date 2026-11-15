@@ -4,14 +4,14 @@ import { listed, plural } from "./jobs.ts";
 import { exitText, type InboxInput, OUT_OF_MEMORY_EXIT } from "./rules.ts";
 
 // Consecutive failed runners at the end of a slot's history before it counts as failing.
-const FAILING_STREAK = 3;
+export const FAILING_STREAK = 3;
 // Docker's own exit code when it can't create or start the container.
 const DOCKER_COULD_NOT_START = 125;
 
 type RunnerEvent = Extract<LauncherEvent, { event: "runner" }>;
-const failedRunner = (event: RunnerEvent) => !event.released && event.exitCode !== 0;
+export const failedRunner = (event: RunnerEvent) => !event.released && event.exitCode !== 0;
 
-const whyFor = (exitCode: number | null) =>
+export const whyFor = (exitCode: number | null) =>
   exitCode === DOCKER_COULD_NOT_START
     ? "Docker couldn't start the container. That usually means the image, or the runtime it needs, is missing or broken."
     : exitCode === OUT_OF_MEMORY_EXIT

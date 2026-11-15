@@ -37,6 +37,7 @@ import * as LocalEndpoint from "../config/LocalEndpoint.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import type * as StateLogs from "../history/StateLogs.ts";
 import type * as Inbox from "../inbox/Inbox.ts";
+import type * as RunnersExplained from "../runners/RunnersExplained.ts";
 import type * as RunnerState from "../runners/RunnerState.ts";
 import { type ProposeInput, Proposals } from "../proposals/Proposals.ts";
 import { runUrlOf } from "../proposals/runUrl.ts";
@@ -150,7 +151,7 @@ const make = Effect.gen(function* () {
   );
   const auth = yield* AuthStore.AuthStore;
   const endpoint = yield* LocalEndpoint.LocalEndpoint;
-  const readers = yield* Effect.context<Inbox.Inbox | StateLogs.StateLogs | RunnerState.RunnerState>();
+  const readers = yield* Effect.context<Inbox.Inbox | StateLogs.StateLogs | RunnerState.RunnerState | RunnersExplained.RunnersExplained>();
   const log = ThreadLog.make(fs, serverDir);
   const scope = yield* Effect.scope;
   // One lock orders every append with its publish, and every snapshot with its subscription, so
