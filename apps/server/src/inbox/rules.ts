@@ -2,7 +2,7 @@ import type { Evidence, InstallState, LauncherEvent, Verdict } from "@runnerbox/
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import type { JobMachine } from "runnerbox/src/tracking/job-machine.ts";
 import { runnerType } from "runnerbox/src/tracking/report.ts";
-import { durationMs, gib, isFailure, jobKey, jobName, median, present, startedMs, unitKey } from "./jobs.ts";
+import { durationMs, memory, memoryOf, isFailure, jobKey, jobName, median, present, startedMs, unitKey } from "./jobs.ts";
 
 // The inbox's judgement: rules over data already recorded that tell the machine's failures from
 // the code's. The person who reads it owns the machines, not the code, so a failure in a job's own
@@ -45,12 +45,12 @@ export function machineCauses(job: JobRecord, input: Pick<InboxInput, "machine" 
   if (machine) {
     const { vmLowMiB, vmTotalMiB, hostLowMiB, hostTotalMiB, vmSwapPeakMiB } = machine;
     if (present(vmLowMiB) && present(vmTotalMiB) && vmLowMiB < vmTotalMiB * LOW_MEMORY_SHARE) {
-      causes.push({ kind: "memory", source: "vm_memory", text: `the VM had only ${gib(vmLowMiB)} of its ${gib(vmTotalMiB)} free` });
+      causes.push({ kind: "memory", source: "vm_memory", text: `the VM had only ${memoryOf(vmLowMiB, vmTotalMiB).part} of its ${memoryOf(vmLowMiB, vmTotalMiB).whole} free` });
     }
     if (present(hostLowMiB) && present(hostTotalMiB) && hostLowMiB < hostTotalMiB * LOW_MEMORY_SHARE) {
-      causes.push({ kind: "memory", source: "host_memory", text: `the host had only ${gib(hostLowMiB)} of its ${gib(hostTotalMiB)} free` });
+      causes.push({ kind: "memory", source: "host_memory", text: `the host had only ${memoryOf(hostLowMiB, hostTotalMiB).part} of its ${memoryOf(hostLowMiB, hostTotalMiB).whole} free` });
     }
-    if (present(vmSwapPeakMiB) && vmSwapPeakMiB >= SWAP_PRESSURE_MIB) causes.push({ kind: "memory", source: "swap", text: `the VM was swapping, with ${gib(vmSwapPeakMiB)} of swap in use` });
+    if (present(vmSwapPeakMiB) && vmSwapPeakMiB >= SWAP_PRESSURE_MIB) causes.push({ kind: "memory", source: "swap", text: `the VM was swapping, with ${memory(vmSwapPeakMiB)} of swap in use` });
   }
   // A runner exits 0 after its one job whether the job passed or not, so any other exit is the
   // container or SSH failing under it.

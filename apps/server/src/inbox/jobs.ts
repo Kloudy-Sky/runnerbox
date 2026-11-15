@@ -23,14 +23,17 @@ export const at = (job: JobRecord) => job.completedAt ?? job.startedAt ?? job.cr
 
 export const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export const plural = (count: number, one: string, many = `${one}s`) => `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
-export const mib = (value: number) => `${Math.round(value).toLocaleString("en-US")} MiB`;
-// "574 MiB", "3.2 GiB", "16 GiB": memory the way the evidence states it. Under 1 GiB it stays in
-// MiB, so a machine that ran dry never reads as "0 GiB".
-export function gib(valueMiB: number) {
-  if (valueMiB < 1024) return mib(valueMiB);
-  const value = valueMiB / 1024;
-  return `${value < 10 ? value.toFixed(1).replace(/\.0$/, "") : Math.round(value).toString()} GiB`;
-}
+// Memory by the same rule as `formatMiB` in apps/web/src/lib/format.ts, so a sentence and the screen
+// beside it never give one machine two numbers: GB to one decimal from 1024 MiB, whole MB below.
+// It's 1024-based, but labelled GB and MB, which is what the owner calls them. Change both together.
+export const memory = (valueMiB: number) => (valueMiB >= 1024 ? `${(valueMiB / 1024).toFixed(1)} GB` : `${Math.round(valueMiB)} MB`);
+
+// A part and its whole in the whole's unit, so one sentence never mixes MB and GB: "0.6 GB of 16.0 GB".
+// A part that would round to 0.0 GB is "less than 0.1 GB", so a machine that ran dry never reads as empty.
+export const memoryOf = (partMiB: number, wholeMiB: number) => ({
+  part: wholeMiB < 1024 ? memory(partMiB) : partMiB < 0.05 * 1024 ? "less than 0.1 GB" : `${(partMiB / 1024).toFixed(1)} GB`,
+  whole: memory(wholeMiB),
+});
 
 // "45 seconds", "12 minutes", "2.5 hours": how long, the way a person says it.
 export function plainDuration(ms: number) {

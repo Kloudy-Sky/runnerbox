@@ -19,7 +19,7 @@ export function fieldWords(path: string) {
   return `${kind[1]}: ${FIELD[kind[2]!] ?? kind[2]}`;
 }
 
-export const valueWords = (path: string, value: ChangeValue) => (path.endsWith("MiB") ? `${value} MiB` : String(value));
+export const valueWords = (path: string, value: ChangeValue) => (path.endsWith("MiB") ? `${value} MB` : String(value));
 
 // One line on where a proposal stands.
 export function statusWords(proposal: Proposal, now = Date.now()) {
