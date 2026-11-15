@@ -36,7 +36,8 @@ export function jobTrends(jobs: readonly JobRecord[], now: number, days: number)
           typicalMs,
           earlierTypicalMs,
           slower: typicalMs !== null && earlierTypicalMs !== null && typicalMs - earlierTypicalMs >= Math.max(SLOWER_MIN_MS, earlierTypicalMs * SLOWER_SHARE),
-          days: Array.from({ length: days }, (_, index) => new Date(since + (index + 1) * DAY_MS).toISOString().slice(0, 10)).map((day) => {
+          // The window touches `days + 1` UTC dates, the first and last only in part.
+          days: Array.from({ length: days + 1 }, (_, index) => new Date(since + index * DAY_MS).toISOString().slice(0, 10)).map((day) => {
             const onDay = byDay.get(day) ?? [];
             return { day, runs: onDay.length, typicalMs: typical(onDay) };
           }),

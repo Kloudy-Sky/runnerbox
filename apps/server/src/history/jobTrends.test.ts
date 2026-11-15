@@ -28,6 +28,7 @@ test("a job is slower when its typical time grew by a quarter and by at least 30
     ["build", 210_000, 68_000, true],
     ["lint", 27_000, 20_000, false],
   ]);
-  assert.equal(trends[0]!.days.length, 7);
+  assert.equal(trends[0]!.days.length, 8);
+  assert.equal(trends[0]!.days.reduce((sum, day) => sum + day.runs, 0), trends[0]!.runs);
   assert.deepEqual(trends[0]!.days.filter((day) => day.runs > 0).map((day) => day.day), ["2026-06-12", "2026-06-13", "2026-06-14"]);
 });

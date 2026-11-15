@@ -16,10 +16,13 @@ function knownKinds(input: InboxInput): Kind[] {
   for (const install of input.installs) {
     for (const kind of install.kinds) kinds.set(kindKey(install.install, kind.name), { install: install.install, kind: kind.name, label: kind.label, runsIn: kind.runsIn });
   }
-  for (const event of input.events) {
-    if (event.event !== "runner" || !present(event.runnerType) || kinds.has(kindKey(event.install, event.runnerType))) continue;
-    const ran = input.jobs.find((job) => job.runner === event.runner);
-    kinds.set(kindKey(event.install, event.runnerType), { install: event.install, kind: event.runnerType, label: ran ? runnerType(ran) : undefined, runsIn: undefined });
+  // A kind gone from the live state is still known by its runners, and labelled by any of them
+  // that ran a job: one that was released unused says nothing about its label.
+  const runners = input.events.filter((event): event is RunnerEvent & { runnerType: string } => event.event === "runner" && present(event.runnerType));
+  for (const [key, events] of Map.groupBy(runners, (event) => kindKey(event.install, event.runnerType))) {
+    if (kinds.has(key)) continue;
+    const ran = input.jobs.find((job) => events.some((event) => event.runner === job.runner));
+    kinds.set(key, { install: events[0]!.install, kind: events[0]!.runnerType, label: ran ? runnerType(ran) : undefined, runsIn: undefined });
   }
   return [...kinds.values()];
 }
@@ -33,10 +36,11 @@ function waitMs(job: JobRecord) {
 
 // The page names a bottleneck only when the inbox's own rule finds one, so the two never disagree.
 function bottleneckOf(cause: WaitCause): Bottleneck | null {
-  const runners = `the ${cause.kinds.join(" and ")} runners`;
+  const kinds = cause.kinds.join(" and ");
+  const runners = `the ${kinds} runners`;
   if (cause.cause === "slots" && cause.slots) {
-    const slots = cause.slots === 1 ? "their one slot was" : cause.slots === 2 ? "both of their slots were" : `all ${cause.slots} of their slots were`;
-    return { cause: "slots", text: `${runners.charAt(0).toUpperCase()}${runners.slice(1)} are the bottleneck: ${slots} busy while jobs waited, with ${plural(cause.peak, "job")} waiting at once.` };
+    const busy = cause.slots === 1 ? `The ${kinds} runner is the bottleneck: it was` : `The ${kinds} runners are the bottleneck: ${cause.slots === 2 ? "both" : `all ${cause.slots}`} were`;
+    return { cause: "slots", text: `${busy} busy while jobs waited, with ${plural(cause.peak, "job")} waiting at once.` };
   }
   if (cause.cause === "memory") return { cause: "memory", text: `Jobs for ${runners} waited for free memory on the machine, not for a slot.` };
   return null;
@@ -54,10 +58,13 @@ export function kindUsage(input: InboxInput, days: number): KindUsageReport {
     const own = input.events.filter((event): event is RunnerEvent => event.event === "runner" && event.install === kind.install && event.runnerType === kind.kind);
     const runners = new Set(own.map((event) => event.runner));
     const onLabel = inRange.filter((job) => runnerType(job) === label);
-    // Jobs this kind ran, by its runners' names when they were recorded, else by label.
-    const ran = onLabel.filter((job): job is JobRecord & { runner: string; startedAt: string } => job.runner !== null && job.startedAt !== null && (runners.size === 0 || runners.has(job.runner)));
+    const serving = kindsServing(label, input);
+    // Jobs this kind ran, by its runners' names. With none recorded, every job on its label is its
+    // only when no other kind serves that label, so no job is counted twice.
+    const byLabel = runners.size === 0 && serving.size === 1;
+    const ran = onLabel.filter((job): job is JobRecord & { runner: string; startedAt: string } => job.runner !== null && job.startedAt !== null && (byLabel || runners.has(job.runner)));
     const running = ran.map((job) => ({ start: Date.parse(job.startedAt), end: job.completedAt ? Date.parse(job.completedAt) : input.now }));
-    const slots = kindsServing(label, input).get(kindKey(kind.install, kind.kind)) ?? null;
+    const slots = serving.get(kindKey(kind.install, kind.kind)) ?? null;
     const waits = onLabel.map(waitMs).filter(present);
     const longWaits = onLabel.filter((job) => (waitMs(job) ?? 0) >= STARVED_AFTER_MS);
     const limits = own.findLast((event) => event.limits)?.limits ?? null;

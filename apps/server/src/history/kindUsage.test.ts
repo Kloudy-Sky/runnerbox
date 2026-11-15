@@ -34,7 +34,7 @@ test("a burst on too few slots is named as the bottleneck by the inbox's own rul
   const jobs = [...[0, 0, 10, 10, 20, 20].map((offset) => job(BURST, BURST + offset * MINUTE + 10_000, 10 * MINUTE)), ...[1, 2, 3, 4].map(() => job(BURST, null, 25 * MINUTE))];
   const kind = usage(jobs);
   assert.equal(kind.slots, 2);
-  assert.deepEqual(kind.bottleneck, { cause: "slots", text: "The linux runners are the bottleneck: both of their slots were busy while jobs waited, with 10 jobs waiting at once." });
+  assert.deepEqual(kind.bottleneck, { cause: "slots", text: "The linux runners are the bottleneck: both were busy while jobs waited, with 10 jobs waiting at once." });
   assert.equal(kind.waitLongestMs, 25 * MINUTE);
   // 30 minutes with both slots taken, out of the day.
   assert.equal(Math.round(kind.allBusyShare! * 24 * 60), 30);
@@ -45,4 +45,17 @@ test("a quiet day names no bottleneck", () => {
   const kind = usage([job(BURST, BURST + 10_000, 10 * MINUTE), job(BURST + 30 * MINUTE, BURST + 30 * MINUTE + 10_000, 10 * MINUTE)]);
   assert.equal(kind.bottleneck, null);
   assert.equal(kind.waitTypicalMs, 10_000);
+});
+
+test("a kind known only by its runners is labelled by any that ran a job, and two kinds on one label don't share jobs", () => {
+  const ran = job(BURST, BURST + 10_000, 10 * MINUTE);
+  // Its first runner was released unused; a later one ran the job. No live state lists it.
+  const released: LauncherEvent = { install: "example", event: "runner", runnerType: "linux", slot: 2, runner: "example-linux-2-1", startedAt: iso(BURST - MINUTE), durationMs: 30_000, exitCode: 0, released: "memory" };
+  const gone = kindUsage({ now: NOW, jobs: [ran], machine: () => undefined, events: [released, ...ranBy([ran])], installs: [] }, 1);
+  assert.deepEqual(gone.kinds.map((kind) => [kind.kind, kind.label, kind.jobs]), [["linux", "example-linux", 1]]);
+  // A second install's kind on the same label, with no runners yet, takes none of its jobs.
+  const other: InstallState = { ...install, install: "other" };
+  const both = kindUsage({ now: NOW, jobs: [ran], machine: () => undefined, events: ranBy([ran]), installs: [install, other] }, 1);
+  assert.deepEqual(both.kinds.map((kind) => [kind.install, kind.jobs]), [["example", 1], ["other", 0]]);
+  assert.equal(both.totalCost?.minutes, 10);
 });
