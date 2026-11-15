@@ -92,14 +92,44 @@ export const turnStartParams = (threadId: string, prompt: string, images: Readon
 });
 
 // The settings without which a declined approval would no longer prove a call didn't run, or Codex
-// would reach past Runnerbox's tools. Runnerbox checks every one before it starts `codex`, and
-// refuses the turn if any is missing, so a later edit here can't quietly drop one.
+// would reach past Runnerbox's tools. Written out here on their own, not taken from appServerArgs
+// or DISABLED_FEATURES, so deleting one there fails this check instead of passing it: removing one
+// means editing this list too, on purpose. Runnerbox checks every one before it starts `codex`.
 const REQUIRED_PARAMS = { sandbox: "read-only", approvalPolicy: "untrusted", approvalsReviewer: "user", ephemeral: true } as const;
-const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean }) => {
-  const args = appServerArgs(turn);
-  const settings = args.flatMap((arg, index) => (args[index - 1] === "-c" ? [arg] : []));
-  return [...DISABLED_FEATURES.map((feature) => `--disable ${feature}`), ...settings];
-};
+const REQUIRED_FEATURES_OFF = [
+  "shell_tool",
+  "unified_exec",
+  "code_mode_host",
+  "multi_agent",
+  "apps",
+  "plugins",
+  "hooks",
+  "browser_use",
+  "browser_use_external",
+  "computer_use",
+  "in_app_browser",
+  "image_generation",
+  "view_image",
+  "goals",
+  "sleep_tool",
+  "tool_suggest",
+  "skill_search",
+  "skill_mcp_dependency_install",
+  "tool_call_mcp_elicitation",
+  "shell_snapshot",
+  "memories",
+];
+const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean }) => [
+  ...REQUIRED_FEATURES_OFF.map((feature) => `--disable ${feature}`),
+  'web_search="disabled"',
+  "project_doc_max_bytes=0",
+  "skills.include_instructions=false",
+  'shell_environment_policy.inherit="none"',
+  `mcp_servers.runnerbox.url=${JSON.stringify(turn.mcpUrl)}`,
+  'mcp_servers.runnerbox.bearer_token_env_var="RUNNERBOX_MCP_TOKEN"',
+  `mcp_servers.runnerbox.enabled_tools=[${allowedTools(turn).map((tool) => JSON.stringify(tool)).join(",")}]`,
+  "mcp_servers.runnerbox.required=true",
+];
 export function launchProblems(
   turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean },
   args: ReadonlyArray<string>,
