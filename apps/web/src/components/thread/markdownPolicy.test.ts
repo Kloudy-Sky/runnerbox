@@ -21,6 +21,10 @@ test("a message can't load anything, run anything or link anywhere the app would
   assert.match(html, /here \(https:\/\/example.com\/steal\)/);
   assert.ok(!/<img|<script|onerror/.test(html), "no image or raw HTML survives");
   assert.match(html, /\[VM memory\]/);
+  // A link with nothing worth showing gets no address: a blanked unsafe one, a footnote, `www.` text.
+  assert.ok(!html.includes("this ("), html);
+  const extras = render("Note[^1] and www.example.com.\n\n[^1]: a run");
+  assert.ok(!/\(#|\(http:\/\/www/.test(extras), extras);
 });
 
 test("what the composer writes renders: bold, code, lists, strikethrough and tasks", () => {

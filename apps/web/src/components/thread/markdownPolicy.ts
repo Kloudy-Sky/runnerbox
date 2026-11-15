@@ -8,8 +8,13 @@ import remarkGfm from "remark-gfm";
 // never fetched, and a link is a link only where the app would open it (a GitHub page, in the
 // system browser); any other shows as text, with its address when the text doesn't already.
 
+// The address is added only when it's a web address the text doesn't already show: not for an
+// empty one (an unsafe link react-markdown blanked), a footnote's `#` link or `www.` autolink text.
+const addressShown = (href: string | undefined, children: ReactNode) =>
+  href !== undefined && /^https?:\/\//i.test(href) && !(typeof children === "string" && href.includes(children));
+
 const asText = (href: string | undefined, children: ReactNode) =>
-  createElement("span", null, children, href !== undefined && children !== href ? ` (${href})` : null);
+  createElement("span", null, children, addressShown(href, children) ? ` (${href})` : null);
 
 const components: Components = {
   a: ({ href, children }) =>
