@@ -1,6 +1,6 @@
 # Third-party notices
 
-Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks, the desktop app's updater (`apps/desktop/src/updates`), the release workflow's nightly and stable channels and their versioning, and the web app's theme and primitives (copied unedited, listed below), its sidebar layout and its slot composition. T3 Code is under the MIT license below.
+Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks, the desktop app's updater (`apps/desktop/src/updates`), the release workflow's nightly and stable channels and their versioning, and the web app's theme, primitives and settings layout (copied, listed below), its sidebar layout and its slot composition. T3 Code is under the MIT license below.
 
 ```
 MIT License
@@ -26,12 +26,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## T3 Code's theme and primitives, copied
+## T3 Code's theme, primitives and settings layout, copied
 
-Copied unedited from T3 Code at commit `4c8cb0445da6c84fa799edee057af355d1e992aa` (`main`, 2026-11-14). A later sync starts from that commit: diff upstream's `apps/web/src` from there and apply it to the files below.
+Copied from T3 Code at commit `4c8cb0445da6c84fa799edee057af355d1e992aa` (`main`, 2026-11-14). A later sync starts from that commit: diff upstream's `apps/web/src` from there and apply it to the files below.
 
 Upstream path under `apps/web/src`, and where it is here (the same path unless noted):
 
+- `components/WorkspaceBreadcrumb.tsx`
+- `components/WorkspacePageContainer.tsx`
+- `components/settings/SettingsGroup.tsx`
+- `components/settings/settingsLayout.tsx`, with T3 Code's settings scopes cut, each cut marked `// runnerbox:`
+- `components/settings/settingsSectionNavigation.ts`
 - `components/ui/autocomplete.tsx`
 - `components/ui/button.tsx`
 - `components/ui/closing-positioner.tsx`
@@ -64,7 +69,7 @@ Upstream path under `apps/web/src`, and where it is here (the same path unless n
 - `lib/visibleAnimation.ts`
 - `lib/windowControlsOverlay.ts`
 
-Runnerbox's differences live in its own files, never in the copies. `apps/web/src/theme/runnerbox.css` overrides the theme. These stand in for T3 Code modules the copies import, with only what the copies use, each marked at its top as runnerbox's:
+Runnerbox's differences live in its own files, never in the copies, except the cuts marked `// runnerbox:` in `settingsLayout.tsx`. `apps/web/src/theme/runnerbox.css` overrides the theme. These stand in for T3 Code modules the copies import, with only what the copies use, each marked at its top as runnerbox's:
 
 - `apps/web/src/composerDraftStore.ts`
 - `apps/web/src/env.ts`

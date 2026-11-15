@@ -1,0 +1,391 @@
+import { SettingsGroup } from "./SettingsGroup";
+// runnerbox: T3 Code's settings scopes (project, machine and checkout overrides, inheritance
+// markers, administrator locks) are about its product, so their imports and logic are cut.
+import { InfoIcon, Undo2Icon } from "lucide-react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { createContext, type ComponentPropsWithoutRef, type ReactNode, useContext } from "react";
+
+import { cn } from "../../lib/utils";
+import { WorkspacePageContainer, type WorkspacePageWidth } from "../WorkspacePageContainer";
+import { Button } from "../ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+declare module "@tanstack/react-router" {
+  interface HistoryState {
+    settingsTargetHighlight?: boolean;
+  }
+}
+
+interface SettingsSearchTargetContextValue {
+  readonly targetId: string | null;
+  readonly highlightTarget: boolean;
+  readonly onTargetHandled: () => void;
+}
+
+const noop = () => undefined;
+const SettingsSearchTargetContext = createContext<SettingsSearchTargetContextValue>({
+  targetId: null,
+  highlightTarget: true,
+  onTargetHandled: noop,
+});
+
+function SettingsSearchTargetProvider({
+  targetId,
+  highlightTarget = true,
+  onTargetHandled = noop,
+  children,
+}: {
+  targetId: string | null;
+  highlightTarget?: boolean;
+  onTargetHandled?: () => void;
+  children: ReactNode;
+}) {
+  const value = { targetId, highlightTarget, onTargetHandled };
+  return <SettingsSearchTargetContext value={value}>{children}</SettingsSearchTargetContext>;
+}
+
+let pendingTargetScroll: AbortController | undefined;
+
+function scrollAndFocusSettingsTarget(target: HTMLElement, highlight = true): void {
+  pendingTargetScroll?.abort();
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const markedScrollTarget =
+    typeof target.querySelector === "function"
+      ? target.querySelector<HTMLElement>(":scope > [data-settings-scroll-target]")
+      : null;
+  const scrollTarget =
+    markedScrollTarget ??
+    (target.tagName === "SECTION" && target.firstElementChild
+      ? (target.firstElementChild as HTMLElement)
+      : target);
+
+  const scroll = () =>
+    scrollTarget.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "center",
+    });
+  scroll();
+  const panel = target.parentElement?.closest<HTMLElement>(
+    '[data-slot="collapsible-panel"][data-open]',
+  );
+  const heightTransition = () =>
+    panel
+      ?.getAnimations()
+      .find(
+        (animation) =>
+          animation instanceof CSSTransition && animation.transitionProperty === "height",
+      );
+  if (panel && (panel.hasAttribute("data-starting-style") || heightTransition())) {
+    const controller = new AbortController();
+    pendingTargetScroll = controller;
+    const { signal } = controller;
+    const finishScroll = () => {
+      if (signal.aborted) return;
+      controller.abort();
+      if (
+        panel.hasAttribute("data-open") &&
+        target.isConnected &&
+        document.activeElement === target
+      ) {
+        scroll();
+      }
+    };
+    const waitForHeight = () => {
+      const transition = heightTransition();
+      if (transition) {
+        void transition.finished.then(finishScroll, () => controller.abort());
+      } else {
+        finishScroll();
+      }
+    };
+    // Base UI clears the starting style before the height transition finishes.
+    if (panel.hasAttribute("data-starting-style")) {
+      const observer = new MutationObserver(() => {
+        if (!panel.hasAttribute("data-starting-style")) {
+          observer.disconnect();
+          waitForHeight();
+        }
+      });
+      observer.observe(panel, { attributes: true, attributeFilter: ["data-starting-style"] });
+      signal.addEventListener("abort", () => observer.disconnect(), { once: true });
+    } else {
+      waitForHeight();
+    }
+    target.addEventListener("blur", () => controller.abort(), { once: true, signal });
+  }
+  target.focus({ preventScroll: true });
+  target.classList.remove("settings-search-target-pulse");
+  if (!highlight || prefersReducedMotion) return;
+  void target.offsetWidth;
+  target.classList.add("settings-search-target-pulse");
+  target.addEventListener("blur", () => target.classList.remove("settings-search-target-pulse"), {
+    once: true,
+  });
+}
+
+export function useSettingsSearchTargetId(): string | null {
+  return useContext(SettingsSearchTargetContext).targetId;
+}
+
+export function useSettingsSearchTarget<T extends HTMLElement>(id: string | undefined) {
+  const { targetId, highlightTarget, onTargetHandled } = useContext(SettingsSearchTargetContext);
+  const isSearchTarget = id !== undefined && id === targetId;
+  const targetRef = (target: T | null) => {
+    if (target && isSearchTarget) {
+      scrollAndFocusSettingsTarget(target, highlightTarget);
+      onTargetHandled();
+    }
+  };
+
+  return targetRef;
+}
+
+export function SettingsSearchTarget({
+  children,
+  // `searchableSetting` names the target for search; as an HTML title it shows a native tooltip.
+  title: _searchTitle,
+  ...targetProps
+}: ComponentPropsWithoutRef<"div">) {
+  const targetRef = useSettingsSearchTarget<HTMLDivElement>(targetProps.id);
+  return (
+    <div {...targetProps} ref={targetRef} tabIndex={targetProps.id ? -1 : targetProps.tabIndex}>
+      {children}
+    </div>
+  );
+}
+
+// Settings pickers reuse composer controls but match the bordered selects beside them.
+export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
+  "min-w-0 max-w-none shrink-0 border-input bg-background font-normal text-foreground shadow-xs/5 hover:bg-accent/50 dark:bg-input/32 [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
+
+// runnerbox: PolicyTooltip cut; it explains T3 Code's background policies.
+
+export function SettingsSection({
+  title,
+  hideTitle = false,
+  icon,
+  titleAction,
+  headerAction,
+  variant = "grouped",
+  children,
+  className,
+  ...sectionProps
+}: ComponentPropsWithoutRef<"section"> & {
+  title: string;
+  hideTitle?: boolean;
+  icon?: ReactNode;
+  titleAction?: ReactNode;
+  headerAction?: ReactNode;
+  variant?: "grouped" | "plain";
+  children: ReactNode;
+}) {
+  const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
+
+  return (
+    <section
+      {...sectionProps}
+      ref={targetRef}
+      tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
+      className={cn(!hideTitle && "space-y-2.5", className)}
+    >
+      {hideTitle ? (
+        <h2 className="sr-only">{title}</h2>
+      ) : (
+        <div
+          data-settings-scroll-target
+          className="flex min-h-7 items-start justify-between gap-4 px-3 sm:px-4"
+        >
+          <div className="flex min-w-0 items-center gap-1">
+            <h2 className="flex min-h-7 items-center gap-2 text-base font-semibold text-foreground">
+              {icon}
+              {title}
+            </h2>
+            {titleAction}
+          </div>
+          <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
+        </div>
+      )}
+      <SettingsGroup data-settings-scroll-target={hideTitle ? "" : undefined} variant={variant}>
+        {children}
+      </SettingsGroup>
+    </section>
+  );
+}
+
+export function SettingsUnavailableGroup({
+  children,
+  message,
+}: {
+  children: ReactNode;
+  message?: ReactNode;
+}) {
+  if (message === undefined) return children;
+
+  return (
+    <div className="border-border/60 bg-muted/20 py-1.5">
+      <div className="flex items-start gap-2 px-3 py-2 text-xs leading-relaxed text-muted-foreground sm:px-4">
+        <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
+        <p>{message}</p>
+      </div>
+      <div className="[&_h3]:opacity-64 [&_p]:opacity-64">{children}</div>
+    </div>
+  );
+}
+
+// runnerbox: projectOverrides cut, with the scopes above.
+
+export function SettingsRow({
+  title,
+  description,
+  status,
+  resetAction,
+  control,
+  children,
+  className,
+  ...rowProps
+}: Omit<ComponentPropsWithoutRef<"div">, "title"> & {
+  title: ReactNode;
+  description?: ReactNode;
+  status?: ReactNode;
+  resetAction?: ReactNode;
+  control?: ReactNode;
+  // runnerbox: the scope, inheritance and lock props are cut.
+  children?: ReactNode;
+}) {
+  const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
+  // runnerbox: with no scopes, the reset and control show as given.
+  const renderedReset = resetAction;
+  const renderedControl = control;
+  const renderedStatus = status;
+
+  return (
+    <div
+      {...rowProps}
+      ref={targetRef}
+      tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
+      data-slot="settings-row"
+      className={cn(
+        "group/settings-row @container/settings-row rounded-xl px-3 sm:px-4 aria-disabled:opacity-64 aria-disabled:[&_*]:text-muted-foreground",
+        children ? "pt-3 pb-1" : "py-3",
+        className,
+      )}
+    >
+      <div className="flex flex-col gap-3 @min-[32rem]/settings-row:grid @min-[32rem]/settings-row:grid-cols-[minmax(0,1fr)_auto] @min-[32rem]/settings-row:items-center @min-[32rem]/settings-row:gap-8">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex min-h-5 items-center gap-1.5">
+            <h3 className="text-sm font-medium text-foreground">{title}</h3>
+            {/* runnerbox: the inheritance marker is cut. */}
+            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+              {renderedReset}
+            </span>
+          </div>
+          {description ? (
+            <p className="max-w-2xl text-pretty text-xs leading-normal text-muted-foreground">
+              {description}
+            </p>
+          ) : null}
+          {renderedStatus ? (
+            <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
+          ) : null}
+        </div>
+        {renderedControl ? (
+          <div className="flex w-full min-w-0 shrink-0 items-center gap-2 @min-[32rem]/settings-row:w-auto @min-[32rem]/settings-row:justify-end @min-[32rem]/settings-row:[&_[data-slot=select-trigger]]:min-w-40">
+            {renderedControl}
+          </div>
+        ) : null}
+      </div>
+      {/* runnerbox: no scopes, so children are never inert. */}
+      {children}
+    </div>
+  );
+}
+
+export function SettingResetButton({
+  label,
+  tooltip = "Reset to default",
+  disabled = false,
+  onClick,
+}: {
+  label: string;
+  tooltip?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-label={`Reset ${label} to default`}
+            disabled={disabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              onClick();
+            }}
+          >
+            <Undo2Icon className="size-3" />
+          </Button>
+        }
+      />
+      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+export function SettingsPageContainer({
+  children,
+  className,
+  width = "readable",
+  searchTargetFallbacks,
+}: {
+  children: ReactNode;
+  className?: string;
+  width?: WorkspacePageWidth;
+  searchTargetFallbacks?: Readonly<Record<string, string | undefined>>;
+}) {
+  const navigate = useNavigate();
+  const hash = useLocation({ select: (location) => location.hash });
+  const highlightTarget = useLocation({
+    select: (location) => location.state.settingsTargetHighlight !== false,
+  });
+  const targetId = hash.replace(/^#/, "") || null;
+  const clearTargetHash = () => {
+    void navigate({
+      hash: "",
+      replace: true,
+      resetScroll: false,
+      hashScrollIntoView: false,
+      state: { settingsTargetHighlight: true },
+    });
+  };
+
+  return (
+    <SettingsSearchTargetProvider
+      targetId={targetId === null ? null : (searchTargetFallbacks?.[targetId] ?? targetId)}
+      highlightTarget={highlightTarget}
+      onTargetHandled={clearTargetHash}
+    >
+      <div
+        className="topbar-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto"
+        data-settings-page-scroll
+      >
+        <WorkspacePageContainer width={width} className={cn("gap-8", className)}>
+          {/* runnerbox: the scope sentence is cut. */}
+          {children}
+        </WorkspacePageContainer>
+      </div>
+    </SettingsSearchTargetProvider>
+  );
+}
+
+export function scrollToSettingsTarget(
+  targetId: string,
+  { highlight = true }: { readonly highlight?: boolean } = {},
+): boolean {
+  const target = document.getElementById(targetId);
+  if (!target) return false;
+  scrollAndFocusSettingsTarget(target, highlight);
+  return true;
+}

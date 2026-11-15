@@ -1,9 +1,11 @@
+import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 import { useStore } from "zustand";
 import { ConnectionState } from "../../components/ConnectionState.tsx";
 import { ConnectSection } from "../../components/ConnectSection.tsx";
 import { PairForm } from "../../components/PairForm.tsx";
-import { SettingsPanel } from "../../components/settings/SettingsPanel.tsx";
+import { SettingsIntro } from "../../components/settings/SettingsIntro.tsx";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "../../components/settings/settingsLayout.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Dialog, DialogDescription, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../../components/ui/dialog.tsx";
 import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
@@ -20,38 +22,45 @@ export function ConnectionsSettings() {
   const setActive = usePreferences((state) => state.setActive);
   const [adding, setAdding] = useState(false);
   return (
-    <SettingsPanel.Root>
-      <SettingsPanel.Header title="Connections" description="The runnerbox servers this app has paired with. Each is one machine and its history." />
-      <SettingsPanel.Group>
+    <SettingsPageContainer>
+      <SettingsIntro>The runnerbox servers this app has paired with. Each is one machine and its history.</SettingsIntro>
+      <SettingsSection
+        title="Environments"
+        headerAction={
+          <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+            <PlusIcon className="size-3.5" /> Add environment
+          </Button>
+        }
+      >
         {environments.map((saved) => (
-          <SettingsPanel.Row
+          <SettingsRow
             key={saved.environmentId}
-            label={
-              <span>
+            title={
+              <>
                 {saved.label}
-                {saved.environmentId === environment?.environmentId ? <span className="text-muted-foreground"> shown now</span> : null}
-              </span>
+                {saved.environmentId === environment?.environmentId ? <span className="font-normal text-muted-foreground"> shown now</span> : null}
+              </>
             }
             description={saved.routes.map((route) => `${routePhrase(route)}, ${routeAddress(route)}`).join("; ")}
-          >
-            <ConnectionState connection={connections[saved.environmentId]} className="text-[13px]" />
-            {saved.environmentId === environment?.environmentId ? null : (
-              <Button variant="ghost-muted" size="xs" onClick={() => setActive(saved.environmentId)}>
-                Show
-              </Button>
-            )}
-            <Button variant="destructive" size="xs" onClick={() => void runtime.remove(saved.environmentId)}>
-              Forget
-            </Button>
-          </SettingsPanel.Row>
+            control={
+              <>
+                <ConnectionState connection={connections[saved.environmentId]} className="text-xs" />
+                {saved.environmentId === environment?.environmentId ? null : (
+                  <Button variant="ghost-muted" size="xs" onClick={() => setActive(saved.environmentId)}>
+                    Show
+                  </Button>
+                )}
+                <Button variant="ghost-destructive" size="xs" onClick={() => void runtime.remove(saved.environmentId)}>
+                  Forget
+                </Button>
+              </>
+            }
+          />
         ))}
-      </SettingsPanel.Group>
-      <div>
-        <Button variant="secondary" onClick={() => setAdding(true)}>
-          Add environment
-        </Button>
+      </SettingsSection>
+      <div className="px-3 sm:px-4">
+        <ConnectSection />
       </div>
-      <ConnectSection />
       <Dialog open={adding} onOpenChange={setAdding}>
         <DialogPopup className="max-w-lg">
           <DialogHeader>
@@ -70,6 +79,6 @@ export function ConnectionsSettings() {
           </DialogPanel>
         </DialogPopup>
       </Dialog>
-    </SettingsPanel.Root>
+    </SettingsPageContainer>
   );
 }
