@@ -5,7 +5,7 @@ import { useStore } from "zustand";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { useServerCapabilityState } from "../hooks/useServerCapabilities.ts";
 import type { RootSearch } from "../lib/search.ts";
-import { BLOCKED_WORDS, isUnderway, needsCommand, SIGNATURE_WORDS, underwayLine, type UpdateRun } from "../lib/serverUpdate.ts";
+import { BLOCKED_WORDS, isUnderway, needsCommand, serverVersionWords, SIGNATURE_WORDS, underwayLine, type UpdateRun } from "../lib/serverUpdate.ts";
 import { runtime } from "../runtime.ts";
 import { dismissUpdate, startUpdate, useServerUpdates } from "../state/serverUpdates.ts";
 import { ServerUpdateCommand } from "./ServerUpdateCommand.tsx";
@@ -104,13 +104,14 @@ export function ServerBehindNotice({ environment, serverVersion, appVersion }: {
   const denied = useUpdateAccess(environment);
   const status = useRpcQuery(["server.updateStatus"], (client) => client["server.updateStatus"](), { enabled: capabilities.serverUpdate && denied === null });
   const unsigned = useReleaseSignature(appVersion, capabilities.serverUpdate && denied === null);
-  const behind = `The server on ${environment.label} runs Runnerbox ${serverVersion}, older than this app (${appVersion}).`;
+  const running = `The server on ${environment.label} runs ${serverVersionWords(serverVersion)}`;
+  const behind = `${running}, older than this app (${appVersion}).`;
   // Until the server says what it answers, neither Update nor the command: it may be either.
   if (!known) return <div className={NOTICE}>{behind}</div>;
   if (!capabilities.serverUpdate) {
     return (
       <div className={NOTICE}>
-        <span>The server on {environment.label} runs Runnerbox {serverVersion}, too old to update from here. Run this on that machine once. After that, Update works from this app.</span>
+        <span>{running}, too old to update from here. Run this on that machine once. After that, Update works from this app.</span>
         <ServerUpdateCommand appVersion={appVersion} />
       </div>
     );
