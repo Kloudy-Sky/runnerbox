@@ -1,4 +1,4 @@
-import { Days, GroupBy, Inbox, InstallState, JobRun, JobSummary, LauncherEvent, MachineSample, Overview, RepoName, StepComparison, WeeklySummary } from "@runnerbox/contracts";
+import { Days, GroupBy, Inbox, InstallState, JobResources, JobRun, JobSummary, LauncherEvent, MachineSample, Overview, RepoName, StepComparison, WeeklySummary } from "@runnerbox/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -54,6 +54,13 @@ export const RunnerboxToolkit = Toolkit.make(
       description: "Median time of each step of one job, per runner type, from passing runs. Shows where a slower runner spends its time.",
       parameters: Schema.Struct({ repo, job: Schema.String, days, by, workflow: Schema.optionalKey(Schema.String) }),
       success: StepComparison,
+    }).annotateMerge(READ_ONLY),
+  Tool.make("job_resources", {
+      ...shared,
+      description:
+        "One job attempt by its jobId from list_runs: its steps placed on its timeline, its container's memory (MiB) and CPU (100 = one CPU) as offsets in ms from the job's start, the VM's free memory, the kind's limits, when it was stopped for memory, and one sentence on what the readings show.",
+      parameters: Schema.Struct({ repo, jobId: Schema.Int }),
+      success: JobResources,
     }).annotateMerge(READ_ONLY),
   Tool.make("list_runs", {
       ...shared,

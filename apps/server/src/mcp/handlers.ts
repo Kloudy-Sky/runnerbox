@@ -23,6 +23,7 @@ export const layer = RunnerboxToolkit.toLayer(
       ci_overview: ({ days }) => history.overview(days).pipe(toFailure),
       job_summaries: (input) => history.jobSummaries(input).pipe(toFailure),
       step_comparison: (input) => history.stepComparison(input).pipe(toFailure),
+      job_resources: (input) => history.jobResources(input).pipe(Effect.mapError((error) => ({ message: error.message }))),
       list_runs: (input) => history.runs(input).pipe(toFailure),
       weekly_summary: (input) => history.weeklySummary(input).pipe(toFailure),
       launcher_events: ({ days }) => launcher.events(days).pipe(toFailure),

@@ -1,4 +1,4 @@
-import type { GroupBy, JobRun, JobSummary, Overview, StepComparison, WeeklySummary } from "@runnerbox/contracts";
+import type { GroupBy, JobResources, JobRun, JobSummary, Overview, StepComparison, WeeklySummary } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -6,12 +6,18 @@ import * as Layer from "effect/Layer";
 import { elapsedMs } from "runnerbox/src/tracking/job-record.ts";
 import { summarizeLauncher } from "runnerbox/src/tracking/launcher-summary.ts";
 import { summarizeMachines } from "runnerbox/src/tracking/machine-summary.ts";
-import { compareSteps, percentile, runnerType, starved, summarizeJobs } from "runnerbox/src/tracking/report.ts";
+import { compareSteps, percentile, summarizeJobs } from "runnerbox/src/tracking/report.ts";
 import { verdictsByJobId } from "../inbox/rules.ts";
+import * as RunnerState from "../runners/RunnerState.ts";
+import { JobNotFound } from "./JobNotFound.ts";
+import { jobResources } from "./jobResources.ts";
+import { toJobRun } from "./jobRun.ts";
 import { machineLookup } from "./machineLookup.ts";
 import * as StateLogs from "./StateLogs.ts";
 
 const DAY_MS = 24 * 60 * 60_000;
+// The longest window the app or the agent asks for, so any job they list can be opened.
+const JOB_LOOKBACK_DAYS = 90;
 
 type Window = { readonly repo: string; readonly days: number };
 type Filter = Window & { readonly by: GroupBy; readonly workflow?: string };
@@ -27,11 +33,13 @@ export class JobHistory extends Context.Service<
     readonly stepComparison: (input: Filter & { readonly job: string }) => Effect.Effect<StepComparison, StateLogs.LogReadError>;
     readonly runs: (input: Window & { readonly limit: number }) => Effect.Effect<ReadonlyArray<JobRun>, StateLogs.LogReadError>;
     readonly weeklySummary: (input: Window & { readonly by: GroupBy }) => Effect.Effect<WeeklySummary, StateLogs.LogReadError>;
+    readonly jobResources: (input: { readonly repo: string; readonly jobId: number }) => Effect.Effect<JobResources, StateLogs.LogReadError | JobNotFound>;
   }
 >()("runnerbox/server/JobHistory") {}
 
 const make = Effect.gen(function* () {
   const logs = yield* StateLogs.StateLogs;
+  const runnerState = yield* RunnerState.RunnerState;
   const since = (days: number) => Clock.currentTimeMillis.pipe(Effect.map((now) => now - days * DAY_MS));
   const inWorkflow = (workflow: string | undefined) => (record: { workflow: string | null }) =>
     workflow === undefined || record.workflow === workflow;
@@ -75,18 +83,7 @@ const make = Effect.gen(function* () {
     return jobs
       .toSorted((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, limit)
-      .map((record) => {
-        const { v: _v, labels, steps: _steps, ...job } = record;
-        return {
-          ...job,
-          runnerType: runnerType({ labels }),
-          headSha: job.headSha ?? null,
-          durationMs: elapsedMs(job.startedAt, job.completedAt),
-          queueMs: job.runner === null ? null : elapsedMs(job.createdAt, job.startedAt),
-          verdict: verdicts.get(job.jobId) ?? null,
-          starved: starved(record),
-        };
-      });
+      .map((record) => toJobRun(record, verdicts.get(record.jobId) ?? null));
   });
 
   const weeklySummary = Effect.fn("JobHistory.weeklySummary")(function* ({ repo, days, by }: Window & { readonly by: GroupBy }) {
@@ -104,7 +101,20 @@ const make = Effect.gen(function* () {
     };
   });
 
-  return JobHistory.of({ repos: logs.repos, overview, jobSummaries, stepComparison, runs, weeklySummary });
+  const resources = Effect.fn("JobHistory.jobResources")(function* ({ repo, jobId }: { readonly repo: string; readonly jobId: number }) {
+    const now = yield* Clock.currentTimeMillis;
+    const jobs = yield* logs.jobs(repo, now - JOB_LOOKBACK_DAYS * DAY_MS);
+    const job = jobs.find((record) => record.jobId === jobId);
+    if (!job) return yield* new JobNotFound({ jobId });
+    // Readings from a minute before the job, so its first sample isn't cut off by the filter.
+    const from = Date.parse(job.startedAt ?? job.createdAt) - 60_000;
+    const events = yield* logs.events(from);
+    const samples = yield* logs.samples(from);
+    const verdict = verdictsByJobId(jobs, { machine: machineLookup(samples), events }).get(jobId) ?? null;
+    return jobResources({ now, job, verdict, events, installs: yield* runnerState.current, samples, containerSamples: yield* logs.containerSamples(from) });
+  });
+
+  return JobHistory.of({ repos: logs.repos, overview, jobSummaries, stepComparison, runs, weeklySummary, jobResources: resources });
 });
 
 export const layer = Layer.effect(JobHistory, make);

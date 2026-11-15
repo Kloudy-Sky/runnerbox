@@ -43,3 +43,19 @@ test("/mcp takes only agent tokens, and an agent token can't open the app's sock
   const refused = await Effect.runPromise(Effect.flip(issueTicket(server.baseUrl, await server.mintMcpToken())));
   assert.equal(refused.reason, "unauthorized");
 });
+
+test("the agent reads a job's container readings and the sentence about them", async () => {
+  const { request } = await mcpSession(await server.mintMcpToken());
+  const call = async (name: string, args: object) => {
+    const { body } = await request("tools/call", { name, arguments: args });
+    return body.result.structuredContent ?? JSON.parse(body.result.content[0].text);
+  };
+  const runs: { jobId: number; conclusion: string; verdict: string | null }[] = await call("list_runs", { repo: "owner/name", days: 1, limit: 500 });
+  // The fixtures' test job whose container was killed for memory 40 minutes ago.
+  const killed = runs.find((run) => run.conclusion === "failure" && run.verdict === "infra")!;
+  const resources = await call("job_resources", { repo: "owner/name", jobId: killed.jobId });
+  assert.equal(resources.coverage, "sampled");
+  assert.ok(resources.points.length >= 15);
+  assert.deepEqual(resources.limits, { memoryMiB: 3686, cpus: 4 });
+  assert.deepEqual(resources.sentence, { case: "stopped_for_memory", text: "The container was stopped for using too much memory during Test, at its 3.6 GiB limit.", step: "Test" });
+});

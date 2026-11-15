@@ -18,7 +18,7 @@ export type InboxInput = {
 };
 
 // The VM or host had less than this share of its memory available at some sample during the job.
-const LOW_MEMORY_SHARE = 0.1;
+export const LOW_MEMORY_SHARE = 0.1;
 const SWAP_PRESSURE_MIB = 1024;
 // A container killed by the kernel for memory exits 128 + 9.
 export const OUT_OF_MEMORY_EXIT = 137;

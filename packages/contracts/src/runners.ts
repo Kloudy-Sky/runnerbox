@@ -18,6 +18,8 @@ export const LauncherEvent = Schema.Union([
     released: Schema.Union([Schema.Literal(false), Schema.Literals(["memory", "image"])]),
     // The image tag the runner's container ran on, when `up` recorded it.
     image: Schema.optionalKey(Schema.String),
+    // The kind's container limits when it ran, when `up` recorded them.
+    limits: Schema.optionalKey(Schema.Struct({ memoryMiB: Schema.Number, cpus: Schema.Number })),
   }),
   Schema.Struct({ ...Base, event: Schema.Literal("memory_wait"), slot: Schema.Number }),
   Schema.Struct({ ...Base, event: Schema.Literal("image_build"), tag: Schema.String, ok: Schema.Boolean }),
@@ -75,6 +77,8 @@ export const KindState = Schema.Struct({
   rebuildDays: Schema.optionalKey(Schema.NullOr(Schema.Number)),
   builtAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
   tools: Schema.optionalKey(Schema.NullOr(Schema.Array(ImageTool))),
+  // Where its jobs run. Only `container` jobs are sampled. Missing from an older `up`.
+  runsIn: Schema.optionalKey(Schema.Literals(["container", "job_vm", "host"])),
   slots: Schema.Array(SlotState),
 });
 
