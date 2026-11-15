@@ -15,7 +15,7 @@ import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } fro
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
-import { ReleaseVersion, ServerUpdateError, UpdateProgress, UpdateStatus } from "./update.ts";
+import { ReleaseCheck, ReleaseVersion, ServerUpdateError, UpdateProgress, UpdateStatus } from "./update.ts";
 import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
@@ -106,6 +106,7 @@ export const RPC_METHODS = {
   serverMethods: "server.methods",
   serverUpdateStatus: "server.updateStatus",
   serverUpdate: "server.update",
+  serverCheckRelease: "server.checkRelease",
   proposalsList: "proposals.list",
   proposalsApprove: "proposals.approve",
   proposalsDecline: "proposals.decline",
@@ -255,6 +256,9 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.serverUpdateStatus, { success: UpdateStatus, error: AuthorizationError }),
   // Moves this server to `version`, a newer release of the repository it was built from, and
   // restarts it there. A second call for the same version while one runs follows the same steps.
+  // Whether `version` can be installed from here: signed by a key this server trusts, or not
+  // needing to be. It reads the release's checksum and signature, not runnerbox.js itself.
+  Rpc.make(RPC_METHODS.serverCheckRelease, { payload: { version: ReleaseVersion }, success: ReleaseCheck, error: Schema.Union([AuthorizationError, ServerUpdateError]) }),
   Rpc.make(RPC_METHODS.serverUpdate, { payload: { version: ReleaseVersion }, success: UpdateProgress, error: Schema.Union([AuthorizationError, ServerUpdateError]), stream: true }),
 ).middleware(RpcScopeAuthorization);
 
@@ -326,6 +330,7 @@ export const RPC_SCOPES = {
   // Connect sessions and MCP tokens never do, and a thread's agent turns are MCP tokens.
   [RPC_METHODS.serverUpdateStatus]: ACCESS,
   [RPC_METHODS.serverUpdate]: ACCESS,
+  [RPC_METHODS.serverCheckRelease]: ACCESS,
   // Reading proposals is part of threads; deciding one changes how runners run.
   [RPC_METHODS.proposalsList]: THREADS,
   [RPC_METHODS.proposalsApprove]: [...THREADS, "changes:approve"],

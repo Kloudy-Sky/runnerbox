@@ -110,6 +110,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "server.about": () => Effect.succeed({ label: identity.descriptor.label, serverVersion: identity.descriptor.serverVersion, protocolVersion: identity.descriptor.protocolVersion }),
         "server.updateStatus": () => serverUpdate.status,
         "server.update": ({ version }) => serverUpdate.update(version),
+        "server.checkRelease": ({ version }) => serverUpdate.checkRelease(version),
       };
     }),
   );

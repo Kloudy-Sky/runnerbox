@@ -17,6 +17,8 @@ const supervisor = new Supervisor({
   handoffMs: 50,
   preflightTimeoutMs: 2_000,
   trialTimeoutMs: Number(process.env.TRIAL_TIMEOUT_MS ?? 3_000),
+  // The keys releases must be signed by, as JSON; none unless a test gives them.
+  releaseKeys: JSON.parse(process.env.TEST_RELEASE_KEYS ?? "[]"),
   onStep: async (step: UpdateStep) => {
     writeFileSync(join(dirname(file), `step-${step}`), "");
     if (step === pauseAt) await new Promise(() => undefined);

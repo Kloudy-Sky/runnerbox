@@ -198,12 +198,58 @@ jobs:
             apps/desktop/release/*-mac.yml
           if-no-files-found: error
 
+  # The only job that can read the key releases are signed with: the `release` environment holds
+  # it, and only main may use it, so a pushed tag's release stays unsigned. It gets the cli
+  # artifact alone, writes runnerbox.js.sig, and its token can only read. Until release-keys.json
+  # has a key, it signs nothing and says so.
+  sign:
+    needs: [plan, cli]
+    if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli
+          path: assets
+      - name: Sign runnerbox.js
+        env:
+          RUNNERBOX_RELEASE_SIGNING_KEY: ${{ secrets.RUNNERBOX_RELEASE_SIGNING_KEY }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          keys="$(node -e 'console.log(JSON.parse(require("node:fs").readFileSync("release-keys.json", "utf8")).keys.length)')"
+          if [ "$keys" = "0" ]; then
+            echo "runnerbox.js: unsigned, because release-keys.json has no key yet. Servers built from this release don't ask for a signature." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "$RUNNERBOX_RELEASE_SIGNING_KEY" ]; then
+            echo "::error::release-keys.json has a key, but the release environment has no RUNNERBOX_RELEASE_SIGNING_KEY."
+            exit 1
+          fi
+          node scripts/release-signature.ts sign "$VERSION" assets
+          echo "runnerbox.js: signed." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signature
+          path: assets/runnerbox.js.sig
+          if-no-files-found: ignore
+
   publish:
-    needs: [plan, cli, linux, mac]
-    # A pushed tag skips the desktop jobs; nightly and stable need all of them.
+    needs: [plan, cli, linux, mac, sign]
+    # A pushed tag skips the desktop jobs and signing; nightly and stable need all of them.
     if: >-
       always() && needs.cli.result == 'success' &&
-      (needs.plan.outputs.mode == 'cli' || (needs.linux.result == 'success' && needs.mac.result == 'success'))
+      (needs.plan.outputs.mode == 'cli' || (needs.linux.result == 'success' && needs.mac.result == 'success' && needs.sign.result == 'success'))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -213,6 +259,23 @@ jobs:
         with:
           path: assets
           merge-multiple: true
+      # A release that should be signed and isn't would be refused by every server that checks,
+      # so it isn't published.
+      - if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          path: source
+          persist-credentials: false
+      - if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - if: needs.plan.outputs.mode == 'nightly' || needs.plan.outputs.mode == 'stable'
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        working-directory: source
+        run: node scripts/release-signature.ts verify "$VERSION" ../assets
       # Created as a draft with every file, then published, so a feed never names a missing file.
       - env:
           GH_TOKEN: ${{ github.token }}

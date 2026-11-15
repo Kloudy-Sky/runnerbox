@@ -17,9 +17,11 @@ export const githubReleases = (repository: string): ReleaseSource => ({
 // runnerbox.js is about 10 MB. Anything past this isn't one.
 export const MAX_BYTES = 64 * 1024 * 1024;
 
+type DownloadFailure = "download-failed" | "disk-full" | "unsigned" | "bad-signature";
+
 export class DownloadError extends Error {
-  readonly kind: "download-failed" | "disk-full";
-  constructor(kind: "download-failed" | "disk-full", message: string) {
+  readonly kind: DownloadFailure;
+  constructor(kind: DownloadFailure, message: string) {
     super(message);
     this.kind = kind;
   }
@@ -54,6 +56,17 @@ export async function fetchChecksum(source: ReleaseSource, version: string, sign
   const match = /^([0-9a-f]{64})\s+\*?runnerbox\.js\s*$/m.exec(text);
   if (!match?.[1]) throw new DownloadError("download-failed", "The release's checksum file isn't one sha256sum wrote for runnerbox.js.");
   return match[1];
+}
+
+// The release's runnerbox.js.sig, or null when it has none.
+export async function fetchSignature(source: ReleaseSource, version: string, signal: AbortSignal) {
+  try {
+    const response = await get(source, `${source.releaseUrl(version)}runnerbox.js.sig`, signal);
+    return (await response.text()).slice(0, 200).trim();
+  } catch (error) {
+    if (error instanceof DownloadError && /answered 404/.test(error.message)) return null;
+    throw error;
+  }
 }
 
 const isFullDisk = (error: unknown) => error instanceof Error && "code" in error && (error.code === "ENOSPC" || error.code === "EDQUOT");

@@ -87,3 +87,11 @@ export function staleInstalls(installs: ReadonlyArray<InstallState>, lastUpdate:
 
 // The install's name comes from the server, so it's quoted for the shell whatever it holds.
 export const restartCommand = (install: string) => `systemctl --user restart '${`runnerbox@${install}`.replaceAll("'", `'\\''`)}'`;
+
+// Why the app won't offer Update for a release, when its signature is the reason. A release with
+// none, as one made by pushing a tag, can still go on by hand; one signed by a key the server
+// doesn't trust shouldn't be installed at all, so it gets no command.
+export const SIGNATURE_WORDS = {
+  missing: "This release isn't signed, so it can't be installed from here. Run the command on the machine instead.",
+  invalid: "This release's signature isn't by a key this server trusts, so it can't be installed.",
+} as const;

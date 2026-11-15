@@ -5,7 +5,7 @@ import { useStore } from "zustand";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { useServerCapabilityState } from "../hooks/useServerCapabilities.ts";
 import type { RootSearch } from "../lib/search.ts";
-import { BLOCKED_WORDS, isUnderway, needsCommand, underwayLine, type UpdateRun } from "../lib/serverUpdate.ts";
+import { BLOCKED_WORDS, isUnderway, needsCommand, SIGNATURE_WORDS, underwayLine, type UpdateRun } from "../lib/serverUpdate.ts";
 import { runtime } from "../runtime.ts";
 import { dismissUpdate, startUpdate, useServerUpdates } from "../state/serverUpdates.ts";
 import { ServerUpdateCommand } from "./ServerUpdateCommand.tsx";
@@ -23,6 +23,18 @@ export function useUpdateAccess(environment: SavedEnvironment) {
   if (route?.kind === "connect") return "Updating needs a device paired by address or SSH. Connect only reads.";
   if (!environment.scopes.includes("access:write")) return "This device was paired without the right to manage the server, so it can't update it.";
   return null;
+}
+
+// What stops this app's release from being installed from here, if its signature does:
+// `pending` until a server that checks has said. Null when nothing does, including on an older
+// server that doesn't check signatures.
+export function useReleaseSignature(appVersion: string, enabled: boolean) {
+  const { capabilities } = useServerCapabilityState();
+  const asking = enabled && capabilities.checkRelease;
+  const check = useRpcQuery(["server.checkRelease", appVersion], (client) => client["server.checkRelease"]({ version: appVersion }), { enabled: asking });
+  const signature = check.data?.signature;
+  if (asking && check.isPending) return "pending" as const;
+  return signature === "missing" || signature === "invalid" ? signature : null;
 }
 
 export const useUpdateRun = (environmentId: string) => useServerUpdates((state) => state.runs[environmentId]);
@@ -91,6 +103,7 @@ export function ServerBehindNotice({ environment, serverVersion, appVersion }: {
   const { capabilities, known } = useServerCapabilityState();
   const denied = useUpdateAccess(environment);
   const status = useRpcQuery(["server.updateStatus"], (client) => client["server.updateStatus"](), { enabled: capabilities.serverUpdate && denied === null });
+  const unsigned = useReleaseSignature(appVersion, capabilities.serverUpdate && denied === null);
   const behind = `The server on ${environment.label} runs Runnerbox ${serverVersion}, older than this app (${appVersion}).`;
   // Until the server says what it answers, neither Update nor the command: it may be either.
   if (!known) return <div className={NOTICE}>{behind}</div>;
@@ -102,6 +115,15 @@ export function ServerBehindNotice({ environment, serverVersion, appVersion }: {
       </div>
     );
   }
+  if (unsigned === "missing" || unsigned === "invalid") {
+    return (
+      <div className={NOTICE}>
+        <span>{behind}</span>
+        <span className="text-muted-foreground">{SIGNATURE_WORDS[unsigned]}</span>
+        {unsigned === "missing" ? <ServerUpdateCommand appVersion={appVersion} /> : null}
+      </div>
+    );
+  }
   const blocker = status.data?.blocker ?? null;
   const why = denied ?? (blocker === null ? null : BLOCKED_WORDS[blocker]);
   return (
@@ -110,7 +132,7 @@ export function ServerBehindNotice({ environment, serverVersion, appVersion }: {
         <span className="flex-1">{behind}</span>
         {blocker === "checkout" ? null : (
           // Disabled, it's grey as well as faded, so it never reads as the thing to press.
-          <Button size="xs" variant={why === null ? "default" : "secondary"} disabled={why !== null || !status.isSuccess} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
+          <Button size="xs" variant={why === null ? "default" : "secondary"} disabled={why !== null || !status.isSuccess || unsigned === "pending"} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
             Update
           </Button>
         )}

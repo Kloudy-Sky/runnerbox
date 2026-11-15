@@ -49,10 +49,16 @@ export type UpdateProgress = typeof UpdateProgress.Type;
 // An update that didn't start, with the old version still serving. `detail` is the sentence to
 // show; `reason` is for the app to pick what to offer next.
 export class ServerUpdateError extends Schema.TaggedError<ServerUpdateError>()("ServerUpdateError", {
-  reason: Schema.Union([UpdateBlocker, Schema.Literals(["not-newer", "download-failed", "checksum-mismatch", "disk-full", "refused"])]),
+  reason: Schema.Union([UpdateBlocker, Schema.Literals(["not-newer", "download-failed", "checksum-mismatch", "disk-full", "refused", "unsigned", "bad-signature"])]),
   detail: Schema.String,
 }) {
   override get message() {
     return this.detail;
   }
 }
+
+// Whether a release can be installed from the app, asked before offering Update. `not-required`:
+// this server trusts no signing key yet. `missing`: it does, and the release has no signature, as
+// a release made by pushing a tag. `invalid`: its signature isn't by a key the server trusts.
+export const ReleaseCheck = Schema.Struct({ signature: Schema.Literals(["not-required", "valid", "missing", "invalid"]) });
+export type ReleaseCheck = typeof ReleaseCheck.Type;

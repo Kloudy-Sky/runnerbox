@@ -1,6 +1,6 @@
 // Serves fixture logs with a scripted agent, for driving the app's threads by hand without a
 // Claude login:
-//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex] [--updates commit|rollback] [--runners <case>]
+//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex] [--updates commit|rollback|unsigned] [--runners <case>]
 // `--older` answers as a server from before the composer's model menu, attachments, references,
 // queue and delete, to see the app hold back what such a server can't do. `--codex` runs the real
 // Codex adapter beside the scripted Claude one, with a Codex home under <dir>, signed in with
@@ -120,7 +120,7 @@ await startFakeUp(join(stateDir, "example"), {
 
 // Set by an update the app runs, to stop the server and start it again.
 let restart = Deferred.makeUnsafe<void>();
-if (values.updates !== undefined && values.updates !== "commit" && values.updates !== "rollback") throw new Error("--updates is commit or rollback.");
+if (values.updates !== undefined && values.updates !== "commit" && values.updates !== "rollback" && values.updates !== "unsigned") throw new Error("--updates is commit, rollback or unsigned.");
 const updates = values.updates ? await fakeUpdates(join(resolve(target), "install"), stateDir, values.updates, () => Deferred.doneUnsafe(restart, Exit.void)) : undefined;
 
 const serve = (first: boolean) =>

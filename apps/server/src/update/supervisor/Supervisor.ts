@@ -3,6 +3,8 @@ import { rm } from "node:fs/promises";
 import { constants } from "node:os";
 import { lastLine, preflight } from "./preflight.ts";
 import { type ChildContext, type ChildMessage, decodeChildMessage, SUPERVISED_ENV, SUPERVISOR_PROTOCOL, type SupervisorMessage } from "./protocol.ts";
+import { builtInReleaseKeys } from "./releaseKeys.ts";
+import { type ReleaseKey, verifyRelease } from "./signature.ts";
 import { keepPrevious, newUpdateId, putInPlace, settle, sha256File, type UpdateRecord, updatePaths, writeRecord } from "./updateFiles.ts";
 import { compareVersions, isExactVersion } from "./version.ts";
 
@@ -20,6 +22,9 @@ export type SupervisorOptions = {
   readonly handoffMs?: number;
   readonly preflightTimeoutMs?: number;
   readonly trialTimeoutMs?: number;
+  // The keys a release must be signed by; this build's own unless a test says otherwise. None
+  // asks for no signature.
+  readonly releaseKeys?: ReadonlyArray<ReleaseKey>;
   readonly onStep?: (step: UpdateStep) => Promise<void>;
 };
 
@@ -201,6 +206,11 @@ export class Supervisor {
   // Null when the download is the one checked and runs here.
   async #check(active: Managed, request: Extract<ChildMessage, { type: "update" }>, staged: string): Promise<string | null> {
     if ((await sha256File(staged)) !== request.sha256) return "The download changed after it was checked.";
+    // Checked here as well as in the server, with the keys of the version that's running.
+    const keys = this.#options.releaseKeys ?? builtInReleaseKeys;
+    if (keys.length > 0 && (request.signature === null || !verifyRelease(keys, request.version, request.sha256, request.signature))) {
+      return "This release isn't signed with a key this version trusts, so it wasn't installed.";
+    }
     const { node, nodeArgs, env, file } = this.#options;
     const timeoutMs = this.#options.preflightTimeoutMs ?? PREFLIGHT_TIMEOUT_MS;
     const failed = await preflight({ node, nodeArgs, env, file, staged, version: request.version, timeoutMs, signal: this.#abort.signal });

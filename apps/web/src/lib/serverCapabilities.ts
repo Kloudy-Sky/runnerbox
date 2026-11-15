@@ -21,9 +21,11 @@ export type Capabilities = {
   readonly speed: boolean;
   // `runners.explain`: the Runners page in plain words. Without it, the page shows the raw records.
   readonly runnersExplained: boolean;
+  // `server.checkRelease`: the server can say whether a release is signed before Update is offered.
+  readonly checkRelease: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, runnersExplained: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, runnersExplained: false, checkRelease: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -40,5 +42,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     serverUpdate: has(RPC_METHODS.serverUpdate) && has(RPC_METHODS.serverUpdateStatus),
     speed: has(RPC_METHODS.historyKindUsage) && has(RPC_METHODS.historyJobTrends),
     runnersExplained: has(RPC_METHODS.runnersExplain),
+    checkRelease: has(RPC_METHODS.serverCheckRelease),
   };
 }

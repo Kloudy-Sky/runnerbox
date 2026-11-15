@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -19,7 +19,9 @@ const CHUNK_MS = 150;
 // for the restart, and records how it ended: put in place, or the new version not starting. It
 // also keeps a container install and a host install live, both started before any update, so
 // About lists them as still on the old version.
-export async function fakeUpdates(dir: string, stateDir: string, outcome: "commit" | "rollback", restart: () => void): Promise<UpdateWiring> {
+// `unsigned` trusts a throwaway signing key and serves a release with no signature, as a release
+// made by pushing a tag is, so the app says it can't be installed from here.
+export async function fakeUpdates(dir: string, stateDir: string, outcome: "commit" | "rollback" | "unsigned", restart: () => void): Promise<UpdateWiring> {
   const file = join(dir, "runnerbox.js");
   await mkdir(dir, { recursive: true });
   await writeFile(file, "// runnerbox.js, as installed\n");
@@ -68,7 +70,9 @@ export async function fakeUpdates(dir: string, stateDir: string, outcome: "commi
       return record.id;
     }),
   );
+  const keys = outcome === "unsigned" ? [{ id: "fake", publicKey: generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString() }] : [];
   return {
+    keys,
     source: { releaseUrl: (version) => `http://127.0.0.1:${port}/v${version}/`, redirectAllowed: (url) => url.host === `127.0.0.1:${port}` },
     supervision,
   };

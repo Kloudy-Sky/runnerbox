@@ -15,10 +15,11 @@ export type ChildContext =
   | { readonly protocol: number; readonly file: string; readonly role: "trial"; readonly updateId: string };
 
 // Server to supervisor. `ready` once every listener is bound. `update` asks to move to a release
-// the server has downloaded to `path` and checked against `sha256`.
+// the server has downloaded to `path` and checked against `sha256`, with the release's signature,
+// or null when it has none. A server from before signing sends no signature at all.
 export type ChildMessage =
   | { readonly type: "ready"; readonly version: string }
-  | { readonly type: "update"; readonly version: string; readonly path: string; readonly sha256: string };
+  | { readonly type: "update"; readonly version: string; readonly path: string; readonly sha256: string; readonly signature: string | null };
 
 // Supervisor to server, answering `update`. Once accepted, the supervisor stops this server.
 export type SupervisorMessage = { readonly type: "update-accepted"; readonly id: string } | { readonly type: "update-refused"; readonly reason: string };
@@ -30,7 +31,8 @@ export function decodeChildMessage(value: unknown): ChildMessage | null {
   if (!isRecord(value)) return null;
   if (value.type === "ready" && isText(value.version, 256)) return { type: "ready", version: value.version };
   if (value.type === "update" && isText(value.version, 256) && isText(value.path) && typeof value.sha256 === "string" && /^[0-9a-f]{64}$/.test(value.sha256)) {
-    return { type: "update", version: value.version, path: value.path, sha256: value.sha256 };
+    const signature = isText(value.signature, 200) ? value.signature : null;
+    return { type: "update", version: value.version, path: value.path, sha256: value.sha256, signature };
   }
   return null;
 }
