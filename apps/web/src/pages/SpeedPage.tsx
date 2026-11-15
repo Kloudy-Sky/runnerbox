@@ -41,6 +41,7 @@ export function SpeedPage() {
   // The three calls answer at different times. Drawn as each arrived, the headroom chart showed
   // under an empty table and was pushed down twice, so the page waits for all of them once.
   const ready = summary.data !== undefined && samples.data !== undefined && steps.data !== undefined && !(steps.isPlaceholderData && steps.data.of === undefined);
+  const reloading = summary.isPlaceholderData || samples.isPlaceholderData || steps.isPlaceholderData;
   const installs = Map.groupBy(samples.data ?? [], (sample) => sample.install);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pb-6">
@@ -56,7 +57,9 @@ export function SpeedPage() {
         ))}
       </PageHeader.Root>
       {ready ? (
-      <div className="px-6 text-[13px]">
+      // While a new range or grouping loads, the last answer stays and dims after 150 ms, so a
+      // fast reload never shows.
+      <div className={`px-6 text-[13px] transition-opacity ${reloading ? "opacity-40 delay-150" : ""}`}>
       <Heading>Jobs by runner time</Heading>
       <table className="w-full border-collapse">
         <thead className="text-left">
