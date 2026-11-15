@@ -19,3 +19,6 @@ export function runnerPhase(phase: SlotPhase, job?: string | null) {
       return { text: "stopped", tone: "text-muted-foreground" };
   }
 }
+
+// A runner an older Runnerbox reports as registered, which it can't tell apart from one on a job.
+export const READY_OR_RUNNING = { text: "ready or running a job", tone: "text-muted-foreground" } as const;
