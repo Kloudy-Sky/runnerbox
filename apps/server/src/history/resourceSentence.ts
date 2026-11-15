@@ -1,5 +1,5 @@
 import type { ContainerLimits, PlacedStep, ResourceCoverage, ResourcePoint, ResourceSentence, VmPoint } from "@runnerbox/contracts";
-import { gib, plural } from "../inbox/jobs.ts";
+import { memory, memoryOf, plural } from "../inbox/jobs.ts";
 import { LOW_MEMORY_SHARE } from "../inbox/rules.ts";
 import { stepAt } from "./placedSteps.ts";
 
@@ -52,7 +52,7 @@ export function resourceSentence(input: SentenceInput): ResourceSentence | null 
   // The runner's event says it was stopped, with or without readings of it.
   if (input.stoppedForMemory) {
     const { step } = input.stoppedForMemory;
-    const limit = limits ? `, at its ${gib(limits.memoryMiB)} limit` : "";
+    const limit = limits ? `, at its ${memory(limits.memoryMiB)} limit` : "";
     return say("stopped_for_memory", `The container was stopped for using too much memory${step ? ` during ${step}` : " while this job ran"}${limit}.`, step);
   }
   const unsampled = NOT_SAMPLED[input.coverage];
@@ -62,7 +62,7 @@ export function resourceSentence(input: SentenceInput): ResourceSentence | null 
     const reached = points.find((point) => point.memMiB >= limits.memoryMiB * MEMORY_AT_LIMIT);
     if (reached) {
       const step = stepAt(steps, reached.offsetMs)?.name ?? null;
-      return say("memory_limit", `Memory reached this kind's ${gib(limits.memoryMiB)} limit${step ? ` in ${step}` : " while this job ran"}.`, step);
+      return say("memory_limit", `Memory reached this kind's ${memory(limits.memoryMiB)} limit${step ? ` in ${step}` : " while this job ran"}.`, step);
     }
     const job = input.durationMs ?? 0;
     const bound = steps.find((step) => step.exact && (step.ms ?? 0) >= job * CPU_STEP_SHARE && within(points, step).length >= MIN_READINGS && atLimit(within(points, step), limits));
@@ -83,7 +83,7 @@ export function resourceSentence(input: SentenceInput): ResourceSentence | null 
   return say(
     "nothing_unusual",
     limits
-      ? `Nothing unusual: the highest reading was ${gib(peak)} of its ${gib(limits.memoryMiB)} memory limit, and CPU stayed under its limit of ${cpus(limits.cpus)}.`
-      : `Nothing unusual: the highest memory reading was ${gib(peak)}.`,
+      ? `Nothing unusual: the highest reading was ${memoryOf(peak, limits.memoryMiB).part} of its ${memoryOf(peak, limits.memoryMiB).whole} memory limit, and CPU stayed under its limit of ${cpus(limits.cpus)}.`
+      : `Nothing unusual: the highest memory reading was ${memory(peak)}.`,
   );
 }

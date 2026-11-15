@@ -57,5 +57,5 @@ test("the agent reads a job's container readings and the sentence about them", a
   assert.equal(resources.coverage, "sampled");
   assert.ok(resources.points.length >= 15);
   assert.deepEqual(resources.limits, { memoryMiB: 3686, cpus: 4 });
-  assert.deepEqual(resources.sentence, { case: "stopped_for_memory", text: "The container was stopped for using too much memory during Test, at its 3.6 GiB limit.", step: "Test" });
+  assert.deepEqual(resources.sentence, { case: "stopped_for_memory", text: "The container was stopped for using too much memory during Test, at its 3.6 GB limit.", step: "Test" });
 });

@@ -27,13 +27,13 @@ const say = (overrides: Partial<SentenceInput> = {}) => resourceSentence(input(o
 
 test("memory reaching the limit names the step it reached it in, and only when that step's time is known", () => {
   const high = points((second) => (second === 60 ? { memMiB: 4000 } : {}));
-  assert.deepEqual(say({ points: high }), { case: "memory_limit", text: "Memory reached this kind's 4 GiB limit in Test.", step: "Test" });
+  assert.deepEqual(say({ points: high }), { case: "memory_limit", text: "Memory reached this kind's 4.0 GB limit in Test.", step: "Test" });
   // Steps placed by adding up lengths: the reading may not be in Test, so no step is named.
-  assert.deepEqual(say({ points: high, steps: steps(false) }), { case: "memory_limit", text: "Memory reached this kind's 4 GiB limit while this job ran.", step: null });
+  assert.deepEqual(say({ points: high, steps: steps(false) }), { case: "memory_limit", text: "Memory reached this kind's 4.0 GB limit while this job ran.", step: null });
 });
 
 test("a container stopped for memory comes first, with the step it was stopped in, even with no readings of it", () => {
-  assert.equal(say({ stoppedForMemory: { offsetMs: 50 * SECOND, step: "Test" } })?.text, "The container was stopped for using too much memory during Test, at its 4 GiB limit.");
+  assert.equal(say({ stoppedForMemory: { offsetMs: 50 * SECOND, step: "Test" } })?.text, "The container was stopped for using too much memory during Test, at its 4.0 GB limit.");
   assert.equal(say({ coverage: "no_samples", points: [], stoppedForMemory: { offsetMs: 38 * SECOND, step: "Test" } })?.case, "stopped_for_memory");
 });
 
@@ -49,8 +49,8 @@ test("a VM low on memory while the job stayed well under its own limit says so w
 });
 
 test("an ordinary job says nothing unusual, with its highest reading", () => {
-  assert.equal(say()?.text, "Nothing unusual: the highest reading was 1,000 MiB of its 4 GiB memory limit, and CPU stayed under its limit of 2 CPUs.");
-  assert.equal(say({ limits: null })?.text, "Nothing unusual: the highest memory reading was 1,000 MiB.");
+  assert.equal(say()?.text, "Nothing unusual: the highest reading was 1.0 GB of its 4.0 GB memory limit, and CPU stayed under its limit of 2 CPUs.");
+  assert.equal(say({ limits: null })?.text, "Nothing unusual: the highest memory reading was 1000 MB.");
 });
 
 test("too few readings, or readings over only part of the job, say too little is known", () => {
