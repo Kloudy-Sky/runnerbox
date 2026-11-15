@@ -1,17 +1,28 @@
-import { useState } from "react";
+import type { ServerProviderSkill } from "@t3tools/contracts";
+import { useRef, useState } from "react";
+import { composerSubmissionIntentForKey } from "../../composer-logic.ts";
+import { useComposerDraftStore } from "../../composerDraftStore.ts";
 import type { useThread } from "../../hooks/useThread.ts";
 import { useAccounts } from "../../hooks/useAccounts.ts";
 import { Button } from "../ui/button.tsx";
 import { ReproduceControl } from "./ReproduceControl.tsx";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select.tsx";
-import { Textarea } from "../ui/textarea.tsx";
+import { type ComposerPromptEditorHandle, ComposerPromptEditorTiptap } from "../ComposerPromptEditorTiptap.tsx";
+import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation.tsx";
 
 type Thread = ReturnType<typeof useThread>;
 
-// The one composer at the bottom of the reading column. Stop takes Send's place while a turn
-// runs. When the agent can't run here, it says why in one line instead.
+const NO_SKILLS: ReadonlyArray<ServerProviderSkill> = [];
+
+// The one composer at the bottom of the reading column: T3 Code's rich text editor, whose Markdown
+// is what's sent. Its draft is kept per subject, across navigation and restarts. Stop takes
+// Send's place while a turn runs. When the agent can't run here, it says why in one line instead.
 export function Composer({ thread, placeholder }: { thread: Thread; placeholder: string }) {
-  const [draft, setDraft] = useState("");
+  const draft = useComposerDraftStore((store) => store.drafts[thread.draftKey]?.value ?? "");
+  const setDraft = useComposerDraftStore((store) => store.setDraft);
+  const clearDraft = useComposerDraftStore((store) => store.clearDraft);
+  const [cursor, setCursor] = useState(() => draft.length);
+  const editorRef = useRef<ComposerPromptEditorHandle>(null);
   const { view } = thread;
   const { accounts } = useAccounts();
   // The account picked here, or the one this thread last ran as if it still exists, or the default.
@@ -56,22 +67,41 @@ export function Composer({ thread, placeholder }: { thread: Thread; placeholder:
   const submit = async () => {
     const text = draft.trim();
     if (text === "" || view.running) return;
-    if (await thread.send(text, accountId)) setDraft("");
+    if (await thread.send(text, accountId)) {
+      clearDraft(thread.draftKey);
+      setCursor(0);
+    }
   };
   return (
     <div className="flex flex-col gap-1.5" data-slot="composer">
-      <Textarea
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
+      <div className="rounded-lg border border-input bg-background px-3 py-2 text-sm has-focus-visible:border-ring dark:bg-input/32">
+        <ComposerPromptEditorTiptap
+          draftKey={thread.draftKey}
+          value={draft}
+          cursor={cursor}
+          richTextEnabled
+          contextRecords={EMPTY_COMPOSER_CONTEXT_RECORDS}
+          skills={NO_SKILLS}
+          disabled={false}
+          placeholder={view.items.length === 0 ? placeholder : "Ask a follow-up"}
+          ariaLabel="Message"
+          className="max-h-64 min-h-11 overflow-y-auto"
+          onChange={(next, nextCursor) => {
+            setDraft(thread.draftKey, next);
+            setCursor(nextCursor);
+          }}
+          // Enter sends and Shift+Enter starts a new line, as T3 Code decides it; lists, quotes and
+          // code blocks are the editor's own.
+          onCommandKeyDown={(_key, event) => {
+            const intent = composerSubmissionIntentForKey({ event, keybindings: [], isSoftwareKeyboardOpen: false, isDraftThread: false, isRunning: view.running, sendShortcut: "enter", prompt: draft });
+            if (intent !== "foreground") return false;
             void submit();
-          }
-        }}
-        placeholder={view.items.length === 0 ? placeholder : "Ask a follow-up"}
-        className="[&_textarea]:min-h-11"
-      />
+            return true;
+          }}
+          onPaste={() => {}}
+          editorRef={editorRef}
+        />
+      </div>
       <div className="flex items-center gap-2 text-muted-foreground text-xs">
         <span className="flex flex-1 items-center gap-1">
           {picker}

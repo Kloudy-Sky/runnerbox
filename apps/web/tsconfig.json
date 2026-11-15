@@ -10,9 +10,15 @@
     "moduleResolution": "bundler",
     "erasableSyntaxOnly": false,
     "verbatimModuleSyntax": false,
+    // T3 Code's packages the copies import, mapped to the copies and stand-ins under src/t3tools.
     "paths": {
       "~/*": ["./src/*"],
-      "@t3tools/contracts": ["./src/lib/t3codeContracts.ts"]
+      "@t3tools/contracts": ["./src/lib/t3codeContracts.ts"],
+      "@t3tools/contracts/settings": ["./src/lib/t3codeContracts.ts"],
+      "@t3tools/shared/*": ["./src/t3tools/shared/*"],
+      "@t3tools/client-runtime/composer-model-mentions": ["./src/t3tools/client-runtime/composerModelMentions.ts"],
+      "@t3tools/client-runtime/*": ["./src/t3tools/client-runtime/*"],
+      "@effect/atom-react": ["./src/t3tools/atom-react.ts"]
     }
   },
   "include": ["src", "vite.config.ts"]
