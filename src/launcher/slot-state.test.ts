@@ -39,3 +39,25 @@ test("the state file holds the latest report for every slot, owner-only, and rea
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("a new image's facts wait for its own probe, and a late probe of an old image is ignored", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "slot-state-"));
+  try {
+    const state = createSlotState(join(dir, "example", "state.json"), "example", [{ name: "linux", label: "example-linux", slots: 1, image: { rebuildDays: 7 } }]);
+    const facts = { builtAt: "2026-01-01T00:00:00.000Z", tools: [{ name: "gh", version: "2.45.0" }] };
+    state.image("linux", "app-ci:aaaaaaaaaaaa", null);
+    state.probed("linux", "app-ci:aaaaaaaaaaaa", facts);
+    state.image("linux", "app-ci:bbbbbbbbbbbb", null);
+    state.probed("linux", "app-ci:aaaaaaaaaaaa", facts);
+    state.built("linux", false);
+    await state.flush();
+
+    const kind = (await readSlotStates(dir))[0]?.kinds[0];
+    assert.equal(kind?.rebuildDays, 7);
+    assert.equal(kind?.tools, null);
+    assert.equal(kind?.builtAt, null);
+    assert.equal(typeof kind?.buildFailedAt, "string");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

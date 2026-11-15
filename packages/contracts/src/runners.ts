@@ -57,11 +57,22 @@ export const SlotState = Schema.Struct({
   detail: Schema.NullOr(Schema.String),
 });
 
+// A tool found in the image and its version, or null when the image doesn't have it. The first is
+// the image's OS, named as the image names it.
+export const ImageTool = Schema.Struct({ name: Schema.String, version: Schema.NullOr(Schema.String) });
+export type ImageTool = typeof ImageTool.Type;
+
 export const KindState = Schema.Struct({
   name: Schema.String,
   label: Schema.String,
   image: Schema.NullOr(Schema.String),
   building: Schema.NullOr(Schema.String),
+  // Missing from an older `up`. `builtAt` and `tools` are null until the current image is probed.
+  buildingSince: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  buildFailedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  rebuildDays: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+  builtAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  tools: Schema.optionalKey(Schema.NullOr(Schema.Array(ImageTool))),
   slots: Schema.Array(SlotState),
 });
 

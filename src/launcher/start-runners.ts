@@ -10,6 +10,7 @@ import { buildInVm } from "../image/build-in-vm.ts";
 import { hashContext } from "../image/context-hash.ts";
 import { createImageKeeper } from "../image/image-keeper.ts";
 import { withRebuildPeriod } from "../image/rebuild-period.ts";
+import { parseProbe, probeCommand, type Tool } from "../image/tool-probe.ts";
 import type { InTurn } from "../jobvm/in-turn.ts";
 import { startJobVms } from "../jobvm/start-job-vms.ts";
 import type { LauncherEvent } from "../tracking/launcher-event.ts";
@@ -190,8 +191,12 @@ export async function startRunners(configPath: string) {
     await Promise.all(
       config.runners.map(async (runner, index) => {
         const recordForType: RecordEvent = (event) => record({ ...event, runnerType: runner.name });
-        const onImage = (current: string | null, building: string | null) => slotState.image(runner.name, current, building);
-        const image = await keepImage(config, runner, () => roomForJob(installFloor), recordForType, () => stopping, onImage, inBuilder);
+        const imageState: ImageState = {
+          image: (current, building) => slotState.image(runner.name, current, building),
+          built: (ok) => slotState.built(runner.name, ok),
+          probed: (tag, facts) => slotState.probed(runner.name, tag, facts),
+        };
+        const image = await keepImage(config, runner, () => roomForJob(installFloor), recordForType, () => stopping, imageState, inBuilder);
         // Draining before this kind's image was ever ready, so it has no slots to wait for.
         if (!image) return;
         images.set(runner.name, image.current);
@@ -223,6 +228,13 @@ export async function startRunners(configPath: string) {
   process.exit(0);
 }
 
+// One kind's image, as the live state file shows it.
+type ImageState = {
+  image: (current: string | null, building: string | null) => void;
+  built: (ok: boolean) => void;
+  probed: (tag: string, facts: { builtAt: string | null; tools: Tool[] }) => void;
+};
+
 // Returns the image a runner type's new containers should use, and a prune that removes old tags
 // nothing uses. A build context is built before that type's slots start, then checked for changes
 // every few minutes.
@@ -232,13 +244,14 @@ async function keepImage(
   roomForJob: () => Promise<string | null>,
   record: RecordEvent,
   stopping: () => boolean,
-  // Tells the live state file which tag new containers use, and which one is building.
-  onImage: (current: string | null, building: string | null) => void,
+  // Tells the live state file which tag new containers use, which one is building, and what's in it.
+  state: ImageState,
   // Gives a task the VM to itself. With job VMs, a disk copy shuts it down between tasks.
   inBuilder: InTurn,
 ) {
   const { vm } = config;
   const { image } = runner;
+  const onImage = state.image;
   if (typeof image === "string") {
     onImage(image, null);
     return { current: () => image, prune: async () => {} };
@@ -251,7 +264,9 @@ async function keepImage(
     build: async (tag) => {
       onImage(keeper.current(), tag);
       try {
-        return await inBuilder(() => buildInVm({ vm, context: image.context, tag, noCache: image.rebuildDays !== undefined }));
+        const ok = await inBuilder(() => buildInVm({ vm, context: image.context, tag, noCache: image.rebuildDays !== undefined }));
+        state.built(ok);
+        return ok;
       } finally {
         onImage(keeper.current(), null);
       }
@@ -263,7 +278,23 @@ async function keepImage(
     now: Date.now,
   });
   const report = (error: unknown) => console.log(`${runner.name} image: ${message(error)}`);
-  const refresh = () => keeper.refresh().catch(report).then(() => onImage(keeper.current(), null));
+  // Each tag is probed once it's current, including one found already built at startup. A probe
+  // that fails is tried again on the next refresh, and never holds the image back.
+  let probed: string | null = null;
+  const probe = async () => {
+    const tag = keeper.current();
+    if (!tag || tag === probed) return;
+    const output = await inBuilder(() => readFromVm({ vm, command: probeCommand(tag) }));
+    probed = tag;
+    state.probed(tag, parseProbe(output));
+  };
+  const refresh = () =>
+    keeper
+      .refresh()
+      .catch(report)
+      .then(() => onImage(keeper.current(), null))
+      .then(probe)
+      .catch(report);
 
   while (!stopping()) {
     await refresh();

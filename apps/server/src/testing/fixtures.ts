@@ -196,10 +196,24 @@ export async function writeFixtures(dir: string, now: number) {
   // What `up` reports right now, written by the core's own writer: one linux slot on a job, one
   // waiting in line for memory, and the docker slot backing off after its failures.
   const live = createSlotState(join(dir, INSTALL, "state.json"), INSTALL, [
-    { name: "linux", label: "example-linux", slots: 2 },
+    { name: "linux", label: "example-linux", slots: 2, image: { rebuildDays: 7 } },
     { name: "docker", label: "example-docker", slots: 1 },
   ], () => now);
   live.image("linux", LINUX_IMAGE, null);
+  // An image three days old with an old gh, so the image facts have something to flag.
+  live.probed("linux", LINUX_IMAGE, {
+    builtAt: new Date(now - 72 * HOUR).toISOString(),
+    tools: [
+      { name: "Ubuntu", version: "24.04" },
+      { name: "node", version: "24.11.1" },
+      { name: "gh", version: "2.45.0" },
+      { name: "git", version: "2.43.0" },
+      { name: "docker", version: null },
+      { name: "python", version: "3.12.3" },
+      { name: "aws", version: null },
+      { name: "runner", version: "2.338.2" },
+    ],
+  });
   live.image("docker", null, "app-docker:9c1e2f3a4b5d");
   live.slot("linux", 1, "busy", { runner: `${INSTALL}-linux-1-${Math.floor(now / 1000) - 300}` });
   live.slot("linux", 2, "waiting", { detail: "VM has 1840 MiB available, below its floor of 2048 MiB" });

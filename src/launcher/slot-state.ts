@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { type } from "arktype";
+import type { Tool } from "../image/tool-probe.ts";
 
 // What each slot of a running `up` is doing now, kept in `<install>/state.json` so a reader such as
 // `runnerbox serve` can show it live. Unlike the event log, it says what's happening, not what
@@ -24,11 +25,23 @@ export const SlotStateFile = type({
   startedAt: "string",
   updatedAt: "string",
   stopping: "boolean",
-  kinds: type({ name: "string", label: "string", image: "string | null", building: "string | null", slots: Slot.array() }).array(),
+  kinds: type({
+    name: "string",
+    label: "string",
+    image: "string | null",
+    building: "string | null",
+    // What's known about the current image. A file from an older `up` has none of these.
+    "buildingSince?": "string | null",
+    "buildFailedAt?": "string | null",
+    "rebuildDays?": "number | null",
+    "builtAt?": "string | null",
+    "tools?": type({ name: "string", version: "string | null" }).array().or("null"),
+    slots: Slot.array(),
+  }).array(),
 });
 export type SlotStateFile = typeof SlotStateFile.infer;
 
-type Kind = { name: string; label: string; slots: number };
+type Kind = { name: string; label: string; slots: number; image?: string | { rebuildDays?: number } };
 
 // Keeps the file in step with every report. Writes go to a temporary file renamed over the old,
 // so a reader never sees half of one, and reports that arrive mid-write are folded into the next.
@@ -41,11 +54,16 @@ export function createSlotState(path: string, install: string, kinds: readonly K
     startedAt: iso(),
     updatedAt: iso(),
     stopping: false,
-    kinds: kinds.map(({ name, label, slots }) => ({
+    kinds: kinds.map(({ name, label, slots, image }) => ({
       name,
       label,
       image: null,
       building: null,
+      buildingSince: null,
+      buildFailedAt: null,
+      rebuildDays: typeof image === "object" ? (image.rebuildDays ?? null) : null,
+      builtAt: null,
+      tools: null,
       slots: Array.from({ length: slots }, (_, index) => ({ slot: index + 1, phase: "minting" as const, since: iso(), runner: null, detail: null })),
     })),
   };
@@ -88,7 +106,24 @@ export function createSlotState(path: string, install: string, kinds: readonly K
     image(kindName: string, image: string | null, building: string | null) {
       const kind = kindNamed(kindName);
       if (!kind) return;
-      Object.assign(kind, { image, building });
+      // A new tag's facts aren't known until it's probed.
+      if (image !== kind.image) Object.assign(kind, { builtAt: null, tools: null });
+      const buildingSince = building === null ? null : building === kind.building ? kind.buildingSince : iso();
+      Object.assign(kind, { image, building, buildingSince });
+      void flush();
+    },
+    // How the last build ended. A failure stays until a build succeeds, while the old image serves.
+    built(kindName: string, ok: boolean) {
+      const kind = kindNamed(kindName);
+      if (!kind) return;
+      kind.buildFailedAt = ok ? null : iso();
+      void flush();
+    },
+    // What the probe found in `image`, if it's still the current one.
+    probed(kindName: string, image: string, facts: { builtAt: string | null; tools: Tool[] }) {
+      const kind = kindNamed(kindName);
+      if (!kind || kind.image !== image) return;
+      Object.assign(kind, facts);
       void flush();
     },
     stopping() {
