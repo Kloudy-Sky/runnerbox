@@ -1,10 +1,13 @@
 import type { SavedEnvironment } from "@runnerbox/client-runtime";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import type { UpdateOutcome } from "@runnerbox/contracts";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard.ts";
 import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
 import { useRunnerState } from "../../hooks/useRunnerState.ts";
 import { useServerCapabilityState } from "../../hooks/useServerCapabilities.ts";
-import { BLOCKED_WORDS, isUnderway, needsCommand, restartCommand, serverIsBehind, SIGNATURE_WORDS, staleInstalls, underwayLine } from "../../lib/serverUpdate.ts";
+import { BLOCKED_WORDS, isUnderway, needsCommand, RESTART_WORDS, restartCommand, restartedInstalls, serverIsBehind, SIGNATURE_WORDS, staleInstalls, underwayLine } from "../../lib/serverUpdate.ts";
+import { runtime } from "../../runtime.ts";
 import { startUpdate } from "../../state/serverUpdates.ts";
 import { ServerUpdateCommand } from "../ServerUpdateCommand.tsx";
 import { useReleaseSignature, useUpdateAccess, useUpdateRun } from "../ServerUpdateNotice.tsx";
@@ -86,18 +89,65 @@ function CopyCommand({ command }: { command: string }) {
   );
 }
 
-// The runners still on the code the last update replaced, and how each moves to the new one.
+// How one install's runners move to the new version: from here, when the server can ask its
+// Runnerbox, or with the command when it can't.
+function RestartControl({ environment, install, version, updatedAt }: { environment: SavedEnvironment; install: string; version: string; updatedAt: string }) {
+  const { capabilities } = useServerCapabilityState();
+  const denied = useUpdateAccess(environment);
+  const asking = capabilities.restartRunners && denied === null;
+  const status = useRpcQuery(["runners.restartStatus", install], (client) => client["runners.restartStatus"]({ install }), { enabled: asking, refetchEvery: 30_000 });
+  const queryClient = useQueryClient();
+  const [refused, setRefused] = useState<string | null>(null);
+  const command = <CopyCommand command={restartCommand(install)} />;
+  const restart = status.data;
+  if (!asking || restart === undefined || !restart.available) {
+    return (
+      <span className="flex flex-col items-end gap-1">
+        {command}
+        {restart?.unavailable ? <span className="text-muted-foreground text-xs">{restart.unavailable}</span> : null}
+      </span>
+    );
+  }
+  if (restart.waiting) return <span className="max-w-md text-right text-muted-foreground text-xs">{RESTART_WORDS.waiting(version)}</span>;
+  const ask = () =>
+    void runtime.run(environment.environmentId, (client) => client["runners.restartWhenIdle"]({ install })).then(
+      () => queryClient.invalidateQueries({ queryKey: [environment.environmentId, "runners.restartStatus", install] }),
+      (error: unknown) => setRefused(error instanceof Error ? error.message : "That didn't work."),
+    );
+  // Only a restart asked for since this update counts; an older one was for another version.
+  const gaveUp = restart.last?.outcome === "not_restarted" && restart.last.reason === "no moment without a running job came in 6 hours" && Date.parse(restart.last.at) > Date.parse(updatedAt);
+  return (
+    <span className="flex max-w-md flex-col items-end gap-1 text-right">
+      {gaveUp ? (
+        <>
+          <span className="text-muted-foreground text-xs">{RESTART_WORDS.notIdle}</span>
+          {command}
+        </>
+      ) : null}
+      <Button variant="secondary" size="xs" onClick={ask}>
+        {RESTART_WORDS.ask}
+      </Button>
+      {refused ? <span className="text-muted-foreground text-xs">{refused}</span> : null}
+    </span>
+  );
+}
+
+// The runners still on the code the last update replaced, and how each moves to the new one, then
+// those that have since restarted onto it.
 export function StaleRunnersSettings({ environment }: { environment: SavedEnvironment }) {
   const { status } = useUpdateStatus(environment);
   const installs = useRunnerState();
   const last = status.data?.lastUpdate ?? null;
   const stale = staleInstalls(installs ?? [], last);
-  if (last === null || stale.length === 0) return null;
+  const restarted = restartedInstalls(installs ?? [], last);
+  if (last === null || (stale.length === 0 && restarted.length === 0)) return null;
   return (
     <SettingsSection title={`Runners on ${environment.label}`}>
-      <p className="px-3 pt-3 text-muted-foreground text-xs sm:px-4">
-        These started before the update, so they still run {last.from}. A restart lets running jobs finish first.
-      </p>
+      {stale.length > 0 ? (
+        <p className="px-3 pt-3 text-muted-foreground text-xs sm:px-4">
+          These started before the update, so they still run {last.from}. A restart lets running jobs finish first.
+        </p>
+      ) : null}
       {stale.map(({ install, host }) => (
         <SettingsRow
           key={install}
@@ -107,8 +157,20 @@ export function StaleRunnersSettings({ environment }: { environment: SavedEnviro
             host ? (
               <span className="max-w-md text-right text-muted-foreground text-xs">Runs jobs on the Mac's own OS, so its setup has to run again with sudo after an update. That needs someone at the machine.</span>
             ) : (
-              <CopyCommand command={restartCommand(install)} />
+              <RestartControl environment={environment} install={install} version={last.to} updatedAt={last.finishedAt ?? last.startedAt} />
             )
+          }
+        />
+      ))}
+      {restarted.map(({ install, at }) => (
+        <SettingsRow
+          key={install}
+          title={<span className="font-normal">{install}</span>}
+          className="py-2"
+          control={
+            <span className="text-muted-foreground text-xs">
+              Restarted {clock(at)}, now on {last.to}.
+            </span>
           }
         />
       ))}

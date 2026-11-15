@@ -31,6 +31,7 @@ const Answer = Schema.Union([
   Schema.Struct({ ok: Schema.Literal(true), running: Schema.Literal(false), reason: Schema.String }),
   Schema.Struct({ ok: Schema.Literal(true), install: Schema.String, fields: Schema.Array(Field), pending: Schema.NullOr(Schema.Struct({ proposalId: Schema.String, when: Schema.Literals(["idle", "now"]), since: Schema.String })) }),
   Schema.Struct({ ok: Schema.Literal(true), accepted: Schema.Literal(true), when: Schema.Literals(["idle", "now"]) }),
+  Schema.Struct({ ok: Schema.Literal(true), restart: Schema.NullOr(Schema.Struct({ since: Schema.String, requestedBy: Schema.String })) }),
   Schema.Struct({ ok: Schema.Literal(false), error: Schema.String }),
 ]);
 type Answer = typeof Answer.Type;
@@ -39,6 +40,7 @@ const decodeAnswer = Schema.decodeUnknownEffect(Schema.fromJsonString(Answer));
 export type Started = Extract<Answer, { id: string }>;
 export type Executed = Extract<Answer, { exitCode: number | null }>;
 export type Described = Extract<Answer, { fields: ReadonlyArray<Field> }>;
+export type RestartWaiting = Extract<Answer, { restart: unknown }>["restart"];
 export type ApprovedChange = Omit<ApplyRequest, "op" | "changes"> & { readonly changes: ReadonlyArray<ProposedChange> };
 
 // An install's name came from its own directory, but it still only names one under the state directory.
@@ -61,15 +63,22 @@ export class UpSocket extends Context.Service<
     readonly describe: (install: string) => Effect.Effect<Described, ReproduceError>;
     // Hands an approved change to `up`, which checks it all again itself, against its own schema.
     readonly apply: (install: string, change: ApprovedChange) => Effect.Effect<{ readonly when: "idle" | "now" }, ReproduceError>;
+    // Asks `up` to restart its runners at the first moment no job is running, and what waits now.
+    readonly restart: (install: string, requestedBy: { readonly session: string; readonly label: string }) => Effect.Effect<RestartWaiting, ReproduceError>;
+    readonly restartStatus: (install: string) => Effect.Effect<RestartWaiting, ReproduceError>;
   }
 >()("runnerbox/server/reproduce/UpSocket") {}
+
+// An install whose `up` opened no control socket: one with neither `reproduce` nor `changes`, or
+// one that isn't running.
+export const NOT_TAKING_REQUESTS = "Runnerbox on that machine isn't taking these requests. Turn on reproduce or changes in its config, then restart it.";
 
 const uid = () => process.getuid?.() ?? -1;
 
 export async function checkOwnership(path: string) {
   for (const [what, entry, kind] of [["Its directory", dirname(path), "directory"], ["The socket", path, "socket"]] as const) {
     const found = await lstat(entry).catch(() => null);
-    if (!found) throw new Error("Runnerbox on that machine isn't taking these requests. Turn on reproduce or changes in its config, then restart it.");
+    if (!found) throw new Error(NOT_TAKING_REQUESTS);
     if (kind === "directory" ? !found.isDirectory() : !found.isSocket()) throw new Error(`${what} isn't a ${kind}, so the server won't use it.`);
     if (found.uid !== uid()) throw new Error(`${what} belongs to another user, so the server won't use it.`);
     if ((found.mode & 0o077) !== 0) throw new Error(`${what} is open to other users, so the server won't use it.`);
@@ -138,6 +147,8 @@ const make = Effect.gen(function* () {
     describe: (install) => send(install, { op: "describe" }, QUICK_MS).pipe(Effect.flatMap((answer) => ("fields" in answer ? Effect.succeed(answer) : Effect.fail(unexpected)))),
     // Applying now waits for the write; `up` drains afterwards on its own.
     apply: (install, change) => send(install, { op: "apply", ...change }, QUICK_MS).pipe(Effect.flatMap((answer) => ("accepted" in answer ? Effect.succeed({ when: answer.when }) : Effect.fail(unexpected)))),
+    restart: (install, requestedBy) => send(install, { op: "restart", requestedBy }, QUICK_MS).pipe(Effect.flatMap((answer) => ("restart" in answer ? Effect.succeed(answer.restart) : Effect.fail(unexpected)))),
+    restartStatus: (install) => send(install, { op: "restart-status" }, QUICK_MS).pipe(Effect.flatMap((answer) => ("restart" in answer ? Effect.succeed(answer.restart) : Effect.fail(unexpected)))),
   });
 });
 

@@ -18,7 +18,8 @@ async function setup(options: { file?: string; changes?: boolean } = {}) {
   await writeFile(configPath, original, { mode: 0o600 });
   const clock = { now: Date.parse("2026-11-12T10:00:00Z") };
   // `machineReads` counts down to a failed SSH read of the VM, as when the VM drops off mid-change.
-  const state = { busy: false, drains: [] as string[], machineReads: Infinity };
+  // `busyFails` stands for GitHub not answering whether a job is running.
+  const state = { busy: false, busyFails: false, drains: [] as string[], machineReads: Infinity };
   const changes = createChanges({
     configPath,
     logPath: join(dir, "state", "changes.ndjson"),
@@ -26,7 +27,10 @@ async function setup(options: { file?: string; changes?: boolean } = {}) {
       if (state.machineReads-- <= 0) throw new Error("ssh: connect to host 192.168.122.10 port 22: Connection timed out");
       return MACHINE;
     },
-    busy: async () => state.busy,
+    busy: async () => {
+      if (state.busyFails) throw new Error("GitHub didn't answer");
+      return state.busy;
+    },
     drain: (why) => void state.drains.push(why),
     every: () => () => {},
     now: () => clock.now,
@@ -269,5 +273,120 @@ test("two approvals arriving together: one waits, the other is refused and the f
     assert.equal((await config()).runners[0].slots, 2);
   } finally {
     await done();
+  }
+});
+
+const restartRequest = { op: "restart" as const, requestedBy: { session: "session-1", label: "desktop" } };
+const restarts = async (log: () => Promise<Array<Record<string, unknown>>>) => (await log()).filter((entry) => entry.kind === "restart");
+
+test("a restart the owner asks for waits until no job is running, then restarts, and names who asked", async () => {
+  const { changes, state, clock, log, done } = await setup();
+  try {
+    state.busy = true;
+    assert.deepEqual(await changes.restart(restartRequest), { restart: { since: "2026-11-12T10:00:00.000Z", requestedBy: "desktop" } });
+    await changes.check();
+    clock.now += 60_000;
+    await changes.check();
+    assert.deepEqual(state.drains, [], "not while a job runs");
+    assert.deepEqual(changes.restartWaiting(), { restart: { since: "2026-11-12T10:00:00.000Z", requestedBy: "desktop" } });
+    state.busy = false;
+    await changes.check();
+    assert.equal(state.drains.length, 1);
+    assert.deepEqual(changes.restartWaiting(), { restart: null });
+    assert.deepEqual(
+      (await restarts(log)).map(({ outcome, requestedBy }) => ({ outcome, requestedBy })),
+      [
+        { outcome: "waiting", requestedBy: { session: "session-1", label: "desktop" } },
+        { outcome: "restarted", requestedBy: { session: "session-1", label: "desktop" } },
+      ],
+    );
+  } finally {
+    await done();
+  }
+});
+
+test("a restart counts a failed busy check as busy, and is dropped after 6 hours, said in the log", async () => {
+  const { changes, state, clock, log, done } = await setup();
+  try {
+    await changes.restart(restartRequest);
+    state.busyFails = true;
+    await changes.check();
+    assert.deepEqual(state.drains, [], "GitHub not answering isn't a moment without a job");
+    clock.now += IDLE_LIMIT_MS + 60_000;
+    state.busyFails = false;
+    await changes.check();
+    assert.deepEqual(state.drains, [], "nothing is forced after 6 hours");
+    assert.deepEqual(changes.restartWaiting(), { restart: null });
+    const last = (await restarts(log)).at(-1);
+    assert.equal(last?.outcome, "not_restarted");
+    assert.equal(last?.reason, "no moment without a running job came in 6 hours");
+  } finally {
+    await done();
+  }
+});
+
+test("a second restart, or one while a change waits, is refused; one on an install without changes or on a host install is too", async () => {
+  const { changes, state, done } = await setup();
+  try {
+    state.busy = true;
+    await changes.restart(restartRequest);
+    await assert.rejects(changes.restart(restartRequest), (error) => error instanceof ChangeRefused && error.message === "A restart is already waiting.");
+  } finally {
+    await done();
+  }
+  const withChange = await setup();
+  try {
+    withChange.state.busy = true;
+    await withChange.changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }], "idle"));
+    await assert.rejects(withChange.changes.restart(restartRequest), /A change is waiting to apply, and it restarts the runners when it does\./);
+  } finally {
+    await withChange.done();
+  }
+  const off = await setup({ changes: false });
+  try {
+    await assert.rejects(off.changes.restart(restartRequest), /To restart these from here, turn on changes in this machine's Runnerbox config\./);
+  } finally {
+    await off.done();
+  }
+  const host = await setup({ file: "runnerbox.host.example.json", changes: false });
+  try {
+    await assert.rejects(host.changes.restart(restartRequest), /runs jobs on the machine's own OS/);
+  } finally {
+    await host.done();
+  }
+});
+
+test("a change approved while a restart waits goes first: applied, it settles the restart; not applied, the restart still runs", async () => {
+  const applied = await setup();
+  try {
+    applied.state.busy = true;
+    await applied.changes.restart(restartRequest);
+    await applied.changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }], "idle"));
+    applied.state.busy = false;
+    await applied.changes.check();
+    assert.equal(applied.state.drains.length, 1, "one restart, for both");
+    assert.deepEqual(applied.changes.restartWaiting(), { restart: null });
+    assert.equal((await restarts(applied.log)).at(-1)?.outcome, "restarted");
+  } finally {
+    await applied.done();
+  }
+  const refused = await setup();
+  try {
+    refused.state.busy = true;
+    await refused.changes.restart(restartRequest);
+    await refused.changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }], "idle"));
+    // Someone edits the config by hand, so the change no longer applies.
+    const edited = JSON.parse(await readFile(refused.configPath, "utf8"));
+    edited.runners[0].slots = 2;
+    await writeFile(refused.configPath, JSON.stringify(edited));
+    refused.state.busy = false;
+    await refused.changes.check();
+    assert.deepEqual(refused.state.drains, [], "the change wasn't written");
+    assert.notEqual(refused.changes.restartWaiting().restart, null, "the owner's restart still waits");
+    await refused.changes.check();
+    assert.equal(refused.state.drains.length, 1);
+    assert.equal((await restarts(refused.log)).at(-1)?.outcome, "restarted");
+  } finally {
+    await refused.done();
   }
 });

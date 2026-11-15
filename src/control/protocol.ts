@@ -29,12 +29,30 @@ export const ApplyRequest = type({
 });
 export type ApplyRequest = typeof ApplyRequest.infer;
 
-export const ControlRequest = ReproduceRequest.or({ "+": "reject", op: "'describe'" }).or(ApplyRequest);
+// The owner asking, from the app, for this install's runners to restart at the first moment no job
+// is running, so they pick up a new runnerbox.js. Like an idle change, it waits up to 6 hours.
+export const RestartRequest = type({
+  "+": "reject",
+  op: "'restart'",
+  requestedBy: { "+": "reject", session: "/^[\\w-]{1,64}$/", label: "1 <= string <= 80" },
+});
+export type RestartRequest = typeof RestartRequest.infer;
+
+export const ControlRequest = ReproduceRequest.or({ "+": "reject", op: "'describe'" })
+  .or(ApplyRequest)
+  .or(RestartRequest)
+  .or({ "+": "reject", op: "'restart-status'" });
 export type ControlRequest = typeof ControlRequest.infer;
 
 export type Pending = { proposalId: string; when: "idle" | "now"; since: string };
 export type Described = { install: string; fields: Field[]; pending: Pending | null };
 export type Accepted = { accepted: true; when: "idle" | "now" };
-export type ControlResponse = ReproduceResponse | ({ ok: true } & (Described | Accepted));
+// What `up` says to a restart on an install whose config has no `"changes": true`, the owner's
+// switch for letting the app act on the runner side. The app shows it beside the command.
+export const RESTARTS_OFF = "To restart these from here, turn on changes in this machine's Runnerbox config.";
+
+// A restart waiting for no job to be running, or null.
+export type RestartWaiting = { restart: { since: string; requestedBy: string } | null };
+export type ControlResponse = ReproduceResponse | ({ ok: true } & (Described | Accepted | RestartWaiting));
 
 export type { Value };
