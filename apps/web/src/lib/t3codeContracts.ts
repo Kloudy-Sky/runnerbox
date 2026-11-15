@@ -31,3 +31,7 @@ export type ServerProviderSkill = {
 export type ResolvedKeybindingsConfig = ReadonlyArray<never>;
 
 export type ClientSettings = { readonly sendShortcut: "enter" | "mod-enter-multiline" | "mod-enter" };
+
+// As T3 Code's `settings.ts` defines it. Runnerbox has no setting for it and always uses "locale".
+export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
+export type TimestampFormat = typeof TimestampFormat.Type;

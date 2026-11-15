@@ -79,6 +79,7 @@ const fake = makeFakeProvider({
       { text: "The test step passes in the container: 214 tests in 3 minutes, close to its typical time. With room in the VM the code is fine, so it was the machine running short of memory." },
     ],
     [{ text: "Looking at which steps grew. The test step took most of the extra time, " }, { hang: true }],
+    [{ tool: "list_runs", input: { repo: "owner/name", days: 7 } }, { fail: "The provider stopped answering." }],
   ],
 });
 

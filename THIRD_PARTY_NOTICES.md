@@ -1,6 +1,6 @@
 # Third-party notices
 
-Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks, the provider list's drivers and their accounts (after T3 Code's provider instances) and their settings page, laid out as its provider instance card in list and editor mode, the desktop app's updater (`apps/desktop/src/updates`), the release workflow's nightly and stable channels and their versioning, and the web app's theme, primitives and settings layout and the composer's rich text editor (copied, listed below), its sidebar layout and its slot composition. T3 Code is under the MIT license below.
+Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks, the provider list's drivers and their accounts (after T3 Code's provider instances) and their settings page, laid out as its provider instance card in list and editor mode, the desktop app's updater (`apps/desktop/src/updates`), the release workflow's nightly and stable channels and their versioning, and the web app's theme, primitives and settings layout, the composer's rich text editor and the thread's timeline (copied or followed, listed below), its sidebar layout and its slot composition. T3 Code is under the MIT license below.
 
 ```
 MIT License
@@ -80,16 +80,22 @@ Runnerbox's differences live in its own files, never in the copies, except the c
 
 ## T3 Code's composer editor, copied
 
-The composer's rich text editor and what it imports are copied unedited from T3 Code at the same commit as the theme, `4c8cb0445da6c84fa799edee057af355d1e992aa`. (They are also identical at `9db3cb10916c81830efa0d0d7be6601d2fe51158`, the commit the composer's design was drawn up against; the one commit between the two touches only T3 Code's mobile app.) A later sync diffs upstream from that commit and applies it to the files below.
+The composer's rich text editor, the thread's timeline parts, and what they import are copied unedited from T3 Code at the same commit as the theme, `4c8cb0445da6c84fa799edee057af355d1e992aa`. (They are also identical at `9db3cb10916c81830efa0d0d7be6601d2fe51158`, the commit the composer's design was drawn up against; the one commit between the two touches only T3 Code's mobile app.) A later sync diffs upstream from that commit and applies it to the files below.
 
 From upstream's `apps/web/src`, at the same path here under `apps/web/src`:
 
 - `components/ComposerPromptEditorTiptap.tsx`
 - `components/ContextChip.tsx`
 - `components/chat/ComposerControl.tsx`
+- `components/chat/MessageCopyButton.tsx`
+- `components/chat/TimelineOverlays.tsx`
+- `components/chat/TimelineRowParts.tsx`
+- `components/chat/TimelineSystemDivider.tsx`
+- `components/chat/WorkLog.tsx`
 - `components/chat/assistantCitationCommentDismissal.ts`
 - `components/chat/pageScrollController.ts`
 - `components/composerAttachmentInsertion.ts`
+- `components/ui/anchoredCopyToast.ts`
 - `components/composerContextActions.ts`
 - `components/composerInlineTokenPaste.ts`
 - `components/composerSelection.ts`
@@ -104,6 +110,7 @@ From upstream's `apps/web/src`, at the same path here under `apps/web/src`:
 - `composer-undo-grouping.ts`
 - `lib/composerContextReferences.ts`
 - `textDirection.ts`
+- `timestampFormat.ts`
 
 From upstream's packages, under `apps/web/src/t3tools`, where tsconfig and Vite map `@t3tools/shared/*` and `@t3tools/client-runtime/*`:
 

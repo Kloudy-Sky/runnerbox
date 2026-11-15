@@ -1,106 +1,71 @@
 import { useEffect } from "react";
-import type { ThreadItem } from "@runnerbox/contracts";
-import { ChevronRight } from "lucide-react";
-import type { ThreadView } from "../../lib/threadView.ts";
-import { toolPhrase } from "../../lib/toolPhrases.ts";
 import { useProposals } from "../../hooks/useProposals.ts";
+import type { ThreadView } from "../../lib/threadView.ts";
+import { timelineRows } from "../../lib/threadTimeline.ts";
+import { TimelineSystemDivider } from "../chat/TimelineSystemDivider.tsx";
 import { ProposalBlock } from "../proposals/ProposalBlock.tsx";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
-import { MessageMarkdown } from "./MessageMarkdown.tsx";
+import { AnswerRow } from "./AnswerRow.tsx";
 import { QueuedQuestion } from "./QueuedQuestion.tsx";
-import { SentAttachments } from "./SentAttachments.tsx";
-import { SentReferences } from "./SentReferences.tsx";
+import { QuestionRow } from "./QuestionRow.tsx";
+import { TurnFoldRow } from "./TurnFoldRow.tsx";
+import { WorkGroupRow } from "./WorkGroupRow.tsx";
+import { WorkingRow } from "./WorkingRow.tsx";
 
-// The thread under an item: the owner's questions and the agent's answers as Markdown, and each tool call as one
-// quiet line saying what it read, with the raw call behind it. Text that's still streaming fades in once and then sits still: no cursor.
+// The thread under an item, laid out as T3 Code's timeline: each question in a bubble, the agent's
+// words in full, its tool calls as plain lines while it works and folded under how long it took once
+// it's done, then how the turn ended if it didn't finish, and the question waiting, if any.
 export function ThreadMessages({ view, error, environmentId, onCancelQueued }: { view: ThreadView; error: string | null; environmentId: string; onCancelQueued: () => void }) {
   if (view.items.length === 0 && !view.partial && !error && !view.queued) return null;
+  const rows = timelineRows(view.items);
+  const lastAnswer = view.running ? undefined : rows.findLast((row) => row.kind === "answer");
+  // A turn's last words carry its copy button and time; words before them in the turn don't.
+  const finalWords = new Map(view.items.flatMap((item) => (item._tag === "AgentText" ? [[item.turnId, item.seq] as const] : [])));
+  const asked = view.items.findLast((item) => item._tag === "UserMessage");
+  const threadId = view.thread?.id ?? null;
   return (
-    <div className="flex flex-col gap-3" data-slot="thread">
-      {view.items.map((item) => (
-        <Item key={item.seq} item={item} environmentId={environmentId} threadId={view.thread?.id ?? null} />
-      ))}
-      {view.partial ? (
-        <div className="enter">
-          <MessageMarkdown text={view.partial.text} from="agent" />
+    <div className="flex min-w-0 flex-col" data-slot="thread">
+      {rows.map((row) => {
+        switch (row.kind) {
+          case "question":
+            return <QuestionRow key={row.item.seq} item={row.item} environmentId={environmentId} threadId={threadId} />;
+          case "answer":
+            return <AnswerRow key={row.item.seq} text={row.item.text} at={finalWords.get(row.item.turnId) === row.item.seq ? row.item.at : null} last={row === lastAnswer} />;
+          case "work":
+            return <WorkGroupRow key={row.id} entries={row.entries} />;
+          case "fold":
+            return (
+              <div key={row.id} className="pb-1.5">
+                <TurnFoldRow label={row.label} entries={row.entries} />
+              </div>
+            );
+          case "proposal":
+            return (
+              <div key={row.item.seq} className="min-w-0 px-1 py-0.5 pb-4">
+                <ThreadProposal id={row.item.proposalId} />
+              </div>
+            );
+          case "divider":
+            return (
+              <div key={row.id} className="pb-2">
+                <TimelineSystemDivider label={row.label} detail={row.detail} tone={row.tone} wrapDetail />
+              </div>
+            );
+        }
+      })}
+      {view.partial ? <AnswerRow text={view.partial.text} at={null} last={false} /> : null}
+      {view.running && asked ? (
+        <div className="pb-1.5">
+          <WorkingRow since={asked.at} />
         </div>
       ) : null}
-      {view.queued ? <QueuedQuestion queued={view.queued} onCancel={onCancelQueued} /> : null}
-      {error ? <p className="text-destructive">{error}</p> : null}
+      {view.queued ? (
+        <div className="pt-2 pb-4">
+          <QueuedQuestion queued={view.queued} onCancel={onCancelQueued} />
+        </div>
+      ) : null}
+      {error ? <p className="pb-2 text-destructive">{error}</p> : null}
     </div>
   );
-}
-
-function Item({ item, environmentId, threadId }: { item: ThreadItem; environmentId: string; threadId: string | null }) {
-  switch (item._tag) {
-    case "UserMessage":
-      return (
-        <div className="enter">
-          <div className="text-muted-foreground text-xs">{item.source === "monitor" ? "Monitor" : "You"}</div>
-          <MessageMarkdown text={item.text} from="owner" />
-          {item.attachments && threadId !== null ? <SentAttachments environmentId={environmentId} threadId={threadId} attachments={item.attachments} /> : null}
-          {item.references ? <SentReferences references={item.references} /> : null}
-        </div>
-      );
-    case "AgentText":
-      return (
-        <div className="enter">
-          <MessageMarkdown text={item.text} from="agent" />
-        </div>
-      );
-    case "ToolCall":
-      // Its command and result are the ReproduceCommand line that follows, and a proposal's the
-      // block that follows.
-      if (item.name === "repro_exec" || item.name === "propose_change") return null;
-      return (
-        <Collapsible className="enter -my-1.5 text-[13px]">
-          <CollapsibleTrigger className="group/tool flex items-center gap-1 text-muted-foreground hover:text-foreground">
-            <ChevronRight className="size-3.5 transition-transform duration-150 group-data-panel-open/tool:rotate-90" />
-            {toolPhrase(item.name)}
-          </CollapsibleTrigger>
-          <CollapsiblePanel>
-            <div className="pt-1 pl-4.5 font-mono text-[12px] text-faint break-all">
-              {item.name} {item.input === "{}" ? "" : item.input}
-            </div>
-          </CollapsiblePanel>
-        </Collapsible>
-      );
-    case "ReproduceStarted":
-      return (
-        <p className="enter text-[13px] text-muted-foreground">
-          Container started on {item.kind}'s {item.imageFallback ? "current image" : "image the job ran on"}, {item.image}, with commit {item.commit.slice(0, 7)}
-          {item.network === "setup" ? ". Its network goes after the first command." : "."}
-        </p>
-      );
-    case "ReproduceCommand":
-      return (
-        <Collapsible className="enter -my-1.5 text-[13px]">
-          <CollapsibleTrigger className="group/tool flex max-w-full items-center gap-1 text-left text-muted-foreground hover:text-foreground">
-            <ChevronRight className="size-3.5 shrink-0 transition-transform duration-150 group-data-panel-open/tool:rotate-90" />
-            <span className="truncate font-mono text-[12px] text-foreground">$ {item.command}</span>
-            <span className={item.timedOut || item.exitCode !== 0 ? "shrink-0 text-destructive" : "shrink-0"}>
-              {item.timedOut ? "timed out" : `exit ${item.exitCode ?? "?"}`}
-            </span>
-          </CollapsibleTrigger>
-          <CollapsiblePanel>
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-all pt-1 pl-4.5 font-mono text-[12px] text-faint">
-              {item.truncated ? "(earlier output cut)\n" : ""}
-              {item.output === "" ? "(no output)" : item.output}
-            </pre>
-          </CollapsiblePanel>
-        </Collapsible>
-      );
-    case "ChangeProposed":
-      return <ThreadProposal id={item.proposalId} />;
-    case "ReproduceEnded":
-      return <p className="enter text-[13px] text-muted-foreground">Container removed. {item.reason}</p>;
-    case "TurnEnded":
-      return item.outcome === "interrupted" ? (
-        <div className="-mt-2 font-mono text-[12px] text-faint">{item.message ?? "stopped"}</div>
-      ) : item.outcome === "failed" ? (
-        <p className="text-destructive">{item.message}</p>
-      ) : null;
-  }
 }
 
 // A proposal the agent made in this thread, as it stands now. Revert lives in Settings, Changes.
