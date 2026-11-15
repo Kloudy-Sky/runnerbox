@@ -139,9 +139,9 @@ test("jobs that waited too long merge into one item across repositories and labe
     starved({ repo: "owner/hosted", labels: ["ubuntu-24.04"] }),
   ];
   const events: LauncherEvent[] = [
-    { install: "example", event: "runner", slot: 1, runner: "example-linux-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: minutes(6) },
-    { install: "example", event: "runner", slot: 1, runner: "example-docker-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: minutes(6) },
-    { install: "example", event: "memory_wait", slot: 1, startedAt: iso(NOW - minutes(40)), durationMs: minutes(30) },
+    { install: "example", runnerType: "linux", event: "runner", slot: 1, runner: "example-linux-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: minutes(6) },
+    { install: "example", runnerType: "docker", event: "runner", slot: 1, runner: "example-docker-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: minutes(6) },
+    { install: "example", runnerType: "linux", event: "memory_wait", slot: 1, startedAt: iso(NOW - minutes(40)), durationMs: minutes(30) },
   ];
   const items = deriveInbox(input({ jobs, events })).filter((item) => item.kind === "no_runner");
   assert.deepEqual(items.map((item) => [item.quiet ?? "needs_you", item.evidence.attempts.length]).toSorted(), [
@@ -152,7 +152,7 @@ test("jobs that waited too long merge into one item across repositories and labe
   const [waiting] = items;
   assert.equal(waiting!.title, "Jobs are waiting too long for a runner");
   assert.equal(waiting!.happened, "3 jobs waited more than 5 minutes for one of your runners and ended without getting one. Most were on example-linux.");
-  assert.match(waiting!.why, /short of free memory once/);
+  assert.match(waiting!.why, /^The machine was short of free memory for the linux runners for the whole time these jobs waited/);
   assert.equal(waiting!.repo, null);
   assert.deepEqual(waiting!.evidence.breakdown.map((part) => [part.label, part.count]), [
     ["owner/name, example-linux", 2],
