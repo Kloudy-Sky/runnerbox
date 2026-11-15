@@ -67,7 +67,7 @@ export class AccountError extends Schema.TaggedError<AccountError>()("AccountErr
       case "unknown_driver":
         return "This server can't run that provider.";
       case "no_owner_login":
-        return "This provider runs on Runnerbox's own sign-in only.";
+        return "This provider doesn't take a login home.";
       case "login_only":
         return "Codex runs on a ChatGPT sign-in for now, so it takes no API key.";
     }

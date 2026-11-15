@@ -16,6 +16,9 @@ const settings: {
   version: string;
   ownerServers?: ReadonlyArray<{ name: string; enabled: boolean }>;
   mcpStatus?: ReadonlyArray<{ name: string; runtimeStatus: string; tools: Record<string, unknown> }>;
+  // What `thread/start` lists as loaded instruction files, and what `config/read` says of the provider.
+  instructionSources?: ReadonlyArray<string>;
+  config?: Record<string, unknown>;
 } = JSON.parse(readFileSync(join(stateDir, "fake-codex.json"), "utf8"));
 const log = (entry: Record<string, unknown>) => appendFileSync(join(stateDir, "fake-codex.log"), `${JSON.stringify(entry)}\n`);
 const args = process.argv.slice(2);
@@ -80,13 +83,14 @@ for await (const line of createInterface({ input: process.stdin })) {
         approvalPolicy: message.params.approvalPolicy,
         approvalsReviewer: message.params.approvalsReviewer,
         sandbox: wide ? { type: "dangerFullAccess" } : { type: "readOnly", networkAccess: false },
-        instructionSources: [],
+        instructionSources: settings.instructionSources ?? [],
         cwd: message.params.cwd,
         model: "example",
         modelProvider: "openai",
       },
     });
   }
+  if (message.method === "config/read") send({ id: message.id, result: { config: settings.config ?? { model_provider: "openai" } } });
   if (message.method === "mcpServerStatus/list") send({ id: message.id, result: { data: settings.mcpStatus ?? [{ name: "runnerbox", runtimeStatus: "ready", tools: { ci_overview: {} } }], nextCursor: null } });
   if (message.method === "turn/start") {
     send({ id: message.id, result: { turn: { id: "u", items: [], status: "inProgress" } } });

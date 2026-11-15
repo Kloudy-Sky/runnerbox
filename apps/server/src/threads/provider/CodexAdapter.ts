@@ -1,6 +1,6 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -10,11 +10,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as ServerPaths from "../../config/ServerPaths.ts";
-import { allowedTools, appliedProblems, appServerArgs, DISABLED_FEATURES, launchProblems, maxSteps, mcpProblems, SUPPORTED_CODEX_LABEL, supportedVersion, threadStartParams, TOKEN_ENV, turnStartParams } from "./codexAppServer.ts";
+import { allowedTools, appliedProblems, appServerArgs, DISABLED_FEATURES, launchProblems, maxSteps, mcpProblems, providerProblems, SUPPORTED_CODEX_LABEL, supportedVersion, threadStartParams, TOKEN_ENV, turnStartParams } from "./codexAppServer.ts";
 import { codexEnv, codexHome } from "./codexCommand.ts";
-import { decodeMessage, type ErrorResponse, McpServers, type Response, ThreadStarted } from "./codexProtocol.ts";
+import { decodeMessage, type ErrorResponse, McpServers, ProviderConfig, type Response, ThreadStarted } from "./codexProtocol.ts";
 import { decide, type TurnState } from "./codexTurnPolicy.ts";
 import { HARNESSES } from "./harnesses.ts";
+import { loginHomeProblem } from "./loginHome.ts";
 import { SERVER_NAME } from "./runnerboxTools.ts";
 import { CodexProviderAdapter, ProviderError, type ProviderEvent, type TurnInput } from "./ProviderAdapter.ts";
 
@@ -93,6 +94,7 @@ const run = (executable: string, args: ReadonlyArray<string>, home: string, own:
 const ServerList = Schema.fromJsonString(Schema.Array(Schema.Struct({ name: Schema.String, enabled: Schema.Boolean })));
 const decodeServerList = Schema.decodeUnknownOption(ServerList);
 const decodeMcpServers = Schema.decodeUnknownOption(McpServers);
+const decodeProviderConfig = Schema.decodeUnknownOption(ProviderConfig);
 const Catalog = Schema.fromJsonString(Schema.Struct({ models: Schema.Array(Schema.Struct({ slug: Schema.String, visibility: Schema.optional(Schema.String) })) }));
 
 // Spoken to as T3 Code's Codex adapter speaks to it (MIT, see THIRD_PARTY_NOTICES.md), with a
@@ -119,8 +121,8 @@ export const makeWith = (find: () => string | null) =>
       Effect.gen(function* () {
         const ready = yield* installed;
         if (!ready.available) return ready;
-        if (!own && !(yield* Effect.promise(() => stat(loginHome).then((info) => info.isDirectory(), () => false))))
-          return { provider: PROVIDER, available: false, fix: `There's no Codex home at ${loginHome}. Run \`codex login\` on this machine, or point the account at your Codex home.` } satisfies ProviderStatus;
+        const problem = own ? null : yield* ownerHomeProblem(loginHome);
+        if (problem !== null) return { provider: PROVIDER, available: false, fix: problem } satisfies ProviderStatus;
         const { ok } = yield* run(find() ?? "codex", ["login", "status"], loginHome, own);
         return { provider: PROVIDER, available: ok, fix: ok ? null : own ? SIGN_IN_FIX : OWNER_SIGN_IN_FIX } satisfies ProviderStatus;
       });
@@ -136,6 +138,18 @@ export const makeWith = (find: () => string | null) =>
           Effect.flatten,
         );
       });
+
+    // Whether an owner's home is one Runnerbox may point Codex at: theirs, and writable only by them.
+    const ownerHomeProblem = (loginHome: string) =>
+      Effect.promise(() =>
+        stat(loginHome).then(
+          (info) => ({ isDirectory: info.isDirectory(), uid: info.uid, mode: info.mode }),
+          () => null,
+        ),
+      ).pipe(Effect.map((info) => loginHomeProblem(loginHome, info, process.getuid?.() ?? -1)));
+    // The one instruction file an owner's home may load: its global AGENTS.md, as typed and resolved.
+    const globalInstructions = (loginHome: string) =>
+      Effect.promise(() => realpath(loginHome).catch(() => loginHome)).pipe(Effect.map((resolved) => [...new Set([join(loginHome, "AGENTS.md"), join(resolved, "AGENTS.md")])]));
 
     // The owner's MCP servers that are on in their config, read by `codex mcp list`, to turn off.
     const ownerServers = (executable: string, loginHome: string) =>
@@ -169,7 +183,11 @@ export const makeWith = (find: () => string | null) =>
           if (!ready.available) return yield* failed(ready.fix ?? INSTALL_FIX);
           // The owner's home when the account uses their login, with their MCP servers turned off.
           const loginHome = input.account.home ?? home;
-          const servers = input.account.home === null ? [] : yield* ownerServers(executable, loginHome);
+          const own = input.account.home === null;
+          const problem = own ? null : yield* ownerHomeProblem(loginHome);
+          if (problem !== null) return yield* failed(problem);
+          const servers = own ? [] : yield* ownerServers(executable, loginHome);
+          const allowedInstructions = own ? [] : yield* globalInstructions(loginHome);
           const turn = { mcpUrl: input.mcp.url, propose: input.propose, reproduce: input.reproduce, ownerServers: servers };
           const args = appServerArgs(turn);
           const thread = threadStartParams({ cwd, systemPrompt: input.systemPrompt, model: input.account.model ?? undefined });
@@ -189,13 +207,13 @@ export const makeWith = (find: () => string | null) =>
             ),
             (process) => Effect.promise(() => killGroup(process)),
           );
-          return talk(child, turn, thread, input);
+          return talk(child, turn, thread, input, allowedInstructions);
         }),
       );
 
     // The handshake, then the turn: every line decoded, and every message after the prompt judged by
     // codexTurnPolicy. The stream ends on the turn's end, which closes its scope and the process.
-    const talk = (child: ChildProcess, turn: { readonly propose: boolean; readonly reproduce: boolean }, thread: ReturnType<typeof threadStartParams>, input: TurnInput) => {
+    const talk = (child: ChildProcess, turn: { readonly propose: boolean; readonly reproduce: boolean }, thread: ReturnType<typeof threadStartParams>, input: TurnInput, allowedInstructions: ReadonlyArray<string>) => {
       const exit = exited(child);
       let stderr = "";
       child.stderr?.on("data", (chunk: Buffer) => {
@@ -207,34 +225,47 @@ export const makeWith = (find: () => string | null) =>
       const state: TurnState = { steps: 0, allowed: new Set(allowedTools(turn)), maxSteps: maxSteps(turn) };
       let finished = false;
       let threadId = "";
-      // Answers to Runnerbox's own four requests: initialize, thread/start, the MCP servers' status,
-      // then turn/start. The question is sent only once Codex says what it applied and which
-      // servers are on, and both are as Runnerbox set them.
+      // Answers to Runnerbox's own five requests: initialize, thread/start, the config's provider,
+      // the MCP servers' status, then turn/start. The question is sent only once Codex says what it
+      // applied, where turns go and which servers are on, and each is as Runnerbox set it.
       const answer = (response: typeof Response.Type | typeof ErrorResponse.Type): Effect.Effect<ReadonlyArray<ProviderEvent>, ProviderError> => {
         if ("error" in response) return Effect.fail(failed(`Codex refused to start: ${response.error.message}`));
-        if (response.id === 1) {
-          send({ method: "initialized" });
-          send({ id: 2, method: "thread/start", params: thread });
-          return Effect.succeed([]);
+        const refuse = (problems: ReadonlyArray<string>) => Effect.fail(failed(`Runnerbox didn't send the question: Codex says ${problems.join(", ")}.`));
+        switch (response.id) {
+          case 1:
+            send({ method: "initialized" });
+            send({ id: 2, method: "thread/start", params: thread });
+            return Effect.succeed([]);
+          case 2: {
+            const started = decodeThreadStarted(response.result);
+            if (started._tag === "None") return Effect.fail(failed("Codex started a thread Runnerbox couldn't read."));
+            const problems = appliedProblems(started.value, allowedInstructions);
+            if (problems.length > 0) return refuse(problems);
+            threadId = started.value.thread.id;
+            send({ id: 3, method: "config/read", params: { cwd: thread.cwd } });
+            return Effect.succeed([]);
+          }
+          case 3: {
+            const config = decodeProviderConfig(response.result);
+            if (config._tag === "None") return Effect.fail(failed("Codex described where turns go in a way Runnerbox couldn't read."));
+            const problems = providerProblems(config.value);
+            if (problems.length > 0) return refuse(problems);
+            send({ id: 4, method: "mcpServerStatus/list", params: { threadId, limit: 100 } });
+            return Effect.succeed([]);
+          }
+          case 4: {
+            const servers = decodeMcpServers(response.result);
+            if (servers._tag === "None") return Effect.fail(failed("Codex listed its MCP servers in a way Runnerbox couldn't read."));
+            const problems = mcpProblems(servers.value, allowedTools(turn));
+            if (problems.length > 0) return refuse(problems);
+            send({ id: 5, method: "turn/start", params: turnStartParams(threadId, input.prompt, input.images) });
+            return Effect.succeed([]);
+          }
+          case 5:
+            return Effect.succeed([]);
+          default:
+            return Effect.fail(failed("Codex answered a request Runnerbox didn't make."));
         }
-        if (response.id === 2) {
-          const started = decodeThreadStarted(response.result);
-          if (started._tag === "None") return Effect.fail(failed("Codex started a thread Runnerbox couldn't read."));
-          const problems = appliedProblems(started.value);
-          if (problems.length > 0) return Effect.fail(failed(`Runnerbox didn't send the question: Codex says ${problems.join(", ")}.`));
-          threadId = started.value.thread.id;
-          send({ id: 3, method: "mcpServerStatus/list", params: { threadId, limit: 100 } });
-          return Effect.succeed([]);
-        }
-        if (response.id === 3) {
-          const servers = decodeMcpServers(response.result);
-          if (servers._tag === "None") return Effect.fail(failed("Codex listed its MCP servers in a way Runnerbox couldn't read."));
-          const problems = mcpProblems(servers.value, allowedTools(turn));
-          if (problems.length > 0) return Effect.fail(failed(`Runnerbox didn't send the question: Codex says ${problems.join(", ")}.`));
-          send({ id: 4, method: "turn/start", params: turnStartParams(threadId, input.prompt, input.images) });
-          return Effect.succeed([]);
-        }
-        return response.id === 4 ? Effect.succeed([]) : Effect.fail(failed("Codex answered a request Runnerbox didn't make."));
       };
       const lines = Stream.fromAsyncIterable(createInterface({ input: child.stdout! }), () => failed("Couldn't read Codex's output."));
       // A turn that ends without its end message ended because `codex` did: say how.

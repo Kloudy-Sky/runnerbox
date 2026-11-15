@@ -22,11 +22,11 @@ export const HARNESSES = {
   },
   codex: {
     label: "Codex",
-    // A key reaching `codex app-server` hasn't been checked in a real turn, so Codex accounts use
-    // Runnerbox's own sign-in only, for now.
+    // A key reaching `codex app-server` hasn't been checked in a real turn, so Codex accounts use a
+    // sign-in in their home, never a key.
     acceptsKeys: false,
-    // Or the owner's own `codex login`, by pointing Codex at their home with their MCP servers,
-    // instructions and hooks turned off.
+    // That home is Runnerbox's own, or the owner's, which Codex is pointed at with their MCP servers
+    // and hooks off and its provider pinned to OpenAI's built-in one; their global AGENTS.md may load.
     ownerLogin: true,
     models: [
       { id: "gpt-6.1-sol", label: "GPT-6.1 Sol" },

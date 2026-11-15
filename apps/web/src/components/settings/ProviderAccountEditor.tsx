@@ -113,7 +113,7 @@ export function ProviderAccountEditor({
           description={
             home === null
               ? `Runnerbox's own ${provider.label} home, signed in with \`runnerbox codex-login\` on the runner machine.`
-              : `Your own ${provider.label} login, used by pointing ${provider.label} at your home. Your MCP servers, instructions and hooks there are turned off for these turns, and Runnerbox never reads or copies your credentials.`
+              : `Your own ${provider.label} login, used by pointing ${provider.label} at your home. Your MCP servers and hooks there are turned off for these turns and your global AGENTS.md may load but grants nothing. Runnerbox never reads or copies your credentials, and the home must be yours alone to write.`
           }
           control={
             <Select value={home === null ? "own" : "mine"} onValueChange={(value) => setHome(value === "mine" ? (account?.home ?? DEFAULT_HOME) : null)}>

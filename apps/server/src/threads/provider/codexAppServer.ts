@@ -1,5 +1,5 @@
 import { MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, PROPOSE_TOOL_NAME, READ_ONLY_TOOL_NAMES, REPRODUCE_TOOL_NAME, SERVER_NAME } from "./runnerboxTools.ts";
-import type { McpServers, ThreadStarted } from "./codexProtocol.ts";
+import type { McpServers, ProviderConfig, ThreadStarted } from "./codexProtocol.ts";
 import type { TurnImage } from "./ProviderAdapter.ts";
 
 // How a thread's turn runs the environment's own `codex`: one `codex app-server` per turn, spoken
@@ -67,6 +67,9 @@ export function appServerArgs(turn: { readonly mcpUrl: string; readonly propose:
     ...DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     ...[
       ...ownerServersOff(turn.ownerServers),
+      // Turns go to the built-in OpenAI provider whatever the owner's config names; its base URLs
+      // are checked before the question is sent, since `-c` can't unset them.
+      `model_provider=${toml("openai")}`,
       // No notify command from the owner's config, and no developer instructions but Runnerbox's.
       "notify=[]",
       `developer_instructions=${toml("")}`,
@@ -136,6 +139,7 @@ const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boo
   ...REQUIRED_FEATURES_OFF.map((feature) => `--disable ${feature}`),
   ...(turn.ownerServers.length === 0 ? [] : [`mcp_servers={${turn.ownerServers.map((name) => `${JSON.stringify(name)}={enabled=false}`).join(",")}}`]),
   ...turn.ownerServers.filter((name) => !name.includes(".") && !name.includes("=")).map((name) => `mcp_servers.${name}.enabled=false`),
+  'model_provider="openai"',
   "notify=[]",
   'developer_instructions=""',
   'web_search="disabled"',
@@ -160,13 +164,34 @@ export function launchProblems(
 
 // What `thread/start` says Codex applied, checked before the prompt is sent: a config or managed
 // policy Runnerbox didn't write could otherwise change it.
-export function appliedProblems(applied: Omit<ThreadStarted, "thread">) {
+// `globalInstructions`: the one instruction file that may load, an owner's `$CODEX_HOME/AGENTS.md`
+// (as typed and as resolved), on an account that uses their home; none on Runnerbox's own.
+export function appliedProblems(applied: Omit<ThreadStarted, "thread">, globalInstructions: ReadonlyArray<string> = []) {
   const { sandbox } = applied;
   return [
     ...(applied.approvalPolicy === REQUIRED_PARAMS.approvalPolicy ? [] : ["approvals aren't all asked of Runnerbox"]),
     ...(applied.approvalsReviewer === REQUIRED_PARAMS.approvalsReviewer ? [] : ["approvals go to a reviewer other than Runnerbox"]),
     ...(sandbox.type === "readOnly" && sandbox.networkAccess !== true ? [] : ["the sandbox isn't read-only without network"]),
-    ...((applied.instructionSources ?? []).length === 0 ? [] : ["it loaded instruction files"]),
+    ...((applied.instructionSources ?? []).every((source) => globalInstructions.includes(source)) ? [] : ["it loaded instruction files"]),
+    ...(applied.modelProvider === undefined || applied.modelProvider === PROVIDER ? [] : [`turns go to the provider \`${applied.modelProvider}\``]),
+  ];
+}
+
+// The built-in provider every turn goes to, pinned with `model_provider`. Built-in providers can't be
+// redefined in a config.toml, but its base URLs can, and `-c` can't unset them, so a home that
+// sets one is refused instead.
+const PROVIDER = "openai";
+export function providerProblems({ config }: ProviderConfig) {
+  const urls = [
+    ["openai_base_url", config.openai_base_url],
+    ["chatgpt_base_url", config.chatgpt_base_url],
+    ["experimental_realtime_ws_base_url", config.experimental_realtime_ws_base_url],
+    ["experimental_realtime_webrtc_call_base_url", config.experimental_realtime_webrtc_call_base_url],
+  ] as const;
+  return [
+    ...(config.model_provider === PROVIDER ? [] : [`turns go to the provider \`${config.model_provider ?? "none"}\``]),
+    ...urls.flatMap(([key, value]) => (value === undefined || value === null ? [] : [`its config sets \`${key}\``])),
+    ...(config.model_providers?.[PROVIDER] === undefined ? [] : [`its config changes the \`${PROVIDER}\` provider`]),
   ];
 }
 

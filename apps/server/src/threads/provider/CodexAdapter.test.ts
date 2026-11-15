@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -32,14 +32,28 @@ const settle = async (pids: ReadonlyArray<number>) => {
 // before Codex refused them, which must not reach Codex.
 async function turn(
   scenario: string,
-  options: { readonly version?: string; readonly ownerHome?: boolean; readonly ownerServers?: ReadonlyArray<{ name: string; enabled: boolean }>; readonly mcpStatus?: ReadonlyArray<unknown> } = {},
+  options: {
+    readonly version?: string;
+    readonly ownerHome?: boolean;
+    readonly ownerHomeMode?: number;
+    readonly ownerServers?: ReadonlyArray<{ name: string; enabled: boolean }>;
+    readonly mcpStatus?: ReadonlyArray<unknown>;
+    readonly instructionSources?: (ownerHome: string) => ReadonlyArray<string>;
+    readonly config?: Record<string, unknown>;
+  } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), "runnerbox-codex-test-"));
   const logPath = join(dir, "fake-codex.log");
-  await writeFile(join(dir, "fake-codex.json"), JSON.stringify({ scenario, version: options.version ?? "0.167.2", ownerServers: options.ownerServers, mcpStatus: options.mcpStatus }));
   // Inside `.server`, so the fake finds its settings from this home too.
   const ownerHome = join(dir, ".server", "owner-codex-home");
-  if (options.ownerHome) await mkdir(ownerHome, { recursive: true });
+  if (options.ownerHome) {
+    await mkdir(ownerHome, { recursive: true });
+    await chmod(ownerHome, options.ownerHomeMode ?? 0o700);
+  }
+  await writeFile(
+    join(dir, "fake-codex.json"),
+    JSON.stringify({ scenario, version: options.version ?? "0.167.2", ownerServers: options.ownerServers, mcpStatus: options.mcpStatus, instructionSources: options.instructionSources?.(ownerHome), config: options.config }),
+  );
   const input: TurnInput = {
     systemPrompt: "Example system prompt.",
     prompt: "Why did ci / test fail?",
@@ -174,6 +188,47 @@ test("an owner's config with its own server named runnerbox runs no turn", async
   try {
     assert.match(stoppedWith(run.exit), /MCP server named `runnerbox`/);
     assert.ok(!run.log.some((entry) => entry.spawned), "app-server never started");
+  } finally {
+    await run.cleanup();
+  }
+});
+
+test("on the owner's home, their global AGENTS.md may load, but any other instruction file stops the turn", async () => {
+  const global = await turn("answer", { ownerHome: true, instructionSources: (home) => [join(home, "AGENTS.md")] });
+  try {
+    assert.ok(Exit.isSuccess(global.exit), stoppedWith(global.exit));
+  } finally {
+    await global.cleanup();
+  }
+  const project = await turn("answer", { ownerHome: true, instructionSources: (home) => [join(home, "AGENTS.md"), "/state/.server/agent/cwd/AGENTS.md"] });
+  try {
+    assert.match(stoppedWith(project.exit), /didn't send the question.*loaded instruction files/);
+  } finally {
+    await project.cleanup();
+  }
+  const own = await turn("answer", { instructionSources: () => ["/state/.server/agent/codex-home/AGENTS.md"] });
+  try {
+    assert.match(stoppedWith(own.exit), /loaded instruction files/, "Runnerbox's own home stays as strict as before");
+  } finally {
+    await own.cleanup();
+  }
+});
+
+test("a config that sends turns elsewhere stops the turn before the question", async () => {
+  const run = await turn("answer", { ownerHome: true, config: { model_provider: "openai", chatgpt_base_url: "https://example.com/chat" } });
+  try {
+    assert.match(stoppedWith(run.exit), /didn't send the question.*sets `chatgpt_base_url`/);
+    assert.ok(!run.log.some((entry) => entry.received === "turn/start"));
+  } finally {
+    await run.cleanup();
+  }
+});
+
+test("a home other users can write to runs no turn", async () => {
+  const run = await turn("answer", { ownerHome: true, ownerHomeMode: 0o775 });
+  try {
+    assert.match(stoppedWith(run.exit), /other users can write to it/);
+    assert.ok(!run.log.some((entry) => entry.spawned || entry.mcpList), "Codex never ran against it");
   } finally {
     await run.cleanup();
   }
