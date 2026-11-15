@@ -3,7 +3,7 @@ import type { VmInstall } from "../launcher/launcher-config.ts";
 import { shellQuote } from "../launcher/docker-command.ts";
 import { sshArgs } from "../vm/run-in-vm.ts";
 
-type Build = { vm: VmInstall["vm"]; context: string; tag: string; tarBinary?: string; sshBinary?: string };
+type Build = { vm: VmInstall["vm"]; context: string; tag: string; noCache?: boolean; tarBinary?: string; sshBinary?: string };
 
 const succeeded = (child: ChildProcess) =>
   new Promise<boolean>((resolve) => {
@@ -12,10 +12,11 @@ const succeeded = (child: ChildProcess) =>
   });
 
 // Streams the build context from the host into `docker build` in the VM, so the VM never needs a
-// copy of the project. Build output goes to this process's stdout and stderr.
-export async function buildInVm({ vm, context, tag, tarBinary = "tar", sshBinary = "ssh" }: Build) {
+// copy of the project. Build output goes to this process's stdout and stderr. `noCache` runs every
+// step again, so a scheduled rebuild gets today's packages rather than cached layers.
+export async function buildInVm({ vm, context, tag, noCache = false, tarBinary = "tar", sshBinary = "ssh" }: Build) {
   const tar = spawn(tarBinary, ["-C", context, "-cf", "-", "."], { stdio: ["ignore", "pipe", "inherit"] });
-  const ssh = spawn(sshBinary, sshArgs(vm, `docker build -t ${shellQuote(tag)} -`), {
+  const ssh = spawn(sshBinary, sshArgs(vm, `docker build${noCache ? " --no-cache" : ""} -t ${shellQuote(tag)} -`), {
     stdio: ["pipe", "inherit", "inherit"],
   });
   ssh.stdin.on("error", () => {});

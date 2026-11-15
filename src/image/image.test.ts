@@ -7,6 +7,7 @@ import { after, test } from "node:test";
 import { buildInVm } from "./build-in-vm.ts";
 import { hashContext } from "./context-hash.ts";
 import { createImageKeeper } from "./image-keeper.ts";
+import { withRebuildPeriod } from "./rebuild-period.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-image-"));
 after(() => rm(dir, { recursive: true }));
@@ -100,6 +101,9 @@ test("the build streams the context to docker build in the VM", async () => {
   assert.match(await readFile(`${ssh}.args`, "utf8"), /docker build -t 'app:abc' -\n$/);
   assert.match(execFileSync("tar", ["-tf", `${ssh}.tar`], { encoding: "utf8" }), /Dockerfile/);
 
+  await buildInVm({ vm, context: root, tag: "app:abc", noCache: true, sshBinary: ssh });
+  assert.match(await readFile(`${ssh}.args`, "utf8"), /docker build --no-cache -t 'app:abc' -\n$/);
+
   process.env.FAKE_EXIT = "1";
   assert.equal(await buildInVm({ vm, context: root, tag: "app:abc", sshBinary: ssh }), false);
   delete process.env.FAKE_EXIT;
@@ -125,4 +129,13 @@ test("a current image that vanished from the VM is rebuilt", async () => {
   inVm.length = 0;
   await image.refresh();
   assert.deepEqual(events, ["build app:aaaaaaaaaaaa", "build app:aaaaaaaaaaaa"]);
+});
+
+test("rebuildDays gives the image a new tag when a period starts, and only then", () => {
+  const day = 86_400_000;
+  const start = 3_000 * 7 * day; // the first moment of a 7-day period
+  assert.equal(withRebuildPeriod("files", undefined, start), "files");
+  assert.equal(withRebuildPeriod("files", 7, start), withRebuildPeriod("files", 7, start + 7 * day - 1));
+  assert.notEqual(withRebuildPeriod("files", 7, start), withRebuildPeriod("files", 7, start + 7 * day));
+  assert.notEqual(withRebuildPeriod("files", 7, start), withRebuildPeriod("other", 7, start));
 });
