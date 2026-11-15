@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-// A stand-in for GitHub's Actions API, for the fake server: owner/name has two runs queued, one
+// A stand-in for GitHub's Actions and releases API, for the fake server: owner/name has two runs queued, one
 // holding a job for example-linux and one for example-docker, and one job for a hosted label. It
 // answers with ETags like GitHub, so a repeated look is a 304.
 export async function startFakeGitHub(now: number) {
@@ -19,6 +19,11 @@ export async function startFakeGitHub(now: number) {
     "/repos/owner/name/actions/runs?status=queued&per_page=20": runs,
     "/repos/owner/name/actions/runs/7/jobs?filter=latest&per_page=100": { jobs: [job("e2e", "example-linux", 6, 7), { ...job("lint", "ubuntu-24.04", 6, 7), labels: ["ubuntu-24.04"] }] },
     "/repos/owner/name/actions/runs/8/jobs?filter=latest&per_page=100": { jobs: [job("integration", "example-docker", 2, 8)] },
+    // The fixtures' gh is 2.45.0, well behind; their runner is the newest.
+    "/repos/cli/cli/releases/latest": { tag_name: "v2.83.0", published_at: new Date(now - 14 * 86_400_000).toISOString() },
+    "/repos/cli/cli/releases/tags/v2.45.0": { tag_name: "v2.45.0", published_at: "2024-02-07T00:00:00Z" },
+    "/repos/actions/runner/releases/latest": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
+    "/repos/actions/runner/releases/tags/v2.338.2": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
   };
   const server = createServer((request, response) => {
     const path = request.url ?? "";

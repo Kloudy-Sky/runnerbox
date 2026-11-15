@@ -63,7 +63,14 @@ export const SlotState = Schema.Struct({
 
 // A tool found in the image and its version, or null when the image doesn't have it. The first is
 // the image's OS, named as the image names it.
-export const ImageTool = Schema.Struct({ name: Schema.String, version: Schema.NullOr(Schema.String) });
+// For a few tools, the server adds when this version was released and the newest one, from GitHub,
+// once someone has watched the queue.
+export const ImageTool = Schema.Struct({
+  name: Schema.String,
+  version: Schema.NullOr(Schema.String),
+  releasedAt: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  newest: Schema.optionalKey(Schema.NullOr(Schema.Struct({ version: Schema.String, releasedAt: Schema.String }))),
+});
 export type ImageTool = typeof ImageTool.Type;
 
 export const KindState = Schema.Struct({

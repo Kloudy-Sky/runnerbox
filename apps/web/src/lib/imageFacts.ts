@@ -1,4 +1,4 @@
-import type { KindState, LauncherEvent } from "@runnerbox/contracts";
+import type { ImageTool, KindState, LauncherEvent } from "@runnerbox/contracts";
 import { formatAge } from "./format.ts";
 
 const DAY_MS = 86_400_000;
@@ -71,4 +71,18 @@ export function typicalBuildMs(events: ReadonlyArray<LauncherEvent>, install: st
     .flatMap((event) => (event.event === "image_build" && event.ok && event.install === install && event.runnerType === kind ? [event.durationMs] : []))
     .toSorted((a, b) => a - b);
   return durations.length === 0 ? null : (durations[Math.floor(durations.length / 2)] ?? null);
+}
+
+// A tool is old when the newest release came out more than half a year after the installed one:
+// long enough that routine releases of a pinned tool don't flag it, short enough to catch one like
+// gh 2.45 before GitHub's API leaves it behind.
+const OLD_AFTER_MS = 182 * DAY_MS;
+const monthYear = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+
+// Why a tool is old, in a sentence, or null when it isn't or its dates aren't known yet.
+export function oldToolNote(tool: ImageTool) {
+  const { version, releasedAt, newest } = tool;
+  if (!version || !releasedAt || !newest || newest.version === version) return null;
+  if (Date.parse(newest.releasedAt) - Date.parse(releasedAt) <= OLD_AFTER_MS) return null;
+  return `${tool.name} ${version} is from ${monthYear(releasedAt)}, and the newest is ${newest.version}, from ${monthYear(newest.releasedAt)}. If your Dockerfile pins it, bump it there.`;
 }

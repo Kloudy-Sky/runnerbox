@@ -7,6 +7,7 @@ import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { readSlotStates } from "runnerbox/src/launcher/slot-state.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
+import * as ToolReleases from "./ToolReleases.ts";
 import { LogReadError } from "../history/StateLogs.ts";
 
 // `up` rewrites its file at least every 15 seconds while it runs, so older than this means it
@@ -26,13 +27,20 @@ export class RunnerState extends Context.Service<
 
 const make = Effect.gen(function* () {
   const { stateDir } = yield* ServerPaths.ServerPaths;
+  const releases = yield* ToolReleases.ToolReleases;
   const current = Effect.gen(function* () {
     const files = yield* Effect.tryPromise({
       try: () => readSlotStates(stateDir),
       catch: (cause) => new LogReadError({ what: "runner state", cause }),
     });
     const now = yield* Clock.currentTimeMillis;
-    return files.map(({ v: _v, ...file }) => ({ ...file, stale: now - Date.parse(file.updatedAt) > STALE_MS }));
+    // Each image's tools carry their release dates, once the queue poll has looked them up.
+    const known = yield* releases.known;
+    return files.map(({ v: _v, ...file }): InstallState => ({
+      ...file,
+      kinds: file.kinds.map((kind) => (kind.tools ? { ...kind, tools: known(kind.tools) } : kind)),
+      stale: now - Date.parse(file.updatedAt) > STALE_MS,
+    }));
   }).pipe(Effect.withSpan("RunnerState.current"));
   // Every subscriber polls on its own; there are a few clients at most.
   const changes = Stream.fromEffectSchedule(current, POLL).pipe(Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)));

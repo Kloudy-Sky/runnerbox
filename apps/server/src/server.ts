@@ -26,6 +26,7 @@ import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as QueueConfig from "./runners/QueueConfig.ts";
 import * as RunnerQueue from "./runners/RunnerQueue.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
+import * as ToolReleases from "./runners/ToolReleases.ts";
 import * as ClaudeAdapter from "./threads/provider/ClaudeAdapter.ts";
 import * as CodexAdapter from "./threads/provider/CodexAdapter.ts";
 import type { CodexProviderAdapter, ProviderAdapter } from "./threads/provider/ProviderAdapter.ts";
@@ -70,8 +71,9 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer, RunnerQueue.layer.pipe(Layer.provide(input.queue ?? QueueConfig.layer)))),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer, RunnerQueue.layer)),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
+    Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),
     Layer.provideMerge(ServerPaths.layer(input.stateDir)),
     Layer.provideMerge(ListeningPorts.layer({ port: input.port, tunnelPort: input.tunnelPort ?? null })),

@@ -32,7 +32,7 @@ async function until(ready: () => boolean, what: string, timeoutMs = 5000) {
 // a request repeating it gets a 304, and `script` sets the budget headers or a refusal.
 async function fakeGitHub() {
   const requests: { path: string; etag: string | undefined; auth: string | undefined }[] = [];
-  const script = { remaining: 4000, limit: 5000, refuse: null as null | { status: number; retryAfter?: number; body?: string }, forbid: null as string | null };
+  const script = { remaining: 4000, limit: 5000, refuse: null as null | { status: number; retryAfter?: number; body?: string }, forbid: null as string | null, releasesDown: false };
   const jobs = {
     jobs: [
       { name: "test", workflow_name: "ci", status: "queued", labels: ["self-hosted", "example-linux"], created_at: "2026-11-15T12:00:00Z", html_url: "https://github.com/owner/name/actions/runs/1/job/11" },
@@ -40,14 +40,21 @@ async function fakeGitHub() {
       { name: "build", workflow_name: "ci", status: "in_progress", labels: ["self-hosted", "example-linux"], created_at: "2026-11-15T11:59:00Z", html_url: "https://github.com/owner/name/actions/runs/1/job/13" },
     ],
   };
+  const releases: Record<string, unknown> = {
+    "/repos/cli/cli/releases/latest": { tag_name: "v2.83.0", published_at: "2026-11-01T00:00:00Z" },
+    "/repos/cli/cli/releases/tags/v2.45.0": { tag_name: "v2.45.0", published_at: "2024-02-07T00:00:00Z" },
+    "/repos/actions/runner/releases/latest": { tag_name: "v2.338.2", published_at: "2026-10-20T00:00:00Z" },
+    "/repos/actions/runner/releases/tags/v2.338.2": { tag_name: "v2.338.2", published_at: "2026-10-20T00:00:00Z" },
+  };
   const body = (path: string) =>
-    path.startsWith("/repos/owner/name/actions/runs?status=queued")
+    releases[path] ??
+    (path.startsWith("/repos/owner/name/actions/runs?status=queued")
       ? { workflow_runs: [{ id: 1, created_at: "2026-11-15T12:00:00Z" }] }
       : path.startsWith("/repos/owner/name/actions/runs/1/jobs")
         ? jobs
         : path.includes("/actions/runs?")
           ? { workflow_runs: [] }
-          : null;
+          : null);
   const server = createServer((request: IncomingMessage, response: ServerResponse) => {
     const path = request.url ?? "";
     const etag = request.headers["if-none-match"];
@@ -57,6 +64,7 @@ async function fakeGitHub() {
       response.writeHead(script.refuse.status, { ...rate, ...(script.refuse.retryAfter ? { "retry-after": String(script.refuse.retryAfter) } : {}) }).end(script.refuse.body ?? "{}");
       return;
     }
+    if (script.releasesDown && path.includes("/releases/")) return void response.writeHead(502, rate).end("{}");
     if (script.forbid && path.startsWith(`/repos/${script.forbid}/`)) return void response.writeHead(403, rate).end(JSON.stringify({ message: "Resource protected by organization SAML enforcement." }));
     const reply = body(path);
     if (!reply) return void response.writeHead(404, rate).end("{}");
@@ -88,10 +96,12 @@ async function setup(envMode = 0o600) {
     Effect.runFork(
       Effect.scoped(Effect.flatMap(openSession(server.baseUrl, token), ({ client }) => Stream.runForEach(client["runners.subscribeQueue"](), (view) => Effect.sync(() => views.push(view))))),
     );
+  const state = () => Effect.runPromise(Effect.scoped(Effect.flatMap(openSession(server.baseUrl, token), ({ client }) => client["runners.state"]())));
   return {
     github,
     views,
     watch,
+    state,
     stop: (fiber: Fiber.Fiber<unknown, unknown>) => Effect.runPromise(Fiber.interrupt(fiber)),
     close: async () => {
       await server.close();
@@ -110,7 +120,10 @@ test("GitHub is never asked while no one watches, and stops being asked a minute
     const last = views.at(-1);
     assert.deepEqual(last?.waiting.map(({ repo, workflow, job, label }) => [repo, workflow, job, label]), [["owner/name", "ci", "test", "example-linux"]]);
     assert.ok(github.requests.every((request) => request.auth === `Bearer ${TOKEN}`));
-    assert.ok(github.requests.every((request) => /^\/repos\/owner\/(name|other)\/actions\/runs/.test(request.path)), "only the synced repos, only Actions runs");
+    assert.ok(
+      github.requests.every((request) => /^\/repos\/owner\/(name|other)\/actions\/runs/.test(request.path) || /^\/repos\/(cli\/cli|actions\/runner)\/releases\//.test(request.path)),
+      "only the synced repos' Actions runs, and the fixed tools' releases",
+    );
     await stop(fiber);
     await sleep(TIMING.idleMs + 150);
     const settled = github.requests.length;
@@ -274,5 +287,44 @@ test("the ETag cache keeps only what the last look asked for", async () => {
     assert.equal(github.requests.at(-1)?.etag, `"/${b}"`, "one it did ask for was kept");
   } finally {
     await github.close();
+  }
+});
+
+test("the fixed tools' release dates are looked up once a day on a good look, and reach the runner state", async () => {
+  const { github, views, watch, stop, state, close } = await setup();
+  try {
+    const fiber = watch();
+    await until(() => views.filter((view) => view.status === "watching").length >= 3, "a few looks");
+    await stop(fiber);
+    const releasePaths = github.requests.filter((request) => request.path.includes("/releases/")).map((request) => request.path);
+    assert.deepEqual(releasePaths.toSorted(), [
+      "/repos/actions/runner/releases/latest",
+      "/repos/actions/runner/releases/tags/v2.338.2",
+      "/repos/cli/cli/releases/latest",
+      "/repos/cli/cli/releases/tags/v2.45.0",
+    ], "once each, for gh and the runner only, however many looks");
+    const gh = (await state()).flatMap((install) => install.kinds.flatMap((kind) => kind.tools ?? [])).find((tool) => tool.name === "gh");
+    assert.deepEqual([gh?.releasedAt, gh?.newest?.version], ["2024-02-07T00:00:00Z", "2.83.0"]);
+  } finally {
+    await close();
+  }
+});
+
+test("a release lookup GitHub couldn't answer is asked again on the next look, not a day later", async () => {
+  const { github, views, watch, stop, state, close } = await setup();
+  try {
+    github.script.releasesDown = true;
+    const fiber = watch();
+    await until(() => github.requests.some((request) => request.path.includes("/releases/")), "a failed release lookup");
+    github.script.releasesDown = false;
+    const newest = async () =>
+      (await state()).flatMap((install) => install.kinds.flatMap((kind) => kind.tools ?? [])).find((tool) => tool.name === "gh")?.newest?.version;
+    const deadline = Date.now() + 5000;
+    while ((await newest()) !== "2.83.0" && Date.now() < deadline) await sleep(50);
+    assert.equal(await newest(), "2.83.0");
+    assert.ok(views.length > 0);
+    await stop(fiber);
+  } finally {
+    await close();
   }
 });

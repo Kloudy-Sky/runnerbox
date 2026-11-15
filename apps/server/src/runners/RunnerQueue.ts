@@ -12,6 +12,7 @@ import * as StateLogs from "../history/StateLogs.ts";
 import { afterPoll, type Outcome, reposToPoll, runIds, waitingJobs } from "./queueRules.ts";
 import { QueueConfig } from "./QueueConfig.ts";
 import * as RunnerState from "./RunnerState.ts";
+import * as ToolReleases from "./ToolReleases.ts";
 
 const DAY_MS = 86_400_000;
 // A repo counts as active by its newest job in this window, for choosing which to poll.
@@ -26,6 +27,7 @@ const make = Effect.gen(function* () {
   const config = yield* QueueConfig;
   const logs = yield* StateLogs.StateLogs;
   const runnerState = yield* RunnerState.RunnerState;
+  const releases = yield* ToolReleases.ToolReleases;
   const github = createGitHubReader(config.apiBase);
   const view = yield* SubscriptionRef.make(OFF);
   const watchers = yield* Ref.make(0);
@@ -95,6 +97,11 @@ const make = Effect.gen(function* () {
       if (repos.length > 0 && forbidden === repos.length) outcome = { kind: "forbidden" };
     }
     github.prune();
+    // The tools' release dates ride on a good look at the normal pace, cached for a day, so they
+    // never spend a budget that's already short.
+    if (outcome.kind === "ok" && (!outcome.budget || outcome.budget.remaining / outcome.budget.limit >= 0.25)) {
+      yield* releases.refresh(read.token, installs.flatMap((install) => install.kinds.flatMap((kind) => kind.tools ?? [])));
+    }
 
     const now = yield* Clock.currentTimeMillis;
     const next = afterPoll(outcome, yield* Ref.get(failures), timing, now);

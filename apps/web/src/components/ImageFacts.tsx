@@ -1,5 +1,5 @@
 import type { KindState } from "@runnerbox/contracts";
-import { type ImageStatus, imageStatus } from "../lib/imageFacts.ts";
+import { type ImageStatus, imageStatus, oldToolNote } from "../lib/imageFacts.ts";
 
 const TONE: Record<ImageStatus["tone"], string> = {
   success: "text-success",
@@ -8,7 +8,8 @@ const TONE: Record<ImageStatus["tone"], string> = {
   muted: "text-foreground",
 };
 
-// One kind's image: how fresh it is, in a word and a sentence, and the tools jobs find in it.
+// One kind's image: how fresh it is, in a word and a sentence, and the tools jobs find in it, with
+// a sentence under any that's old.
 // Shows nothing when Runnerbox on the machine reports nothing about the image yet.
 export function ImageFacts({ kind, now, typicalBuildMs }: { kind: typeof KindState.Type; now: number; typicalBuildMs: number | null }) {
   const status = imageStatus(kind, now, typicalBuildMs);
@@ -37,12 +38,22 @@ export function ImageFacts({ kind, now, typicalBuildMs }: { kind: typeof KindSta
         <>
           <span className="text-muted-foreground">Tools</span>
           <span className="flex flex-wrap gap-x-3 gap-y-0.5">
-            {tools.map((tool) => (
-              <span key={tool.name} className="whitespace-nowrap text-muted-foreground">
-                {tool.name} <span className="text-foreground tabular-nums">{tool.version}</span>
-              </span>
-            ))}
+            {tools.map((tool) =>
+              oldToolNote(tool) ? (
+                <span key={tool.name} className="whitespace-nowrap text-warning">
+                  {tool.name} <span className="tabular-nums">{tool.version}</span> old
+                </span>
+              ) : (
+                <span key={tool.name} className="whitespace-nowrap text-muted-foreground">
+                  {tool.name} <span className="text-foreground tabular-nums">{tool.version}</span>
+                </span>
+              ),
+            )}
           </span>
+          {tools.flatMap((tool) => {
+            const note = oldToolNote(tool);
+            return note ? [<span key={`${tool.name}-gap`} />, <span key={`${tool.name}-note`} className="text-muted-foreground">{note}</span>] : [];
+          })}
         </>
       ) : null}
     </div>
