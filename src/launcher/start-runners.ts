@@ -78,9 +78,9 @@ export async function startRunners(configPath: string) {
   // Every runner type checks the install's floor unless it sets its own, so together they can't
   // overload the machines. A host install has no VM, so its VM floor is 0, which skips that check.
   const installFloor: MemoryFloor = { vmMiB: 0, ...config.memoryFloor };
-  const roomForJob = (floor: MemoryFloor) =>
+  const roomForJob = (floor: MemoryFloor, starting?: string) =>
     checkMemoryFloor([
-      { name: "host", floorMiB: floor.hostMiB, availableMiB: hostAvailableMiB },
+      { name: "machine", floorMiB: floor.hostMiB, availableMiB: hostAvailableMiB },
       ...("vm" in config
         ? [
             {
@@ -90,7 +90,7 @@ export async function startRunners(configPath: string) {
             },
           ]
         : []),
-    ]);
+    ], starting);
   const joinLine = createMemoryLine(roomForJob);
   const remove = async (runnerId: number) =>
     removeRunner({ scope: config.scope, token: await readTokenFile(config.tokenFile), runnerId });
@@ -220,7 +220,7 @@ export async function startRunners(configPath: string) {
           built: (ok) => slotState.built(runner.name, ok),
           probed: (tag, facts) => slotState.probed(runner.name, tag, facts),
         };
-        const image = await keepImage(config, runner, () => roomForJob(installFloor), recordForType, () => stopping, imageState, inBuilder);
+        const image = await keepImage(config, runner, () => roomForJob(installFloor, "an image build"), recordForType, () => stopping, imageState, inBuilder);
         // Draining before this kind's image was ever ready, so it has no slots to wait for.
         if (!image) return;
         images.set(runner.name, image.current);

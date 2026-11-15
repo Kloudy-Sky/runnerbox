@@ -14,7 +14,7 @@ test("a slot that asks after another waits behind it, even once memory is back",
   // A job ends and frees memory. The slot it ran on asks again before the waiting slot rechecks.
   short = null;
   const finished = join(heavy);
-  assert.equal(await finished.room(), "1 slot was waiting first");
+  assert.equal(await finished.room(), "Waiting behind 1 runner that asked for memory first.");
   assert.equal(await waiting.room(), null);
   waiting.leave();
   assert.equal(await finished.room(), null);
@@ -24,7 +24,7 @@ test("a slot that stops waiting no longer holds up the ones behind it", async ()
   const join = createMemoryLine(async () => null);
   const first = join(heavy);
   const second = join(heavy);
-  assert.equal(await second.room(), "1 slot was waiting first");
+  assert.equal(await second.room(), "Waiting behind 1 runner that asked for memory first.");
   first.leave();
   assert.equal(await second.room(), null);
 });
@@ -38,5 +38,5 @@ test("a light slot that fits starts past a heavy one still waiting, but not the 
   assert.equal(await lightSlot.room(), null);
 
   const laterHeavy = join(heavy);
-  assert.equal(await laterHeavy.room(), "2 slots were waiting first");
+  assert.equal(await laterHeavy.room(), "Waiting behind 2 runners that asked for memory first.");
 });

@@ -21,13 +21,17 @@ test("macOS counts free, inactive and speculative pages as available, at vm_stat
 });
 
 test("every machine must clear its floor, and an unreadable one has no room", async () => {
-  const host = { name: "host", floorMiB: 500, availableMiB: async () => 600 };
+  const host = { name: "machine", floorMiB: 500, availableMiB: async () => 600 };
   const vm = (availableMiB: () => Promise<number>) => ({ name: "VM", floorMiB: 1500, availableMiB });
 
   assert.equal(await checkMemoryFloor([host, vm(async () => 2000)]), null);
   assert.equal(
     await checkMemoryFloor([host, vm(async () => 1000)]),
-    "the VM has 1000 MiB available, below its 1500 MiB floor",
+    "The VM has 1000 MB free. Runnerbox keeps 1.5 GB free before it starts another runner.",
+  );
+  assert.equal(
+    await checkMemoryFloor([{ ...host, availableMiB: async () => 400 }, { ...vm(async () => 1840), floorMiB: 2048 }], "an image build"),
+    "The machine has 400 MB free. Runnerbox keeps 500 MB free before it starts an image build. The VM has 1.8 GB free. Runnerbox keeps 2.0 GB free before it starts an image build.",
   );
   assert.match(
     (await checkMemoryFloor([host, vm(() => Promise.reject(new Error("ssh timed out")))])) ?? "",
@@ -37,5 +41,5 @@ test("every machine must clear its floor, and an unreadable one has no room", as
 
 test("a floor of 0 skips that machine's check entirely", async () => {
   const availableMiB = () => Promise.reject(new Error("no /proc here"));
-  assert.equal(await checkMemoryFloor([{ name: "host", floorMiB: 0, availableMiB }]), null);
+  assert.equal(await checkMemoryFloor([{ name: "machine", floorMiB: 0, availableMiB }]), null);
 });

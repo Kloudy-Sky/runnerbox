@@ -80,7 +80,7 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
       return null;
     });
     if (!registration) {
-      report(slot, "backoff", { detail: "could not mint a registration" });
+      report(slot, "backoff", { detail: "Couldn't get a registration from GitHub." });
       await wait(MINT_RETRY_MS);
       continue;
     }
@@ -123,7 +123,7 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
     if (stopping()) return report(slot, "stopped");
     // A released runner exits fast on purpose, so that isn't a broken VM.
     const brokenFast = !released && exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS;
-    report(slot, "backoff", { detail: brokenFast ? `the last runner exited ${exitCode} within a minute` : "starting the next runner" });
+    report(slot, "backoff", { detail: brokenFast ? `the last runner exited ${exitCode} within a minute` : "Starting the next runner." });
     await wait(brokenFast ? MINT_RETRY_MS : NEXT_RUNNER_MS);
   }
   report(slot, "stopped");
