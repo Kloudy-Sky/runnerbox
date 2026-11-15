@@ -45,7 +45,8 @@ export function slotItems(input: InboxInput): InboxItem[] {
       ?.slots.some((slot) => slots.includes(slot.slot) && slot.phase === "backoff");
     const runnersFailed = streaks.reduce((sum, streak) => sum + streak.length, 0);
     // The owner reads runners, not slots: "The docker kind's runner 1 has failed to start 4 times
-    // in a row (exit 125)."
+    // in a row (exit 125)." Only exit 125 means the container never started; any other stop came
+    // after it started, before it took a job.
     const which = slots.length === 1 ? `The ${kind} kind's runner ${slots[0]} has` : `The ${kind} kind's runners ${listed(slots.map(String))} have`;
     const how = listed(codes.map((code) => (code === null ? "a lost connection" : `exit ${code}`)));
     return {
@@ -57,7 +58,7 @@ export function slotItems(input: InboxInput): InboxItem[] {
       repo: null,
       install: last.install,
       title: `The ${kind} runners keep failing before they take a job`,
-      happened: `${which} failed to start ${plural(runnersFailed, "time")} in a row (${how}).${backingOff ? " Runnerbox is waiting before it tries again." : ""}`,
+      happened: `${which} ${codes.every((code) => code === DOCKER_COULD_NOT_START) ? "failed to start" : "stopped before taking a job"} ${plural(runnersFailed, "time")} in a row (${how}).${backingOff ? " Runnerbox is waiting before it tries again." : ""}`,
       why: whyFor(codes[0] ?? null),
       action: actionFor(codes[0] ?? null),
       at: new Date(Date.parse(last.startedAt) + last.durationMs).toISOString(),
