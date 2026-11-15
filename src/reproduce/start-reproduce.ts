@@ -8,7 +8,7 @@ import { checkPrivateRepo, commitTarball, readSourceToken } from "./source.ts";
 
 type FromUp = {
   // What `up` checks before a slot registers, for a given floor.
-  roomForJob: (floor: MemoryFloor) => Promise<string | null>;
+  roomForJob: (floor: MemoryFloor, starting?: string) => Promise<string | null>;
   installFloor: MemoryFloor;
   currentImage: (kind: string) => string | null;
   slotsWaiting: () => number;
@@ -33,7 +33,7 @@ export async function startReproduce(config: VmInstall & { reproduce: { sourceTo
     // The kind's floor, plus room for the reproduce's own memory limit in the VM.
     roomFor: (runner: RunnerType) => {
       const floor = runner.memoryFloor ?? up.installFloor;
-      return up.roomForJob({ hostMiB: floor.hostMiB, vmMiB: floor.vmMiB + memoryMiB(runner.limits.memory) });
+      return up.roomForJob({ hostMiB: floor.hostMiB, vmMiB: floor.vmMiB + memoryMiB(runner.limits.memory) }, "a reproduce container");
     },
     slotsWaiting: up.slotsWaiting,
     every,

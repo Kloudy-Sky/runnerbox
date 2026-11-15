@@ -18,7 +18,7 @@ export function createMemoryLine(roomForJob: (floor: MemoryFloor) => Promise<str
       // Why this slot can't start yet, or null once no slot ahead of it blocks it and memory is above its floor.
       async room() {
         const ahead = line.slice(0, line.indexOf(place)).filter((other) => needsNoMore(other, place)).length;
-        if (ahead > 0) return `${ahead} ${ahead === 1 ? "slot was" : "slots were"} waiting first`;
+        if (ahead > 0) return `Waiting behind ${ahead} ${ahead === 1 ? "runner" : "runners"} that asked for memory first.`;
         return roomForJob(place);
       },
       leave() {
