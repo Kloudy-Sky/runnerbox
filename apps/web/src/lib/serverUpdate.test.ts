@@ -5,7 +5,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { releaseRepository, serverIsBehind, serverUpdateCommand } from "./serverUpdate.ts";
+import { releaseRepository, serverIsBehind, serverUpdateCommand, staleInstalls, underwayLine } from "./serverUpdate.ts";
 
 test("a server is behind only when it's older than a released app", () => {
   assert.equal(serverIsBehind("0.2.1", "0.2.0"), true);
@@ -56,4 +56,32 @@ test("the command names only the repository this build was released from", () =>
   assert.equal(releaseRepository(undefined), null);
   assert.equal(releaseRepository("owner/name; rm -rf ~"), null);
   assert.throws(() => serverUpdateCommand("owner", "0.2.1"), /owner\/name/);
+});
+
+test("the line an update shows says each step in plain words", () => {
+  assert.equal(underwayLine({ step: "downloading", version: "0.2.0", received: 4.1 * 1024 * 1024, total: 9.8 * 1024 * 1024 }, "example"), "Updating example to 0.2.0. Downloading, 4.1 of 9.8 MB.");
+  assert.equal(underwayLine({ step: "checking", version: "0.2.0" }, "example"), "Updating example to 0.2.0. Checking it.");
+  assert.equal(underwayLine({ step: "starting", version: "0.2.0", updateId: "0123456789abcdef" }, "example"), "Updating example to 0.2.0. Starting the new version.");
+});
+
+test("the runners still on the old version are those that started before the update finished", () => {
+  const install = (name: string, startedAt: string, runsIn?: "container" | "host", stale = false) => ({
+    install: name,
+    pid: 1,
+    startedAt,
+    updatedAt: startedAt,
+    stopping: false,
+    stale,
+    kinds: [{ name: "linux", label: "x", image: null, building: null, ...(runsIn ? { runsIn } : {}), slots: [] }],
+  });
+  const update = { id: "0123456789abcdef", from: "0.1.9", to: "0.2.0", status: "committed" as const, startedAt: "2026-11-14T10:00:00Z", finishedAt: "2026-11-14T10:01:00Z" };
+  const installs = [install("ci", "2026-11-14T09:00:00Z", "container"), install("mac", "2026-11-14T09:00:00Z", "host"), install("old", "2026-11-14T09:00:00Z"), install("fresh", "2026-11-14T10:05:00Z"), install("gone", "2026-11-14T09:00:00Z", "container", true)];
+  // An install whose state doesn't say where it runs, from an older build, is listed with the command.
+  assert.deepEqual(staleInstalls(installs, update), [
+    { install: "ci", host: false },
+    { install: "mac", host: true },
+    { install: "old", host: false },
+  ]);
+  assert.deepEqual(staleInstalls(installs, { ...update, status: "rolled-back" }), [], "a rollback left the file as it was");
+  assert.deepEqual(staleInstalls(installs, null), []);
 });

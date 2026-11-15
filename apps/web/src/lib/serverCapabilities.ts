@@ -15,9 +15,11 @@ export type Capabilities = {
   readonly jobResources: boolean;
   // `runners.subscribeQueue`: the jobs GitHub has queued for this machine's runners.
   readonly waitingJobs: boolean;
+  // `server.update`: the server updates itself, so the app offers Update instead of a command.
+  readonly serverUpdate: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -31,5 +33,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     providers: has(RPC_METHODS.providersList) && has(RPC_METHODS.providersSave),
     jobResources: has(RPC_METHODS.historyJobResources),
     waitingJobs: has(RPC_METHODS.runnersSubscribeQueue),
+    serverUpdate: has(RPC_METHODS.serverUpdate) && has(RPC_METHODS.serverUpdateStatus),
   };
 }

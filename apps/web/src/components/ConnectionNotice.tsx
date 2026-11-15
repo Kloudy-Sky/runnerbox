@@ -3,6 +3,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { serverIsBehind } from "../lib/serverUpdate.ts";
 import { ServerUpdateCommand } from "./ServerUpdateCommand.tsx";
+import { ServerBehindNotice, UpdateRunNotice, useUpdateRun } from "./ServerUpdateNotice.tsx";
 import { Button } from "./ui/button.tsx";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { queryClient, runtime } from "../runtime.ts";
@@ -10,21 +11,17 @@ import type { RootSearch } from "../lib/search.ts";
 
 const APP_VERSION = packageJson.version;
 
-// Shown while the active environment is offline, or runs a server older than this app. Whatever
-// was loaded stays on screen below it.
+// Shown while the active environment is offline, or runs a server older than this app, or is
+// updating. Whatever was loaded stays on screen below it. An update's restart drops the socket on
+// purpose, so while one runs its line stands in for the disconnected one.
 export function ConnectionNotice() {
   const { environment, connection } = useActiveEnvironment();
+  const run = useUpdateRun(environment?.environmentId ?? "");
   const about = useRpcQuery(["about"], (client) => client["server.about"]());
   const serverVersion = about.data?.serverVersion ?? null;
+  if (environment && run) return <UpdateRunNotice environment={environment} run={run} appVersion={APP_VERSION} />;
   if (environment && connection?.status === "connected" && serverVersion !== null && serverIsBehind(APP_VERSION, serverVersion)) {
-    return (
-      <div className="mx-3 flex shrink-0 flex-col gap-1.5 rounded-lg bg-surface px-3 py-2">
-        <span>
-          The server on {environment.label} runs runnerbox {serverVersion}, older than this app ({APP_VERSION}). Update it on that machine. Its installs pick up the same file when they next restart:
-        </span>
-        <ServerUpdateCommand appVersion={APP_VERSION} />
-      </div>
-    );
+    return <ServerBehindNotice environment={environment} serverVersion={serverVersion} appVersion={APP_VERSION} />;
   }
   if (!environment || connection?.status !== "disconnected") return null;
   const cached = queryClient.getQueryCache().findAll({ queryKey: [environment.environmentId] }).some((query) => query.state.data !== undefined);
