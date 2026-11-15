@@ -16,6 +16,8 @@ const Slot = type({
   since: "string",
   runner: "string | null",
   detail: "string | null",
+  // The job the runner said it took. A file from an older `up` doesn't have it.
+  "job?": "string | null",
 });
 
 export const SlotStateFile = type({
@@ -69,7 +71,7 @@ export function createSlotState(path: string, install: string, kinds: readonly K
       builtAt: null,
       tools: null,
       ...(runsIn ? { runsIn } : {}),
-      slots: Array.from({ length: slots }, (_, index) => ({ slot: index + 1, phase: "minting" as const, since: iso(), runner: null, detail: null })),
+      slots: Array.from({ length: slots }, (_, index) => ({ slot: index + 1, phase: "minting" as const, since: iso(), runner: null, detail: null, job: null })),
     })),
   };
   let writing: Promise<void> | null = null;
@@ -105,7 +107,17 @@ export function createSlotState(path: string, install: string, kinds: readonly K
       const entry = kindNamed(kindName)?.slots.find((candidate) => candidate.slot === slot);
       if (!entry) return;
       if (entry.phase !== phase || entry.runner !== runner) entry.since = iso();
-      Object.assign(entry, { phase, runner, detail });
+      // A job belongs to one runner, and only while it's busy.
+      const job = phase === "busy" && entry.runner === runner ? (entry.job ?? null) : null;
+      Object.assign(entry, { phase, runner, detail, job });
+      void flush();
+    },
+    // The slot's runner said it took `job`, so it's busy from now, whatever `up` had guessed.
+    job(kindName: string, slot: number, job: string) {
+      const entry = kindNamed(kindName)?.slots.find((candidate) => candidate.slot === slot);
+      if (!entry || entry.runner === null) return;
+      if (entry.phase !== "busy") Object.assign(entry, { phase: "busy", since: iso() });
+      entry.job = job;
       void flush();
     },
     image(kindName: string, image: string | null, building: string | null) {

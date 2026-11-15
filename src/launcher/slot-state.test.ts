@@ -61,3 +61,21 @@ test("a new image's facts wait for its own probe, and a late probe of an old ima
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("a slot's job shows while its runner is busy, and goes with the runner", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "slot-state-"));
+  try {
+    const state = createSlotState(join(dir, "example", "state.json"), "example", [{ name: "linux", label: "example-linux", slots: 1 }]);
+    const slot = async () => (await state.flush(), (await readSlotStates(dir))[0]?.kinds[0]?.slots[0]);
+    state.slot("linux", 1, "registered", { runner: "example-linux-1-a" });
+    state.job("linux", 1, "ci / test");
+    assert.deepEqual(await slot().then((s) => [s?.phase, s?.job]), ["busy", "ci / test"]);
+    // `up` finding the runner busy on its own keeps the job it already knows.
+    state.slot("linux", 1, "busy", { runner: "example-linux-1-a" });
+    assert.equal((await slot())?.job, "ci / test");
+    state.slot("linux", 1, "registered", { runner: "example-linux-1-b" });
+    assert.equal((await slot())?.job, null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

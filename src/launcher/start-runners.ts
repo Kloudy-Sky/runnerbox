@@ -21,15 +21,17 @@ import { createContainerSampler, CONTAINERS_COMMAND } from "../tracking/containe
 import { createRotatingLog } from "../tracking/rotating-log.ts";
 import { createSampler, VM_SAMPLE_COMMAND } from "../tracking/sampler.ts";
 import { stateDir } from "../tracking/state-dir.ts";
-import { readFromVm, runInVm } from "../vm/run-in-vm.ts";
+import { readFromVm, runInVm, type Vm } from "../vm/run-in-vm.ts";
 import { containerName, dockerRunCommand, shellQuote } from "./docker-command.ts";
 import { every } from "./every.ts";
+import { followRunnerOutput } from "./follow-runner.ts";
 import { loadLauncherConfig, type MemoryFloor, type RunnerType, type VmInstall } from "./launcher-config.ts";
 import { checkMemoryFloor, memAvailableMiB, vmStatAvailableMiB } from "./memory-floor.ts";
 import { createMemoryLine } from "./memory-line.ts";
 import { memoryMiB } from "./memory-size.ts";
 import { runSlots } from "./run-slots.ts";
 import { runWithSecret } from "./run-with-secret.ts";
+import { jobFromRunnerLine } from "./runner-output.ts";
 import { createSlotState, type RunsIn } from "./slot-state.ts";
 import { readTokenFile } from "./token-file.ts";
 
@@ -156,6 +158,12 @@ export async function startRunners(configPath: string) {
     });
   }
 
+  // Watches a runner's output for the job it takes, for the live state file.
+  const jobNamesFor = (kind: string, slot: number) => (line: string) => {
+    const job = jobFromRunnerLine(line);
+    if (job) slotState.job(kind, slot, job);
+  };
+
   const startSlots = (
     runner: { name: string; label: string; slots: number; memoryFloor?: MemoryFloor; limits?: RunnerType["limits"] },
     index: number,
@@ -220,9 +228,12 @@ export async function startRunners(configPath: string) {
           image: image.current,
           run: async (slot, secret, tag) => {
             const command = dockerRunCommand(config.name, runner, slot, tag);
-            const exitCode = jobVms
-              ? await jobVms.run(runner, slot, tag, (vm) => runInVm({ vm, command, secret }))
-              : await runInVm({ vm: config.vm, command, secret });
+            // The job's name comes from a separate reader of the container's log, which ends with the run.
+            const watched = (vm: Vm) => {
+              const stop = followRunnerOutput({ vm, container: containerName(config.name, runner.name, slot), onLine: jobNamesFor(runner.name, slot) });
+              return runInVm({ vm, command, secret }).finally(stop);
+            };
+            const exitCode = jobVms ? await jobVms.run(runner, slot, tag, watched) : await watched(config.vm);
             await image.prune();
             return exitCode;
           },

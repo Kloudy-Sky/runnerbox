@@ -3,7 +3,7 @@ import { formatAge } from "../../lib/format.ts";
 import { PHASE } from "../InstallState.tsx";
 
 // Each kind's slots, two lines each so they fit a narrow window: what the slot is doing and for how
-// long, then the machine's reason when it gives one.
+// long, then the job it's on, or the machine's reason when it gives one.
 export function SlotRows({ install, now }: { install: InstallState; now: number }) {
   return (
     <div className="flex flex-col gap-2">
@@ -21,6 +21,7 @@ export function SlotRows({ install, now }: { install: InstallState; now: number 
                   <span className={color}>{label}</span>
                   <span className="text-muted-foreground tabular-nums">{formatAge(slot.since, now)}</span>
                 </div>
+                {slot.job ? <div className="truncate pl-13">{slot.job}</div> : null}
                 {slot.detail ? <div className="pl-13 text-muted-foreground">{slot.detail}</div> : null}
               </div>
             );

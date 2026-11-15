@@ -55,6 +55,8 @@ export const SlotState = Schema.Struct({
   runner: Schema.NullOr(Schema.String),
   // Why it's waiting or backing off, in `up`'s own words.
   detail: Schema.NullOr(Schema.String),
+  // The job its runner said it took, while busy. Missing from an older `up`.
+  job: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 
 // A tool found in the image and its version, or null when the image doesn't have it. The first is
