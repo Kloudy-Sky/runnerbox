@@ -6,13 +6,14 @@ import { createServer } from "node:http";
 export async function startFakeGitHub(now: number) {
   const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
   const runs = { workflow_runs: [{ id: 7, created_at: ago(6) }, { id: 8, created_at: ago(2) }] };
+  let jobs = 0;
   const job = (name: string, label: string, minutes: number, run: number) => ({
     name,
     workflow_name: "ci",
     status: "queued",
     labels: ["self-hosted", label],
     created_at: ago(minutes),
-    html_url: `https://github.com/owner/name/actions/runs/${run}`,
+    html_url: `https://github.com/owner/name/actions/runs/${run}/job/${(jobs += 1)}`,
   });
   const replies: Record<string, unknown> = {
     "/repos/owner/name/actions/runs?status=queued&per_page=20": runs,

@@ -13,7 +13,8 @@ export function WaitingJobs({ queue, now }: { queue: QueueView; now: number }) {
       {queue.waiting.map((job) => {
         const name = job.workflow ? `${job.workflow} / ${job.job}` : job.job;
         return (
-          <div key={`${job.repo}-${job.since}-${job.job}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3">
+          // A job's URL names that one job; without one, every field it has.
+          <div key={job.url ?? `${job.repo}-${job.workflow}-${job.since}-${job.job}`} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3">
             <span className="truncate">
               {job.url && opensInBrowser(job.url) ? (
                 <a href={job.url} target="_blank" rel="noreferrer noopener" className="underline-offset-2 hover:underline">
