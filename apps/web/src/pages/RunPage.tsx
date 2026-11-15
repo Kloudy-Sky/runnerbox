@@ -1,8 +1,11 @@
 import { useParams } from "@tanstack/react-router";
+import type { JobRun } from "@runnerbox/contracts";
+import { JobResourcesView } from "../components/job/JobResourcesView.tsx";
 import { Reading } from "../components/Reading.tsx";
 import { ThreadColumn } from "../components/ThreadColumn.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty.tsx";
+import { useJobResources } from "../hooks/useJobResources.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
@@ -37,6 +40,7 @@ export function RunPage() {
             <Reading.Meta>{[run.repo, run.headSha?.slice(0, 7), `${formatAge(run.createdAt)} ago`].filter(Boolean).join(", ")}</Reading.Meta>
           </Reading.Header>
           <Reading.Section heading="What happened">{runHappened(run)}</Reading.Section>
+          <RunResources run={run} />
           {run.verdict ? (
             <>
               <Reading.Section heading="Why">{VERDICT_WHY[run.verdict]}</Reading.Section>
@@ -52,4 +56,15 @@ export function RunPage() {
       )}
     </ThreadColumn>
   );
+}
+
+// The run's steps and what its container used, once the server has answered, so the section
+// arrives whole. Nothing shows when the server can't say or the call fails.
+function RunResources({ run }: { readonly run: JobRun }) {
+  const resources = useJobResources(run.repo, run.jobId);
+  return resources.data ? (
+    <Reading.Section heading="Steps and what they used">
+      <JobResourcesView resources={resources.data} />
+    </Reading.Section>
+  ) : null;
 }

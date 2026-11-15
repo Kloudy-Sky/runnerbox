@@ -1,6 +1,6 @@
 # Third-party notices
 
-Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks, the provider list's drivers and their accounts (after T3 Code's provider instances) and their settings page, laid out as its provider instance card in list and editor mode, the desktop app's updater (`apps/desktop/src/updates`), the release workflow's nightly and stable channels and their versioning, and the web app's theme, primitives and settings layout, the composer's rich text editor and the thread's timeline (copied or followed, listed below), its sidebar layout and its slot composition. T3 Code is under the MIT license below.
+Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks, the provider list's drivers and their accounts (after T3 Code's provider instances) and their settings page, laid out as its provider instance card in list and editor mode, the desktop app's updater (`apps/desktop/src/updates`), the release workflow's nightly and stable channels and their versioning, and the web app's theme, primitives and settings layout, the composer's rich text editor and the thread's timeline (copied or followed, listed below), its sidebar layout, its slot composition, and its usage chart's drawing (`components/usage/UsageProviderChart.tsx` at the commit below): the monotone curve maths in `apps/web/src/lib/curve.ts`, lifted as they are, and the hover crosshair and pointer-following tooltip in `apps/web/src/components/job/ResourceChart.tsx`. T3 Code is under the MIT license below.
 
 ```
 MIT License
@@ -66,6 +66,7 @@ Upstream path under `apps/web/src`, and where it is here (the same path unless n
 - `hooks/useStableCallback.ts`
 - `index.css` as `theme/t3code.css`
 - `lib/accessibilityAnnouncements.ts`
+- `lib/observeResize.ts`
 - `lib/visibleAnimation.ts`
 - `lib/windowControlsOverlay.ts`
 

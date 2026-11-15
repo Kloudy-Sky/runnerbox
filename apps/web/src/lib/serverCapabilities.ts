@@ -11,9 +11,11 @@ export type Capabilities = {
   readonly deleteThread: boolean;
   // `providers.list` and `providers.save`, which carry drivers this app may not know.
   readonly providers: boolean;
+  // `history.jobResources`: a job's steps, memory and CPU.
+  readonly jobResources: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -25,5 +27,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     queue: has(RPC_METHODS.threadsQueueTurn) && has(RPC_METHODS.threadsCancelQueued),
     deleteThread: has(RPC_METHODS.threadsDelete),
     providers: has(RPC_METHODS.providersList) && has(RPC_METHODS.providersSave),
+    jobResources: has(RPC_METHODS.historyJobResources),
   };
 }
