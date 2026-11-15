@@ -37,14 +37,18 @@ const make = Effect.gen(function* () {
   const github = createGitHubReader(config.apiBase);
   const cache = yield* Ref.make(new Map<string, { at: number; value: Known }>());
 
+  // A release's version and date. `settled` is false when GitHub couldn't answer this time (an
+  // error, a refusal or a limit), so the next look asks again rather than waiting out the day.
   const release = (path: string, token: string) =>
     Effect.promise(() => github.get(path, token)).pipe(
-      Effect.map((reply): Known => {
-        if (reply.kind !== "ok") return null;
-        return Option.match(Schema.decodeUnknownOption(Release)(reply.body), {
+      Effect.map((reply): { settled: boolean; limited: boolean; value: Known } => {
+        if (reply.kind === "missing") return { settled: true, limited: false, value: null };
+        if (reply.kind !== "ok") return { settled: false, limited: reply.kind === "limited", value: null };
+        const value = Option.match(Schema.decodeUnknownOption(Release)(reply.body), {
           onNone: () => null,
           onSome: ({ tag_name, published_at }) => (published_at && VERSION.test(tag_name.replace(/^v/, "")) ? { version: tag_name.replace(/^v/, ""), releasedAt: published_at } : null),
         });
+        return { settled: true, limited: false, value };
       }),
     );
 
@@ -63,8 +67,10 @@ const make = Effect.gen(function* () {
     for (const { key, path } of new Map(wanted.map((each) => [each.key, each])).values()) {
       const entry = known.get(key);
       if (entry && now - entry.at < DAY_MS) continue;
-      const value = yield* release(path, token);
-      yield* Ref.update(cache, (map) => new Map(map).set(key, { at: now, value }));
+      const answer = yield* release(path, token);
+      // GitHub asked to wait, so the rest wait for the next look too.
+      if (answer.limited) break;
+      if (answer.settled) yield* Ref.update(cache, (map) => new Map(map).set(key, { at: now, value: answer.value }));
     }
   });
 

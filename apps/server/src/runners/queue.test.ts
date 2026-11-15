@@ -32,7 +32,7 @@ async function until(ready: () => boolean, what: string, timeoutMs = 5000) {
 // a request repeating it gets a 304, and `script` sets the budget headers or a refusal.
 async function fakeGitHub() {
   const requests: { path: string; etag: string | undefined; auth: string | undefined }[] = [];
-  const script = { remaining: 4000, limit: 5000, refuse: null as null | { status: number; retryAfter?: number; body?: string }, forbid: null as string | null };
+  const script = { remaining: 4000, limit: 5000, refuse: null as null | { status: number; retryAfter?: number; body?: string }, forbid: null as string | null, releasesDown: false };
   const jobs = {
     jobs: [
       { name: "test", workflow_name: "ci", status: "queued", labels: ["self-hosted", "example-linux"], created_at: "2026-11-15T12:00:00Z", html_url: "https://github.com/owner/name/actions/runs/1/job/11" },
@@ -64,6 +64,7 @@ async function fakeGitHub() {
       response.writeHead(script.refuse.status, { ...rate, ...(script.refuse.retryAfter ? { "retry-after": String(script.refuse.retryAfter) } : {}) }).end(script.refuse.body ?? "{}");
       return;
     }
+    if (script.releasesDown && path.includes("/releases/")) return void response.writeHead(502, rate).end("{}");
     if (script.forbid && path.startsWith(`/repos/${script.forbid}/`)) return void response.writeHead(403, rate).end(JSON.stringify({ message: "Resource protected by organization SAML enforcement." }));
     const reply = body(path);
     if (!reply) return void response.writeHead(404, rate).end("{}");
@@ -304,6 +305,25 @@ test("the fixed tools' release dates are looked up once a day on a good look, an
     ], "once each, for gh and the runner only, however many looks");
     const gh = (await state()).flatMap((install) => install.kinds.flatMap((kind) => kind.tools ?? [])).find((tool) => tool.name === "gh");
     assert.deepEqual([gh?.releasedAt, gh?.newest?.version], ["2024-02-07T00:00:00Z", "2.83.0"]);
+  } finally {
+    await close();
+  }
+});
+
+test("a release lookup GitHub couldn't answer is asked again on the next look, not a day later", async () => {
+  const { github, views, watch, stop, state, close } = await setup();
+  try {
+    github.script.releasesDown = true;
+    const fiber = watch();
+    await until(() => github.requests.some((request) => request.path.includes("/releases/")), "a failed release lookup");
+    github.script.releasesDown = false;
+    const newest = async () =>
+      (await state()).flatMap((install) => install.kinds.flatMap((kind) => kind.tools ?? [])).find((tool) => tool.name === "gh")?.newest?.version;
+    const deadline = Date.now() + 5000;
+    while ((await newest()) !== "2.83.0" && Date.now() < deadline) await sleep(50);
+    assert.equal(await newest(), "2.83.0");
+    assert.ok(views.length > 0);
+    await stop(fiber);
   } finally {
     await close();
   }

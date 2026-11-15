@@ -16,9 +16,7 @@ test("whole lines reach onLine, a character split across writes arrives whole, a
   await chmod(ssh, 0o755);
   const lines: string[] = [];
   const stop = followRunnerOutput({ vm, container: "example-linux-slot1", onLine: (line) => lines.push(line), sshBinary: ssh });
-  // Waits for the line rather than a fixed time, so a machine busy with every other test can't fail it.
-  const deadline = Date.now() + 5000;
-  while (lines.length === 0 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise((resolve) => setTimeout(resolve, 400));
   stop();
   assert.deepEqual(lines, ["x: Running job: ビ"]);
 });
