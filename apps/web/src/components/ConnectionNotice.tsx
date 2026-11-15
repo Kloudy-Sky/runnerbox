@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import packageJson from "../../package.json" with { type: "json" };
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
-import { serverIsBehind } from "../lib/serverUpdate.ts";
+import { isUnderway, serverIsBehind } from "../lib/serverUpdate.ts";
 import { ServerUpdateCommand } from "./ServerUpdateCommand.tsx";
 import { ServerBehindNotice, UpdateRunNotice, useUpdateRun } from "./ServerUpdateNotice.tsx";
 import { Button } from "./ui/button.tsx";
@@ -19,7 +19,8 @@ export function ConnectionNotice() {
   const run = useUpdateRun(environment?.environmentId ?? "");
   const about = useRpcQuery(["about"], (client) => client["server.about"]());
   const serverVersion = about.data?.serverVersion ?? null;
-  if (environment && run) return <UpdateRunNotice environment={environment} run={run} appVersion={APP_VERSION} />;
+  // A finished run's line gives way to the offline one, which has the reason and Retry.
+  if (environment && run && (isUnderway(run) || connection?.status === "connected")) return <UpdateRunNotice environment={environment} run={run} appVersion={APP_VERSION} />;
   if (environment && connection?.status === "connected" && serverVersion !== null && serverIsBehind(APP_VERSION, serverVersion)) {
     return <ServerBehindNotice environment={environment} serverVersion={serverVersion} appVersion={APP_VERSION} />;
   }

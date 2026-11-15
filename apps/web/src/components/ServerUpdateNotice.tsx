@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useStore } from "zustand";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
-import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
+import { useServerCapabilityState } from "../hooks/useServerCapabilities.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { BLOCKED_WORDS, isUnderway, needsCommand, underwayLine, type UpdateRun } from "../lib/serverUpdate.ts";
 import { runtime } from "../runtime.ts";
@@ -88,10 +88,12 @@ export function UpdateRunNotice({ environment, run, appVersion }: { environment:
 // A connected server older than this app: Update when it can update itself, the command when
 // it's too old to, and the reason when something holds it back.
 export function ServerBehindNotice({ environment, serverVersion, appVersion }: { environment: SavedEnvironment; serverVersion: string; appVersion: string }) {
-  const capabilities = useServerCapabilities();
+  const { capabilities, known } = useServerCapabilityState();
   const denied = useUpdateAccess(environment);
   const status = useRpcQuery(["server.updateStatus"], (client) => client["server.updateStatus"](), { enabled: capabilities.serverUpdate && denied === null });
   const behind = `The server on ${environment.label} runs Runnerbox ${serverVersion}, older than this app (${appVersion}).`;
+  // Until the server says what it answers, neither Update nor the command: it may be either.
+  if (!known) return <div className={NOTICE}>{behind}</div>;
   if (!capabilities.serverUpdate) {
     return (
       <div className={NOTICE}>

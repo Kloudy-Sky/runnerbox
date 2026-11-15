@@ -3,7 +3,7 @@ import type { UpdateOutcome } from "@runnerbox/contracts";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard.ts";
 import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
 import { useRunnerState } from "../../hooks/useRunnerState.ts";
-import { useServerCapabilities } from "../../hooks/useServerCapabilities.ts";
+import { useServerCapabilityState } from "../../hooks/useServerCapabilities.ts";
 import { BLOCKED_WORDS, isUnderway, needsCommand, restartCommand, serverIsBehind, staleInstalls, underwayLine } from "../../lib/serverUpdate.ts";
 import { startUpdate } from "../../state/serverUpdates.ts";
 import { ServerUpdateCommand } from "../ServerUpdateCommand.tsx";
@@ -14,10 +14,10 @@ import { SettingsRow, SettingsSection } from "./settingsLayout.tsx";
 const clock = (iso: string) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 const useUpdateStatus = (environment: SavedEnvironment) => {
-  const capabilities = useServerCapabilities();
+  const { capabilities, known } = useServerCapabilityState();
   const denied = useUpdateAccess(environment);
   const status = useRpcQuery(["server.updateStatus"], (client) => client["server.updateStatus"](), { enabled: capabilities.serverUpdate && denied === null });
-  return { capable: capabilities.serverUpdate, denied, status };
+  return { capable: capabilities.serverUpdate, known, denied, status };
 };
 
 // How the last update went, in a line.
@@ -36,8 +36,9 @@ function LastUpdate({ last }: { last: UpdateOutcome }) {
 
 // Under the server's version in About: the last update, and Update when the server is behind.
 export function ServerUpdateControls({ environment, serverVersion, appVersion }: { environment: SavedEnvironment; serverVersion: string; appVersion: string }) {
-  const { capable, denied, status } = useUpdateStatus(environment);
+  const { capable, known, denied, status } = useUpdateStatus(environment);
   const run = useUpdateRun(environment.environmentId);
+  if (!known) return null;
   const behind = serverIsBehind(appVersion, serverVersion);
   const last = status.data?.lastUpdate ?? null;
   if (!capable) return behind ? <ServerUpdateCommand appVersion={appVersion} /> : null;

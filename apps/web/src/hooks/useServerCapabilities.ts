@@ -9,8 +9,9 @@ const isUnknownMethod = (defect: unknown) => String(defect).includes("Unknown re
 
 // What the connected server can do, asked once per connection, since it may have been upgraded in
 // between. A reconnect keeps what this environment's server last said until it answers again, so
-// controls don't blink out; before its first answer, nothing newer is offered.
-export function useServerCapabilities() {
+// controls don't blink out; before its first answer, nothing newer is offered. `known` is false
+// until it has answered, for a control that says something different for an older server.
+export function useServerCapabilityState() {
   const { environment, connection } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
   const connected = connection?.status === "connected" ? connection.since : null;
@@ -24,5 +25,7 @@ export function useServerCapabilities() {
     staleTime: Number.POSITIVE_INFINITY,
     placeholderData: (previous, previousQuery) => (previousQuery?.queryKey[0] === environmentId ? previous : undefined),
   });
-  return methods.isSuccess ? capabilitiesOf(methods.data) : NO_CAPABILITIES;
+  return methods.isSuccess ? { capabilities: capabilitiesOf(methods.data), known: true } : { capabilities: NO_CAPABILITIES, known: false };
 }
+
+export const useServerCapabilities = () => useServerCapabilityState().capabilities;

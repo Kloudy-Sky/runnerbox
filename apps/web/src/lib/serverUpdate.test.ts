@@ -5,7 +5,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { releaseRepository, serverIsBehind, serverUpdateCommand, staleInstalls, underwayLine } from "./serverUpdate.ts";
+import { releaseRepository, serverIsBehind, restartCommand, serverUpdateCommand, staleInstalls, underwayLine } from "./serverUpdate.ts";
 
 test("a server is behind only when it's older than a released app", () => {
   assert.equal(serverIsBehind("0.2.1", "0.2.0"), true);
@@ -84,4 +84,12 @@ test("the runners still on the old version are those that started before the upd
   ]);
   assert.deepEqual(staleInstalls(installs, { ...update, status: "rolled-back" }), [], "a rollback left the file as it was");
   assert.deepEqual(staleInstalls(installs, null), []);
+});
+
+test("a restart command passes the install's name to systemctl as one argument, whatever it holds", () => {
+  for (const install of ["ci", "owner/name; rm -rf ~", "it's $(whoami) `id`"]) {
+    const command = restartCommand(install).replace(/^systemctl /, "printf '%s\\n' ");
+    const printed = spawnSync("sh", ["-c", command], { encoding: "utf8" }).stdout;
+    assert.equal(printed, `--user\nrestart\nrunnerbox@${install}\n`);
+  }
 });

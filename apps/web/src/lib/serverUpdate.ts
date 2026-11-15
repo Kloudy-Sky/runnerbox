@@ -85,4 +85,5 @@ export function staleInstalls(installs: ReadonlyArray<InstallState>, lastUpdate:
     .map((state) => ({ install: state.install, host: state.kinds.some((kind) => kind.runsIn === "host") }));
 }
 
-export const restartCommand = (install: string) => `systemctl --user restart runnerbox@${install}`;
+// The install's name comes from the server, so it's quoted for the shell whatever it holds.
+export const restartCommand = (install: string) => `systemctl --user restart '${`runnerbox@${install}`.replaceAll("'", `'\\''`)}'`;
