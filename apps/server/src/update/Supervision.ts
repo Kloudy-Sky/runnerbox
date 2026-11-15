@@ -62,24 +62,39 @@ const answer = Effect.callback<string, UpdateRefused>((resume) => {
   });
 });
 
-export const layer = Layer.sync(Supervision, () => {
-  const decoded = decodeContext(process.env[SUPERVISED_ENV] ?? "");
-  // A supervisor speaking another protocol might misread what this server sends.
-  const context = decoded._tag === "Some" && decoded.value.protocol === SUPERVISOR_PROTOCOL ? decoded.value : null;
-  return Supervision.of({
-    context,
-    ready: (version) => (context === null ? Effect.void : send({ type: "ready", version }).pipe(Effect.ignore)),
-    requestUpdate: (request) =>
-      context === null
-        ? Effect.fail(new UpdateRefused({ reason: "This server wasn't started by runnerbox serve." }))
-        : Effect.gen(function* () {
-            // Listening before sending, so a quick answer isn't missed.
-            const waiting = yield* Effect.forkChild(answer);
-            yield* send({ type: "update", ...request });
-            return yield* Fiber.join(waiting);
-          }).pipe(Effect.timeoutOrElse({ duration: ANSWER_TIMEOUT, orElse: () => Effect.fail(new UpdateRefused({ reason: "The supervisor didn't answer." })) })),
-  });
-});
+// A server whose supervisor is gone, killed outside a service manager that would have stopped it
+// too, stops as though it were asked to, rather than hold the port the next supervisor's server needs.
+const stopWithSupervisor = Effect.acquireRelease(
+  Effect.sync(() => {
+    const stop = () => process.kill(process.pid, "SIGTERM");
+    process.once("disconnect", stop);
+    return stop;
+  }),
+  (stop) => Effect.sync(() => process.off("disconnect", stop)),
+);
+
+export const layer = Layer.effect(
+  Supervision,
+  Effect.gen(function* () {
+    const decoded = decodeContext(process.env[SUPERVISED_ENV] ?? "");
+    // A supervisor speaking another protocol might misread what this server sends.
+    const context = decoded._tag === "Some" && decoded.value.protocol === SUPERVISOR_PROTOCOL ? decoded.value : null;
+    if (context !== null) yield* stopWithSupervisor;
+    return Supervision.of({
+      context,
+      ready: (version) => (context === null ? Effect.void : send({ type: "ready", version }).pipe(Effect.ignore)),
+      requestUpdate: (request) =>
+        context === null
+          ? Effect.fail(new UpdateRefused({ reason: "This server wasn't started by runnerbox serve." }))
+          : Effect.gen(function* () {
+              // Listening before sending, so a quick answer isn't missed.
+              const waiting = yield* Effect.forkChild(answer);
+              yield* send({ type: "update", ...request });
+              return yield* Fiber.join(waiting);
+            }).pipe(Effect.timeoutOrElse({ duration: ANSWER_TIMEOUT, orElse: () => Effect.fail(new UpdateRefused({ reason: "The supervisor didn't answer." })) })),
+    });
+  }),
+);
 
 // For tests: a supervisor that answers as `answer` does.
 export const layerTest = (context: ChildContext | null, answerWith: (request: Omit<Extract<ChildMessage, { type: "update" }>, "type">) => Effect.Effect<string, UpdateRefused>) =>

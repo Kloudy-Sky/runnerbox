@@ -74,6 +74,33 @@ test("the real supervisor and the server's Supervision layer agree on the wire",
   }
 });
 
+test("a server whose supervisor is killed on its own stops too, and frees the port for the next", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "runnerbox-supervision-"));
+  const file = join(dir, "runnerbox.js");
+  await writeFile(file, `import ${JSON.stringify(SERVER)};\n`);
+  const supervisor = spawn(process.execPath, [HARNESS, file, "-", "serve"], { stdio: ["ignore", "inherit", "inherit"], detached: true });
+  try {
+    const pid = Number(await until("the server to be ready", () => readFile(join(dir, "ready"), "utf8").catch(() => null)));
+    // The supervisor alone, as `kill -9` or the OOM killer would, outside a service manager.
+    supervisor.kill("SIGKILL");
+    await until("the server to stop", async () => {
+      try {
+        process.kill(pid, 0);
+        return null;
+      } catch {
+        return true;
+      }
+    });
+  } finally {
+    try {
+      process.kill(-(supervisor.pid ?? 0), "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("a server says it's ready only once every listener it opens is bound", async () => {
   const readied: string[] = [];
   const supervision = Layer.succeed(Supervision.Supervision, Supervision.Supervision.of({ context: null, ready: (version) => Effect.sync(() => void readied.push(version)), requestUpdate: () => Effect.die("unused") }));
