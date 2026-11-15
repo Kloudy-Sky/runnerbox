@@ -1,4 +1,5 @@
 import type { GroupBy, JobSummary } from "@runnerbox/contracts";
+import * as Effect from "effect/Effect";
 import { useState } from "react";
 import { NoHistory } from "../components/NoHistory.tsx";
 import { Heading } from "../components/Heading.tsx";
@@ -21,18 +22,25 @@ export function SpeedPage() {
   const { repo, loaded } = useRepo();
   const [by, setBy] = useState<GroupBy>("labels");
   const [picked, setPicked] = useState<JobSummary | null>(null);
-  const summary = useRpcQuery(["weekly", repo, days, by], (client) => client["history.weeklySummary"]({ repo: repo!, days, by }));
-  const samples = useRpcQuery(["samples", days], (client) => client["runners.samples"]({ days, maxPoints: 600 }));
+  const summary = useRpcQuery(["weekly", repo, days, by], (client) => client["history.weeklySummary"]({ repo: repo!, days, by }), { keepPrevious: true });
+  const samples = useRpcQuery(["samples", days], (client) => client["runners.samples"]({ days, maxPoints: 600 }), { keepPrevious: true });
   const jobs = summary.data?.jobs ?? [];
   const selected = jobs.find((row) => row.job === picked?.job && row.workflow === picked.workflow) ?? jobs[0];
   // Plain values, not `selected!.job` in the closure: React Compiler reads a closure's property
   // accesses during render to memoize it, which would throw before the jobs load.
   const job = selected?.job ?? "";
   const workflow = selected?.workflow ?? null;
-  const steps = useRpcQuery(["steps", repo, days, by, workflow, job], (client) =>
-    client["history.stepComparison"]({ repo: repo!, days, by, job, ...(workflow ? { workflow } : {}) }),
+  // Carries the job it answers for, so while another job's steps load the heading still names the
+  // job whose steps are shown.
+  const steps = useRpcQuery(
+    ["steps", repo, days, by, workflow, job],
+    (client) => client["history.stepComparison"]({ repo: repo!, days, by, job, ...(workflow ? { workflow } : {}) }).pipe(Effect.map((comparison) => ({ ...comparison, of: selected }))),
+    { keepPrevious: true },
   );
   if (loaded && !repo) return <NoHistory />;
+  // The three calls answer at different times. Drawn as each arrived, the headroom chart showed
+  // under an empty table and was pushed down twice, so the page waits for all of them once.
+  const ready = summary.data !== undefined && samples.data !== undefined && steps.data !== undefined && !(steps.isPlaceholderData && steps.data.of === undefined);
   const installs = Map.groupBy(samples.data ?? [], (sample) => sample.install);
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pb-6">
@@ -47,6 +55,7 @@ export function SpeedPage() {
           </Button>
         ))}
       </PageHeader.Root>
+      {ready ? (
       <div className="px-6 text-[13px]">
       <Heading>Jobs by runner time</Heading>
       <table className="w-full border-collapse">
@@ -77,9 +86,9 @@ export function SpeedPage() {
           ))}
         </tbody>
       </table>
-      {selected && steps.data ? (
+      {steps.data.of ? (
         <>
-          <Heading>Steps of {jobName(selected)}, typical of passing runs</Heading>
+          <Heading>Steps of {jobName(steps.data.of)}, typical of passing runs</Heading>
           <table className="border-collapse">
             <thead className="text-left">
               <tr>
@@ -139,6 +148,7 @@ export function SpeedPage() {
         </>
       ) : null}
       </div>
+      ) : null}
     </div>
   );
 }
