@@ -86,6 +86,7 @@ From upstream's `apps/web/src`, at the same path here under `apps/web/src`:
 
 - `components/ComposerPromptEditorTiptap.tsx`
 - `components/ContextChip.tsx`
+- `components/chat/ComposerControl.tsx`
 - `components/chat/assistantCitationCommentDismissal.ts`
 - `components/chat/pageScrollController.ts`
 - `components/composerAttachmentInsertion.ts`
