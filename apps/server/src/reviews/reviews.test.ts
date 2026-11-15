@@ -30,6 +30,8 @@ const signedByApp = (authorization: string | undefined) => {
 // signed token for the App's own endpoints and the installation's token for the rest.
 async function fakeGitHub() {
   const minted: unknown[] = [];
+  // `installationsDown` answers 502 where the App's installations are listed, and `listed` counts those requests.
+  const script = { installationsDown: false, listed: 0 };
   const pull = { number: 7, title: "Fix the\u0007 widget\nagain", draft: false, user: { login: "someone" }, head: { ref: "fix/widget", sha: "a".repeat(40) }, base: { ref: "main" }, created_at: "2026-11-14T10:00:00Z", updated_at: "2026-11-15T10:00:00Z" };
   const server = createServer((request, response) => {
     const path = request.url ?? "";
@@ -37,7 +39,11 @@ async function fakeGitHub() {
     const asApp = signedByApp(request.headers.authorization);
     const asInstallation = request.headers.authorization === `Bearer ${INSTALLATION_TOKEN}`;
     if (path === "/app") return asApp ? json(200, { slug: "example-reviewer", name: "Example Reviewer" }) : json(401, {});
-    if (path.startsWith("/app/installations?")) return asApp ? json(200, [{ id: 11 }]) : json(401, {});
+    if (path.startsWith("/app/installations?")) {
+      script.listed += 1;
+      if (script.installationsDown) return json(502, {});
+      return asApp ? json(200, [{ id: 11 }]) : json(401, {});
+    }
     if (path === "/app/installations/11/access_tokens" && request.method === "POST") {
       let text = "";
       request.on("data", (chunk) => (text += chunk));
@@ -54,7 +60,7 @@ async function fakeGitHub() {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, minted, close: () => new Promise((resolve) => server.close(resolve)) };
+  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, minted, script, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 async function start() {
@@ -109,6 +115,24 @@ test("a key GitHub doesn't know is refused and not kept, and so is a repository 
     const elsewhere = await session(ALL_SCOPES, (client) => client["reviews.setRepo"]({ repo: "someone/else", review: true }));
     assert.ok(Exit.isFailure(elsewhere));
     assert.match(Cause.pretty(elsewhere.cause), /isn't installed on that repository/);
+  } finally {
+    await close();
+  }
+});
+
+test("while GitHub can't say where the App is installed, it's asked once a minute at most, and a repository isn't called uninstalled", async () => {
+  const { github, session, close } = await start();
+  try {
+    github.script.installationsDown = true;
+    const connected = await session(ALL_SCOPES, (client) => client["reviews.connect"]({ appId: APP_ID, privateKey: APP.privateKey }));
+    assert.ok(Exit.isSuccess(connected) && connected.value.repos.length === 0);
+    assert.match(connected.value.problem ?? "", /Couldn't list where the App is installed/);
+    const again = await session(["history:read", "runners:read"], (client) => client["reviews.status"]());
+    assert.ok(Exit.isSuccess(again) && again.value.problem !== null);
+    const on = await session(ALL_SCOPES, (client) => client["reviews.setRepo"]({ repo: "owner/name", review: true }));
+    assert.ok(Exit.isFailure(on));
+    assert.match(Cause.pretty(on.cause), /couldn't get an answer from GitHub/);
+    assert.equal(github.script.listed, 1);
   } finally {
     await close();
   }

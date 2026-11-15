@@ -85,8 +85,12 @@ const make = Effect.gen(function* () {
 
   const setRepo = Effect.fn("Reviews.setRepo")(function* (repo: string, review: boolean) {
     if ((yield* app.describe) === null) return yield* new ReviewError({ reason: "not_connected" });
-    // Only a repository the App is installed on can be turned on. Any can be turned off.
-    if (review && !(yield* app.installed).repos.some((each) => each.repo === repo)) return yield* new ReviewError({ reason: "unknown_repo" });
+    // Only a repository the App is installed on can be turned on. Any can be turned off. When
+    // GitHub couldn't say where it's installed, that is the answer, not that it isn't there.
+    if (review) {
+      const installed = yield* app.installed;
+      if (!installed.repos.some((each) => each.repo === repo)) return yield* new ReviewError({ reason: installed.problem === null ? "unknown_repo" : "github_unreachable" });
+    }
     yield* lock.withPermits(1)(
       Effect.gen(function* () {
         const others = (yield* read).repos.filter((each) => each !== repo);

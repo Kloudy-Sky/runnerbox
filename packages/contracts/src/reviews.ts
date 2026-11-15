@@ -57,7 +57,7 @@ export class ReviewError extends Schema.TaggedError<ReviewError>()("ReviewError"
       case "app_refused":
         return "GitHub refused that App ID and key. Check both belong to the same App.";
       case "github_unreachable":
-        return "The server couldn't reach GitHub to check the App.";
+        return "The server couldn't get an answer from GitHub about the App. Try again in a minute.";
       case "not_connected":
         return "No GitHub App is connected.";
       case "unknown_repo":

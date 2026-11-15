@@ -36,6 +36,8 @@ const MAX_REPO_PAGES = 5;
 const REPOS_FRESH_MS = 5 * 60_000;
 // A token this close to its end isn't handed out.
 const TOKEN_MARGIN_MS = 5 * 60_000;
+// After a look that failed, GitHub isn't asked again for this long, however many clients ask.
+const RETRY_AFTER_MS = 60_000;
 
 // A repository the App is installed on, and a token that reads its pull requests.
 export type InstalledRepo = { readonly repo: string; readonly token: string };
@@ -63,6 +65,11 @@ const make = Effect.gen(function* () {
   // One refresh at a time, so two clients asking together mint one set of tokens.
   const refreshing = yield* Semaphore.make(1);
   let cache: Installed | null = null;
+  let failed: { readonly at: number; readonly problem: string } | null = null;
+  const forget = Effect.sync(() => {
+    cache = null;
+    failed = null;
+  });
 
   const read = fs.readFileString(path).pipe(
     Effect.map(Option.some),
@@ -83,14 +90,11 @@ const make = Effect.gen(function* () {
     if (Option.isNone(app)) return yield* new ReviewError({ reason: "github_unreachable" });
     const file: AppFile = { v: 1, appId, privateKey: privateKey.trim(), slug: app.value.slug, name: app.value.name };
     yield* fs.makeDirectory(serverDir, { recursive: true, mode: 0o700 }).pipe(Effect.andThen(writeFileAtomic(fs, path, `${JSON.stringify(file)}\n`)), Effect.mapError(unreadable));
-    cache = null;
+    yield* forget;
     return { slug: file.slug, name: file.name };
   });
 
-  const disconnect = fs.remove(path, { force: true }).pipe(
-    Effect.mapError(unreadable),
-    Effect.andThen(Effect.sync(() => void (cache = null))),
-  );
+  const disconnect = fs.remove(path, { force: true }).pipe(Effect.mapError(unreadable), Effect.andThen(forget));
 
   // Every installation's repositories, each with that installation's token. The first reply that
   // isn't what's expected ends the look with why.
@@ -128,12 +132,15 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const usable = cache !== null && cache.expiresAt - now > TOKEN_MARGIN_MS ? cache : null;
       if (usable !== null && now - usable.at < REPOS_FRESH_MS) return { repos: usable.repos, problem: null };
+      // The last list is shown while its tokens still work, with why it wasn't refreshed.
+      if (failed !== null && now - failed.at < RETRY_AFTER_MS) return { repos: usable?.repos ?? [], problem: failed.problem };
       const fetched = yield* fetchInstalled(file, now);
       if ("installed" in fetched) {
         cache = fetched.installed;
+        failed = null;
         return { repos: fetched.installed.repos, problem: null };
       }
-      // The last list is shown while its tokens still work, with why it wasn't refreshed.
+      failed = { at: now, problem: fetched.problem };
       return { repos: usable?.repos ?? [], problem: fetched.problem };
     }),
   );
