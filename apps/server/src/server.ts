@@ -23,6 +23,8 @@ import * as Mcp from "./mcp/route.ts";
 import * as Inbox from "./inbox/Inbox.ts";
 import * as Ws from "./rpc/ws.ts";
 import * as LauncherLogs from "./runners/LauncherLogs.ts";
+import * as QueueConfig from "./runners/QueueConfig.ts";
+import * as RunnerQueue from "./runners/RunnerQueue.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
 import * as ClaudeAdapter from "./threads/provider/ClaudeAdapter.ts";
 import * as CodexAdapter from "./threads/provider/CodexAdapter.ts";
@@ -43,7 +45,17 @@ type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
 // Codex's, given only to a server that runs Codex.
 type CodexProvider = Layer.Layer<CodexProviderAdapter, never, ServerPaths.ServerPaths>;
 
-type ServicesInput = { stateDir: string; host: string; port: number; tunnelPort?: number | null | undefined; label?: string | undefined; provider?: Provider | undefined; codex?: CodexProvider | undefined };
+type ServicesInput = {
+  stateDir: string;
+  host: string;
+  port: number;
+  tunnelPort?: number | null | undefined;
+  label?: string | undefined;
+  provider?: Provider | undefined;
+  codex?: CodexProvider | undefined;
+  // Only tests replace where the queue poll sends requests and reads its token.
+  queue?: Layer.Layer<QueueConfig.QueueConfig> | undefined;
+};
 
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
 // see the same instances.
@@ -58,7 +70,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer)),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer, RunnerQueue.layer.pipe(Layer.provide(input.queue ?? QueueConfig.layer)))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),
     Layer.provideMerge(ServerPaths.layer(input.stateDir)),
@@ -105,7 +117,17 @@ const layerListeners = (input: { host: string; port: number; tunnelPort: number 
 // The listeners over the shared services, exposing the services so tests can mint codes on the
 // same instance.
 // `withoutMethods` serves the RPC as a build older than those methods would, for tests and the fake server.
-export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string; provider?: Provider; codex?: CodexProvider; withoutMethods?: ReadonlyArray<RpcMethod> }) =>
+export const layerApp = (input: {
+  host: string;
+  port: number;
+  tunnelPort: number | null;
+  stateDir: string;
+  label?: string;
+  provider?: Provider;
+  codex?: CodexProvider;
+  withoutMethods?: ReadonlyArray<RpcMethod>;
+  queue?: Layer.Layer<QueueConfig.QueueConfig>;
+}) =>
   layerListeners(input).pipe(Layer.provideMerge(layerServices(input)));
 
 // `serve`: the listeners, with the tunnel one on the port the link chose, and for a linked

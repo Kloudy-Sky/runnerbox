@@ -169,7 +169,7 @@ Jobs use the tools already on the Mac, read-only: Xcode's command line tools and
 
 ## Desktop app
 
-A desktop app shows the same history, plus what CI needs from you, for one or more machines. Each machine runs `runnerbox serve`, which reads the logs above and answers over HTTP and WebSocket. It changes nothing.
+A desktop app shows the same history, plus what CI needs from you, for one or more machines. Each machine runs `runnerbox serve`, which reads the logs above and answers over HTTP and WebSocket. It changes nothing. While the app shows the jobs waiting for this machine's runners, `serve` also asks GitHub about them every 20 seconds, with the read-only token in `~/.config/runnerbox/report.env`, only if that file is owner-only. Without it, that part of the app stays hidden.
 
 ```bash
 node runnerbox.js serve    # on the machine with the logs: prints a pairing code in a terminal
