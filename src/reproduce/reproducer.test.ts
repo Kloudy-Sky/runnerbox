@@ -61,8 +61,8 @@ test("it refuses to start with job VMs, while slots wait for memory, without roo
   state.slotsWaiting = 1;
   await assert.rejects(reproducer.start({ ...start, kind }), /Real jobs are waiting for memory/);
   state.slotsWaiting = 0;
-  state.room = "the VM has 900 MiB available, below its 4600 MiB floor";
-  await assert.rejects(reproducer.start({ ...start, kind }), /Not enough memory for a reproduce: the VM has 900 MiB/);
+  state.room = "The VM has 900 MB free. Runnerbox keeps 4.5 GB free before it starts a reproduce container.";
+  await assert.rejects(reproducer.start({ ...start, kind }), /^Error: The VM has 900 MB free\. Runnerbox keeps 4\.5 GB free before it starts a reproduce container\.$/);
   state.room = null;
   state.sourceError = "owner/name is public. Reproduce only runs private repositories' code, since it shares the VM with your jobs.";
   await assert.rejects(reproducer.start({ ...start, kind }), /is public/);

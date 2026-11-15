@@ -70,7 +70,8 @@ export function createReproducer(actions: ReproducerActions) {
     starting = true;
     try {
       const short = await actions.roomFor(runner);
-      if (short) throw new ReproduceRefused(`Not enough memory for a reproduce: ${short}.`);
+      // The reason is already whole sentences that name the reproduce container.
+      if (short) throw new ReproduceRefused(short);
       const requested = request.image && request.image !== current && (await vm(imageExistsCommand(request.image), { timeoutMs: QUICK_MS, maxOutput: 1024 })).exitCode === 0;
       const image = requested ? request.image! : current;
       const tarball = await actions.source(request.repo, request.commit).catch((error: unknown) => {

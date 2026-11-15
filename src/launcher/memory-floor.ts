@@ -28,9 +28,13 @@ export async function checkMemoryFloor(machines: Machine[], starting = "another 
     if (floorMiB === 0) continue;
     try {
       const available = await availableMiB();
-      if (available < floorMiB) short.push(`The ${name} has ${memoryWords(available)} free. Runnerbox keeps ${memoryWords(floorMiB)} free before it starts ${starting}.`);
+      if (available < floorMiB) {
+        // Rounded alike, the two could read the same; then both go in whole MB, so the reason never contradicts itself.
+        const [free, kept] = memoryWords(available) === memoryWords(floorMiB) ? [`${Math.floor(available)} MB`, `${floorMiB} MB`] : [memoryWords(available), memoryWords(floorMiB)];
+        short.push(`The ${name} has ${free} free. Runnerbox keeps ${kept} free before it starts ${starting}.`);
+      }
     } catch (error) {
-      short.push(`Runnerbox couldn't read the ${name}'s memory: ${error instanceof Error ? error.message : error}`);
+      short.push(`Runnerbox couldn't read the ${name}'s memory: ${error instanceof Error ? error.message : error}.`);
     }
   }
   return short.length > 0 ? short.join(" ") : null;
