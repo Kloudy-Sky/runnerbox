@@ -45,7 +45,7 @@ type Files = { readonly claude: AccountsFile; readonly others: OthersFile };
 
 const builtIn = (file: AccountsFile): typeof ClaudeAccount.Type => ({ id: BUILT_IN_ACCOUNT_ID, driver: "claude", label: "Claude, subscription", model: file.builtInModel, apiKey: null });
 // The account a turn resolves to: the given ID, or the default, which falls back to the built-in
-// when the default was removed.
+// when the default was removed or its driver doesn't run here.
 export type ResolvedAccount = TurnAccount & { readonly id: string; readonly driver: Driver };
 // Adds an account, or changes one when `id` is given, on any driver the store keeps.
 export type SaveInput = { readonly id?: string; readonly driver: Driver; readonly label: string; readonly model: string | null; readonly apiKey?: string };
@@ -100,6 +100,12 @@ const make = Effect.gen(function* () {
 
   const claudeAccounts = (file: AccountsFile) => [builtIn(file), ...file.accounts];
   const all = (files: Files): ReadonlyArray<StoredAccount> => [...claudeAccounts(files.claude), ...files.others.accounts];
+  // The default the owner set, unless it was removed or its driver doesn't run here: then the
+  // built-in one, so a Codex default on a server without Codex doesn't stop every thread.
+  const defaultOf = (files: Files) => {
+    const set = all(files).find((account) => account.id === files.claude.defaultId);
+    return set !== undefined && drivers.running.includes(set.driver) ? set : builtIn(files.claude);
+  };
   const view = Effect.fn("AccountStore.view")(function* (files: Files, account: StoredAccount) {
     return {
       id: account.id,
@@ -108,7 +114,7 @@ const make = Effect.gen(function* () {
       model: account.model,
       billing: account.apiKey === null ? ("subscription" as const) : ("api_key" as const),
       keyLast4: account.apiKey === null ? null : account.apiKey.slice(-4),
-      isDefault: account.id === files.claude.defaultId,
+      isDefault: account.id === defaultOf(files).id,
       builtIn: account.id === BUILT_IN_ACCOUNT_ID,
       status: yield* drivers.get(account.driver).status({ hasKey: account.apiKey !== null }),
     };
@@ -175,7 +181,7 @@ const make = Effect.gen(function* () {
   const resolve = Effect.fn("AccountStore.resolve")(function* (id: string | undefined) {
     const files = yield* read;
     const accounts = all(files);
-    const found = id === undefined ? (accounts.find((account) => account.id === files.claude.defaultId) ?? builtIn(files.claude)) : accounts.find((account) => account.id === id);
+    const found = id === undefined ? defaultOf(files) : accounts.find((account) => account.id === id);
     if (!found) return yield* new AccountError({ reason: "not_found" });
     return { id: found.id, driver: found.driver, label: found.label, model: found.model, apiKey: found.apiKey } satisfies ResolvedAccount;
   });

@@ -53,23 +53,32 @@ test("a Codex account is kept apart from Claude's, so accounts.json and accounts
   }
 });
 
-test("on a server that doesn't run Codex, its accounts aren't listed and a turn naming one is refused", async () => {
+test("on a server that doesn't run Codex, its accounts aren't listed, a turn naming one is refused, and a Codex default falls back to the built-in one", async () => {
   const first = await startTestServer({ provider: makeFakeProvider({ turns: [] }), codex: codex() });
-  const saved = await withClient(first, (client) => client["providers.save"]({ driver: "codex", label: "Codex, API", model: null, apiKey: KEY }));
+  const saved = await withClient(first, (client) =>
+    Effect.gen(function* () {
+      const saved = yield* client["providers.save"]({ driver: "codex", label: "Codex, API", model: null, apiKey: KEY });
+      yield* client["accounts.setDefault"]({ id: saved.id });
+      return saved;
+    }),
+  );
   await first.close(false);
   const server = await startTestServer({ stateDir: first.stateDir, provider: makeFakeProvider({ turns: [[{ text: "ok" }]] }) });
   try {
-    const { providers, refused } = await withClient(server, (client) =>
+    const { providers, refused, started } = await withClient(server, (client) =>
       Effect.gen(function* () {
         const [item] = (yield* client["inbox.list"]({ days: 14 })).items;
         const thread = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: item!.id }, days: 14 });
         return {
           providers: yield* client["providers.list"](),
           refused: yield* Effect.flip(client["threads.startTurn"]({ id: thread.id, text: "Why?", accountId: saved.id })),
+          started: yield* client["threads.startTurn"]({ id: thread.id, text: "Why?" }),
         };
       }),
     );
     assert.deepEqual(providers.map((provider) => provider.driver), ["claude"]);
+    assert.ok(providers[0]!.accounts.find((account) => account.isDefault)?.builtIn, "the built-in account stands in as the default");
+    assert.ok(started.turnId, "a turn without an account runs on Claude");
     assert.equal(refused._tag === "ThreadError" && refused.reason, "provider_unavailable");
   } finally {
     await server.close();

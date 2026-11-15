@@ -163,24 +163,30 @@ export function runServerCommand(args: string[]) {
 // allow-listed environment turns get, so a CODEX_HOME or key in this shell can't redirect it.
 async function codexLogin(serverDir: string, device: boolean, signOut: boolean) {
   const executable = findCodex();
+  const home = codexHome(serverDir);
+  const run = (args: ReadonlyArray<string>) =>
+    new Promise<number>((resolve) => {
+      if (executable === null) return resolve(1);
+      const child = spawn(executable, args, { stdio: "inherit", env: codexEnv(process.env, home) });
+      child.once("error", () => resolve(1));
+      child.once("close", (exit) => resolve(exit ?? 1));
+    });
+  // Signing out removes the home even when `codex` is gone or its logout fails, and says which.
+  if (signOut) {
+    const code = executable === null ? null : await run(["logout"]);
+    await rm(home, { recursive: true, force: true });
+    if (code === 0) return console.log(`Signed out, and removed ${home}.`);
+    console.error(`Removed ${home}, but ${code === null ? "Codex isn't installed to sign it out" : "`codex logout` failed"}, so its login may still be valid until it expires or is revoked from the ChatGPT account.`);
+    process.exitCode = 1;
+    return;
+  }
   if (executable === null) {
     console.error("Install Codex on this machine first.");
     process.exitCode = 1;
     return;
   }
-  const home = codexHome(serverDir);
   await mkdir(home, { recursive: true, mode: 0o700 });
-  const args = signOut ? ["logout"] : ["login", ...(device ? ["--device-auth"] : [])];
-  const code = await new Promise<number>((resolve) => {
-    const child = spawn(executable, args, { stdio: "inherit", env: codexEnv(process.env, home) });
-    child.once("error", () => resolve(1));
-    child.once("close", (exit) => resolve(exit ?? 1));
-  });
-  if (signOut) {
-    await rm(home, { recursive: true, force: true });
-    console.log(`Signed out, and removed ${home}.`);
-    return;
-  }
+  const code = await run(["login", ...(device ? ["--device-auth"] : [])]);
   if (code === 0) console.log(`Signed in. Runnerbox's Codex home is ${home}.`);
   process.exitCode = code;
 }
