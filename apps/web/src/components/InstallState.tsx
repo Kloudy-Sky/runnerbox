@@ -1,5 +1,6 @@
 import type { InstallState as Install, SlotPhase } from "@runnerbox/contracts";
 import { formatAge } from "../lib/format.ts";
+import { ImageFacts } from "./ImageFacts.tsx";
 
 const PHASE: Record<SlotPhase, [string, string]> = {
   registered: ["listening", "text-success"],
@@ -10,8 +11,12 @@ const PHASE: Record<SlotPhase, [string, string]> = {
   stopped: ["stopped", "text-muted-foreground"],
 };
 
-// One install as `up` reports it now: each kind's image and each slot's phase.
-export function InstallState({ install }: { install: Install }) {
+// One install as `up` reports it now: each kind's image and each slot's phase. `typicalBuildMs`
+// gives a kind's usual image build length from history, for a build in progress.
+export function InstallState({ install, typicalBuildMs }: { install: Install; typicalBuildMs: (kind: string) => number | null }) {
+  // Ages are measured from the machine's last report, which comes at least every 15 seconds, so they
+  // move with the data and the render stays pure.
+  const now = Date.parse(install.updatedAt);
   return (
     <div className="pb-4">
       <div className="flex items-baseline gap-3">
@@ -28,7 +33,12 @@ export function InstallState({ install }: { install: Install }) {
                 <span>{kind.name}</span>
                 <span className="ml-3 text-muted-foreground">{kind.label}</span>
                 <span className="ml-3 font-mono text-[11.5px] text-muted-foreground">{kind.image ?? "no image yet"}</span>
-                {kind.building ? <span className="ml-3 text-warning">building {kind.building}</span> : null}
+                {kind.building && !kind.buildingSince ? <span className="ml-3 text-warning">building {kind.building}</span> : null}
+              </td>
+            </tr>,
+            <tr key={`${kind.name}-image`}>
+              <td colSpan={5} className="pl-3">
+                <ImageFacts kind={kind} now={now} typicalBuildMs={typicalBuildMs(kind.name)} />
               </td>
             </tr>,
             ...kind.slots.map((slot) => {
