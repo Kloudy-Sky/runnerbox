@@ -2,6 +2,7 @@ import { type ReproduceNetwork, subjectKey, type ThreadSubject } from "@runnerbo
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Predicate from "effect/Predicate";
 import { useEffect, useState } from "react";
+import { draftKeyOf } from "../composerDraftStore.ts";
 import { EMPTY_VIEW, foldThread, isReproducing, type ThreadView } from "../lib/threadView.ts";
 import { runtime } from "../runtime.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
@@ -99,6 +100,8 @@ export function useThread(subject: ThreadSubject, days: number) {
   };
 
   return {
+    // Where the composer keeps this subject's unsent question.
+    draftKey: draftKeyOf(environmentId, key),
     permitted,
     provider: provider.data,
     view: current,
