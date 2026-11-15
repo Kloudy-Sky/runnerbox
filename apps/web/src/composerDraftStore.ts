@@ -30,6 +30,8 @@ type DraftStore = {
   readonly removeAttachment: (key: string, id: string) => void;
   // After a send: its text and the files it took go, and a file attached meanwhile stays.
   readonly settleSent: (key: string, sentIds: ReadonlyArray<string>) => void;
+  // A question that waited and wasn't sent comes back ahead of whatever is in the draft now.
+  readonly restore: (key: string, markdown: string, files: ReadonlyArray<StagedFile>) => void;
   // What the copied toast asks to scope a toast to a draft's thread. Runnerbox's drafts belong to a
   // subject, not a T3 Code draft thread, so there's never one.
   readonly getDraftSession: (draftId: string) => ScopedThreadRef | null;
@@ -65,6 +67,14 @@ export const useComposerDraftStore = create<DraftStore>()(
       addAttachment: (key, file) => set(({ drafts }) => ({ drafts: withDraft(drafts, key, (draft) => ({ ...draft, attachments: [...draft.attachments, file] })) })),
       settleSent: (key, sentIds) =>
         set(({ drafts }) => ({ drafts: withDraft(drafts, key, (draft) => ({ ...draft, value: "", attachments: draft.attachments.filter((file) => !sentIds.includes(file.id)) })) })),
+      restore: (key, markdown, files) =>
+        set(({ drafts }) => ({
+          drafts: withDraft(drafts, key, (draft) => ({
+            ...draft,
+            value: draft.value.trim() === "" ? markdown : `${markdown}\n\n${draft.value}`,
+            attachments: [...files.filter((file) => !draft.attachments.some((each) => each.id === file.id)), ...draft.attachments],
+          })),
+        })),
       removeAttachment: (key, id) => set(({ drafts }) => ({ drafts: withDraft(drafts, key, (draft) => ({ ...draft, attachments: draft.attachments.filter((file) => file.id !== id) })) })),
       getDraftSession: () => null,
     }),

@@ -47,7 +47,7 @@ export function ThreadColumn(props: { subject: ThreadSubject; placeholder: strin
       <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
         {props.children(thread)}
         <div className="mx-auto w-full max-w-(--reading-width) px-6 pb-6">
-          <ThreadMessages view={thread.view} error={thread.error} environmentId={thread.environmentId} />
+          <ThreadMessages view={thread.view} error={thread.error} environmentId={thread.environmentId} onCancelQueued={thread.cancelQueued} />
         </div>
       </div>
       <div className="mx-auto w-full max-w-(--reading-width) px-6 pt-2 pb-4">

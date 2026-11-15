@@ -2,7 +2,8 @@ import { type ReproduceNetwork, subjectKey, type ThreadReference, type ThreadSub
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Predicate from "effect/Predicate";
 import { useEffect, useState } from "react";
-import { draftKeyOf } from "../composerDraftStore.ts";
+import { draftKeyOf, useComposerDraftStore } from "../composerDraftStore.ts";
+import { type QueuedDraft, queueOutcome, queuedDrafts } from "../lib/queuedDrafts.ts";
 import { EMPTY_VIEW, foldThread, isReproducing, type ThreadView } from "../lib/threadView.ts";
 import { runtime } from "../runtime.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
@@ -24,6 +25,7 @@ export function useThread(subject: ThreadSubject, days: number) {
   const connected = connection?.status === "connected" ? connection.since : null;
   const key = subjectKey(subject);
   const queryClient = useQueryClient();
+  const draftKey = draftKeyOf(environmentId, key);
 
   // The server decides whether this session may run threads: the scopes saved at pairing can be
   // older than what it grants now.
@@ -50,10 +52,20 @@ export function useThread(subject: ThreadSubject, days: number) {
   // Following a server stream is synchronizing with something outside React.
   useEffect(() => {
     if (!enabled || threadId === null) return;
-    return runtime.follow(environmentId, (client) => client["threads.subscribe"]({ id: threadId }), (event) =>
-      setView((current) => ({ id: threadId, value: foldThread(current?.id === threadId ? current.value : EMPTY_VIEW, event) })),
-    );
-  }, [enabled, environmentId, threadId, connected]);
+    return runtime.follow(environmentId, (client) => client["threads.subscribe"]({ id: threadId }), (event) => {
+      setView((current) => ({ id: threadId, value: foldThread(current?.id === threadId ? current.value : EMPTY_VIEW, event) }));
+      // A question this window queued: forget it once sent, and give it back if it won't be.
+      const remembered = queuedDrafts.get(draftKey);
+      const outcome = queueOutcome(event, remembered);
+      if (outcome === "waiting") return;
+      queuedDrafts.forget(draftKey);
+      if (outcome === "returned") {
+        const back = remembered ?? (event._tag === "QueueCleared" ? { markdown: event.text, files: [], sentText: event.text } : undefined);
+        if (back) useComposerDraftStore.getState().restore(draftKey, back.markdown, back.files);
+        setError(event._tag === "QueueCleared" && event.reason === "failed" ? `The waiting question couldn't start: ${event.message ?? "the server refused it."} It's back in the composer.` : event._tag === "Snapshot" ? "The server restarted before your waiting question was sent. It's back in the composer." : null);
+      }
+    });
+  }, [enabled, environmentId, threadId, connected, draftKey]);
 
   const current = threadId !== null && view?.id === threadId ? view.value : EMPTY_VIEW;
   const reproducing = isReproducing(current.items);
@@ -112,6 +124,39 @@ export function useThread(subject: ThreadSubject, days: number) {
       return false;
     }
   };
+  // While a turn runs, a question waits to go when it ends, one per thread. `draft` is what the
+  // composer held, so it comes back as it was if it isn't sent. Returns whether it's waiting or went.
+  const queue = async (text: string, options: SendOptions, draft: QueuedDraft) => {
+    if (threadId === null) return false;
+    setError(null);
+    const target = threadId;
+    try {
+      queuedDrafts.remember(draftKey, draft);
+      const { turnId } = await runtime.run(environmentId, (client) =>
+        client["threads.queueTurn"]({
+          id: target,
+          text,
+          ...(options.accountId ? { accountId: options.accountId } : {}),
+          ...(options.model ? { model: options.model } : {}),
+          ...(options.attachments && options.attachments.length > 0 ? { attachments: options.attachments } : {}),
+          ...(options.references && options.references.length > 0 ? { references: options.references } : {}),
+        }),
+      );
+      // Nothing was running by the time it arrived, so it went at once.
+      if (turnId !== null) queuedDrafts.forget(draftKey);
+      return true;
+    } catch (cause) {
+      queuedDrafts.forget(draftKey);
+      setError(errorText(cause));
+      return false;
+    }
+  };
+  // Drops the waiting question; the stream brings its text back to the composer.
+  const cancelQueued = () => {
+    if (threadId === null) return;
+    runtime.run(environmentId, (client) => client["threads.cancelQueued"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
+  };
+
   const interrupt = () => {
     if (threadId === null) return;
     runtime.run(environmentId, (client) => client["threads.interrupt"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
@@ -135,13 +180,15 @@ export function useThread(subject: ThreadSubject, days: number) {
   return {
     environmentId,
     // Where the composer keeps this subject's unsent question.
-    draftKey: draftKeyOf(environmentId, key),
+    draftKey,
     permitted,
     provider: provider.data,
     view: current,
     reproduce: { check: reproduce.data ?? null, running: reproducing, start: startReproduce, stop: stopReproduce },
     error,
     send,
+    queue,
+    cancelQueued,
     remove,
     interrupt,
     startFresh: () => setChosen({ key, id: null }),
