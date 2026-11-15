@@ -19,7 +19,8 @@ const toWire = Effect.mapError((error: LogReadError) => new StateReadError({ wha
 
 // Each handler decodes nothing itself (the RPC layer did), calls one service method and maps its
 // error to the wire's. Built per connection, since access methods act as that connection's session.
-export const layer = (session: Session) =>
+// Every method this build answers, less any a test server leaves out to act as an older build.
+export const layer = (session: Session, answered: ReadonlyArray<string> = Object.values(RPC_METHODS)) =>
   RunnerboxRpcGroup.toLayer(
     Effect.gen(function* () {
       const history = yield* JobHistory.JobHistory;
@@ -89,6 +90,7 @@ export const layer = (session: Session) =>
         "accounts.save": (input) => accounts.save(input),
         "accounts.remove": ({ id }) => accounts.remove(id),
         "accounts.setDefault": ({ id }) => accounts.setDefault(id),
+        "server.methods": () => Effect.succeed(answered),
         "server.about": () => Effect.succeed({ label: identity.descriptor.label, serverVersion: identity.descriptor.serverVersion, protocolVersion: identity.descriptor.protocolVersion }),
       };
     }),

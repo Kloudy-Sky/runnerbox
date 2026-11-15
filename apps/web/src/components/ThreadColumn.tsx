@@ -4,6 +4,7 @@ import { type DragEvent, useEffect, useRef, useState } from "react";
 import { cn } from "~/lib/utils";
 import { useComposerAttachments } from "../hooks/useComposerAttachments.ts";
 import { useRange } from "../hooks/useRange.ts";
+import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 import { useThread } from "../hooks/useThread.ts";
 import { Composer } from "./thread/Composer.tsx";
 import { ThreadMessages } from "./thread/ThreadMessages.tsx";
@@ -12,11 +13,12 @@ type Thread = ReturnType<typeof useThread>;
 
 // A subject's reading column with its agent thread under it and one composer at the bottom, as in
 // T3 Code's chat column. `children` gets the thread, so its primary action can start a turn. Files
-// dragged anywhere over the column are attached to the composer's draft.
+// dragged anywhere over the column are attached to the composer's draft, on a server that takes them.
 export function ThreadColumn(props: { subject: ThreadSubject; placeholder: string; children: (thread: Thread) => ReactNode }) {
   const { days } = useRange();
   const thread = useThread(props.subject, days);
   const attachments = useComposerAttachments(thread.environmentId, thread.draftKey);
+  const capabilities = useServerCapabilities();
   const [dragging, setDragging] = useState(false);
   const carriesFiles = (event: DragEvent) => event.dataTransfer.types.includes("Files");
   const scroller = useRef<HTMLDivElement>(null);
@@ -29,7 +31,7 @@ export function ThreadColumn(props: { subject: ThreadSubject; placeholder: strin
     <div
       className={cn("flex min-h-0 flex-1 flex-col rounded-2xl", dragging && "bg-accent/45 ring-1 ring-inset ring-primary/70")}
       onDragOver={(event) => {
-        if (!carriesFiles(event) || !thread.permitted) return;
+        if (!carriesFiles(event) || !thread.permitted || !capabilities.attachments) return;
         event.preventDefault();
         setDragging(true);
       }}
@@ -38,7 +40,7 @@ export function ThreadColumn(props: { subject: ThreadSubject; placeholder: strin
         if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setDragging(false);
       }}
       onDrop={(event) => {
-        if (!carriesFiles(event)) return;
+        if (!carriesFiles(event) || !capabilities.attachments) return;
         event.preventDefault();
         setDragging(false);
         attachments.add([...event.dataTransfer.files]);
@@ -51,7 +53,7 @@ export function ThreadColumn(props: { subject: ThreadSubject; placeholder: strin
         </div>
       </div>
       <div className="mx-auto w-full max-w-(--reading-width) px-6 pt-2 pb-4">
-        <Composer thread={thread} attachments={attachments} placeholder={props.placeholder} />
+        <Composer thread={thread} attachments={attachments} capabilities={capabilities} placeholder={props.placeholder} />
       </div>
     </div>
   );

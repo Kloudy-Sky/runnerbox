@@ -16,7 +16,8 @@ const Choice = ({ children }: { children: ReactNode }) => (
 const ACCOUNT_DEFAULT = "";
 
 // What a turn runs on, in the composer's row: the harness and its model, then the account. Only
-// Claude today; a second harness adds its own group of models here.
+// Claude today; a second harness adds its own group of models here. With no models to list and
+// one account, there's no choice to make, so there's no menu.
 export function ModelMenu(props: {
   harnesses: ReadonlyArray<Harness>;
   accounts: ReadonlyArray<Account>;
@@ -28,7 +29,8 @@ export function ModelMenu(props: {
   const account = props.accounts.find((each) => each.id === props.accountId);
   const harness = props.harnesses.find((each) => each.driver === (account?.driver ?? "claude"));
   const picked = harness?.models.find((each) => each.id === props.model);
-  const label = `${harness?.label ?? "Claude"} ${picked?.label ?? "default"}`;
+  if (props.harnesses.length === 0 && props.accounts.length < 2) return null;
+  const label = harness ? `${harness.label} ${picked?.label ?? "default"}` : (account?.label ?? "Account");
   return (
     <Menu>
       <MenuTrigger render={<ComposerControl size="xs" aria-label="Harness, model and account" />}>

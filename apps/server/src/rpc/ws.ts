@@ -1,4 +1,4 @@
-import { RunnerboxRpcGroup } from "@runnerbox/contracts";
+import { RPC_METHODS, type RpcMethod, RunnerboxRpcGroup } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -13,7 +13,8 @@ import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 // The RPC socket. Each connection redeems a ticket, then gets its own server whose middleware
 // checks every call against that session's scopes. Revoking the session closes the socket.
-export const layer = (entry: AuthStore.Entry) => HttpRouter.add(
+// `without` leaves methods out, as a build older than them would, for tests and the fake server.
+export const layer = (entry: AuthStore.Entry, without: ReadonlyArray<RpcMethod> = []) => HttpRouter.add(
   "GET",
   "/ws",
   Effect.gen(function* () {
@@ -23,9 +24,10 @@ export const layer = (entry: AuthStore.Entry) => HttpRouter.add(
     const session = yield* store.redeemTicket(ticket, entry);
     if (!session) return HttpServerResponse.jsonUnsafe({ error: "invalid_ticket" }, { status: 401 });
     const { protocol, httpEffect } = yield* RpcServer.makeProtocolWithHttpEffectWebsocket;
-    yield* RpcServer.make(RunnerboxRpcGroup, { disableFatalDefects: true }).pipe(
+    const group = RunnerboxRpcGroup.omit(...without);
+    yield* RpcServer.make(group, { disableFatalDefects: true }).pipe(
       Effect.provideService(RpcServer.Protocol, protocol),
-      Effect.provide(Layer.merge(Handlers.layer(session), RpcAuthorization.layer(session.scopes))),
+      Effect.provide(Layer.merge(Handlers.layer(session, Object.values(RPC_METHODS).filter((method) => !without.includes(method))), RpcAuthorization.layer(session.scopes))),
       Effect.forkScoped,
     );
     return yield* Effect.raceFirst(httpEffect, store.revoked(session.id).pipe(Effect.as(HttpServerResponse.empty({ status: 410 }))));

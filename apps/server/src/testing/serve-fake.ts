@@ -1,6 +1,8 @@
 // Serves fixture logs with a scripted agent, for driving the app's threads by hand without a
 // Claude login:
-//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider]
+//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older]
+// `--older` answers as a server from before the composer's model menu, attachments, references,
+// queue and delete, to see the app hold back what such a server can't do.
 // It writes fixtures under <dir>, prints a pairing code, and runs until stopped. Never point it
 // at a real state directory. Keep <dir> short: the reproduce socket's path must fit in about
 // 100 characters.
@@ -16,10 +18,22 @@ import { makeFakeProvider } from "./FakeProvider.ts";
 import { startFakeUp } from "./fakeUp.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false } } });
+// What a server from before the composer work doesn't answer.
+const OLDER_SERVER_LACKS = [
+  "server.methods",
+  "threads.harnesses",
+  "threads.delete",
+  "threads.stageAttachment",
+  "threads.attachmentChunk",
+  "threads.discardAttachment",
+  "threads.attachment",
+  "threads.queueTurn",
+  "threads.cancelQueued",
+] as const;
 const target = positionals[0];
 if (!target) {
-  console.error("Usage: node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider]");
+  console.error("Usage: node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older]");
   process.exit(2);
 }
 const stateDir = join(resolve(target), "runnerbox");
@@ -75,7 +89,7 @@ await startFakeUp(join(stateDir, "example"), {
 });
 
 const program = Effect.gen(function* () {
-  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer }));
+  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, withoutMethods: values.older ? OLDER_SERVER_LACKS : [] }));
   const { code } = yield* Context.get(context, AuthStore.AuthStore).createPairingCode(ALL_SCOPES);
   console.log(`Serving fixtures from ${stateDir} on http://127.0.0.1:${values.port}. Pairing code: ${code}`);
   return yield* Effect.never;
