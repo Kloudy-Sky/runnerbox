@@ -1,22 +1,18 @@
 import { MAX_COMMAND_SECONDS } from "runnerbox/src/reproduce/protocol.ts";
-import { RunnerboxToolkit } from "../../mcp/tools.ts";
 import { passedEnv } from "./agentEnv.ts";
 import type { TurnImage } from "./ProviderAdapter.ts";
+import { MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, PROPOSE_TOOL_NAME, READ_ONLY_TOOL_NAMES, REPRODUCE_TOOL_NAME, SERVER_NAME } from "./runnerboxTools.ts";
 
 // How a thread's turn runs the environment's own `claude`: headless, streaming JSON in and out,
 // with runnerbox's `/mcp` endpoint as its only tools. Every flag that bounds what the agent can
 // reach is here, so one test can read the whole command. The isolation follows T3 Code's
 // ClaudeProvider (MIT, see THIRD_PARTY_NOTICES.md).
 
-export const SERVER_NAME = "runnerbox";
+export { MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, SERVER_NAME };
 export const toolName = (name: string) => `mcp__${SERVER_NAME}__${name}`;
-export const READ_ONLY_TOOLS = Object.keys(RunnerboxToolkit.tools).map(toolName);
-export const REPRODUCE_TOOL = toolName("repro_exec");
-// A turn the owner asked may propose a change; it only records one for the owner to decide.
-export const PROPOSE_TOOL = toolName("propose_change");
-export const MAX_AGENT_STEPS = 12;
-// Rerunning a step and narrowing it down takes more steps than reading.
-export const MAX_REPRODUCE_STEPS = 30;
+export const READ_ONLY_TOOLS = READ_ONLY_TOOL_NAMES.map(toolName);
+export const REPRODUCE_TOOL = toolName(REPRODUCE_TOOL_NAME);
+export const PROPOSE_TOOL = toolName(PROPOSE_TOOL_NAME);
 
 export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly systemPrompt: string; readonly model: string | undefined; readonly reproduce: boolean; readonly propose: boolean }) {
   return [
