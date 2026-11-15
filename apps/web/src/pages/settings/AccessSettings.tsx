@@ -1,7 +1,8 @@
 import { ALL_SCOPES, type AuthScope, type PairingCode } from "@runnerbox/contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { SettingsPanel } from "../../components/settings/SettingsPanel.tsx";
+import { SettingsIntro } from "../../components/settings/SettingsIntro.tsx";
+import { SettingsPageContainer, SettingsRow, SettingsSection, SettingsUnavailableGroup } from "../../components/settings/settingsLayout.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
 import { toastManager } from "../../components/ui/toast.tsx";
@@ -11,10 +12,11 @@ import { formatAge } from "../../lib/format.ts";
 import { SCOPE_WORDS } from "../../lib/vocabulary.ts";
 import { runtime } from "../../runtime.ts";
 
+const capitalize = (words: string) => words.charAt(0).toUpperCase() + words.slice(1);
+
 const scopesInWords = (scopes: ReadonlyArray<AuthScope>) => {
   const words = scopes.map((scope) => SCOPE_WORDS[scope]);
-  const sentence = words.length <= 1 ? (words[0] ?? "nothing") : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  return capitalize(words.length <= 1 ? (words[0] ?? "nothing") : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`);
 };
 
 // After T3 Code's authorized clients panel: every device and agent that can reach this
@@ -30,70 +32,73 @@ export function AccessSettings() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: [environmentId, "sessions"] });
   if (!canManage) {
     return (
-      <SettingsPanel.Root>
-        <SettingsPanel.Header title="Access" />
-        <SettingsPanel.Notice>Seeing and changing who can reach {environment?.label ?? "this environment"} needs a session that manages access. Pair again by address or over SSH for one.</SettingsPanel.Notice>
-      </SettingsPanel.Root>
+      <SettingsPageContainer>
+        <SettingsSection title="Access">
+          <SettingsUnavailableGroup message={`Seeing and changing who can reach ${environment?.label ?? "this environment"} needs a session that manages access. Pair again by address or over SSH for one.`}>{null}</SettingsUnavailableGroup>
+        </SettingsSection>
+      </SettingsPageContainer>
     );
   }
   const toggle = (scope: AuthScope, on: boolean) => setScopes((current) => new Set(on ? [...current, scope] : [...current].filter((each) => each !== scope)));
   return (
-    <SettingsPanel.Root>
-      <SettingsPanel.Header title="Access" description={`Every app and agent that can reach ${environment?.label ?? "this environment"}, and what each may do.`} />
-      <SettingsPanel.Group title="Paired">
+    <SettingsPageContainer>
+      <SettingsIntro>Every app and agent that can reach {environment?.label ?? "this environment"}, and what each may do.</SettingsIntro>
+      <SettingsSection title="Paired">
         {(sessions.data ?? []).map((session) => (
-          <SettingsPanel.Row
+          <SettingsRow
             key={session.id}
-            label={
-              <span>
+            title={
+              <>
                 {session.label}
-                <span className="text-muted-foreground">{session.current ? " this app" : session.audience === "mcp" ? " an agent" : ""}</span>
-              </span>
+                <span className="font-normal text-muted-foreground">{session.current ? " this app" : session.audience === "mcp" ? " an agent" : ""}</span>
+              </>
             }
             description={`${scopesInWords(session.scopes)}. Seen ${formatAge(session.lastSeenAt ?? session.createdAt)} ago.`}
-          >
-            {session.current ? null : (
-              <Button
-                variant="destructive"
-                size="xs"
-                onClick={() =>
-                  void runtime.run(environmentId, (client) => client["access.revokeSession"]({ id: session.id })).then(
-                    () => {
-                      toastManager.add({ title: `${session.label} can't reach it any more` });
-                      void refresh();
-                    },
-                    (error: unknown) => toastManager.add({ title: "That didn't work", description: error instanceof Error ? error.message : "" }),
-                  )
-                }
-              >
-                Revoke
-              </Button>
-            )}
-          </SettingsPanel.Row>
-        ))}
-      </SettingsPanel.Group>
-      <SettingsPanel.Group title="New pairing code">
-        {ALL_SCOPES.map((scope) => (
-          <SettingsPanel.Row key={scope} label={SCOPE_WORDS[scope].charAt(0).toUpperCase() + SCOPE_WORDS[scope].slice(1)}>
-            <Switch checked={scopes.has(scope)} onCheckedChange={(on) => toggle(scope, on)} aria-label={SCOPE_WORDS[scope]} />
-          </SettingsPanel.Row>
-        ))}
-        <div className="flex items-center gap-3 pt-2">
-          <Button
-            variant="secondary"
-            disabled={scopes.size === 0}
-            onClick={() =>
-              void runtime.run(environmentId, (client) => client["access.createPairingCode"]({ scopes: [...scopes] })).then(setCode, (error: unknown) =>
-                toastManager.add({ title: "No code made", description: error instanceof Error ? error.message : "" }),
+            control={
+              session.current ? null : (
+                <Button
+                  variant="ghost-destructive"
+                  size="xs"
+                  onClick={() =>
+                    void runtime.run(environmentId, (client) => client["access.revokeSession"]({ id: session.id })).then(
+                      () => {
+                        toastManager.add({ title: `${session.label} can't reach it any more` });
+                        void refresh();
+                      },
+                      (error: unknown) => toastManager.add({ title: "That didn't work", description: error instanceof Error ? error.message : "" }),
+                    )
+                  }
+                >
+                  Revoke
+                </Button>
               )
             }
-          >
-            Make a code
-          </Button>
-          {code ? <span className="enter font-mono">{code.code}</span> : null}
-          {code ? <span className="text-muted-foreground text-[13px]">works once, until {new Date(code.expiresAt).toLocaleTimeString()}</span> : null}
-        </div>
-      </SettingsPanel.Group>
-    </SettingsPanel.Root>
+          />
+        ))}
+      </SettingsSection>
+      <SettingsSection title="New pairing code">
+        {ALL_SCOPES.map((scope) => (
+          <SettingsRow key={scope} title={capitalize(SCOPE_WORDS[scope])} control={<Switch checked={scopes.has(scope)} onCheckedChange={(on) => toggle(scope, on)} aria-label={SCOPE_WORDS[scope]} />} />
+        ))}
+        <SettingsRow
+          title={code ? <span className="enter font-mono">{code.code}</span> : "Code"}
+          description={code ? `works once, until ${new Date(code.expiresAt).toLocaleTimeString()}` : undefined}
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={scopes.size === 0}
+              onClick={() =>
+                void runtime.run(environmentId, (client) => client["access.createPairingCode"]({ scopes: [...scopes] })).then(setCode, (error: unknown) =>
+                  toastManager.add({ title: "No code made", description: error instanceof Error ? error.message : "" }),
+                )
+              }
+            >
+              Make a code
+            </Button>
+          }
+        />
+      </SettingsSection>
+    </SettingsPageContainer>
   );
 }

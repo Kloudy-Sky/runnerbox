@@ -3,7 +3,7 @@ import semver from "semver";
 import type { useDesktopUpdates } from "../../hooks/useDesktopUpdates.ts";
 import { formatAge } from "../../lib/format.ts";
 import { Button } from "../ui/button.tsx";
-import { SettingsPanel } from "./SettingsPanel.tsx";
+import { SettingsRow, SettingsSection } from "./settingsLayout.tsx";
 
 type Updates = NonNullable<ReturnType<typeof useDesktopUpdates>>;
 
@@ -39,25 +39,31 @@ export function UpdatesGroup({ updates }: { updates: Updates }) {
   const { state, actions } = updates;
   const busy = state.status === "checking" || state.status === "downloading";
   return (
-    <SettingsPanel.Group title="Updates">
-      <SettingsPanel.Row label="Channel" description="Stable gets each release. Nightly gets a build of the latest changes, most days.">
-        {CHANNELS.map(([channel, label]) => (
+    <SettingsSection title="Updates">
+      <SettingsRow
+        title="Channel"
+        description="Stable gets each release. Nightly gets a build of the latest changes, most days."
+        control={CHANNELS.map(([channel, label]) => (
           <Button key={channel} size="sm" variant={state.channel === channel ? "secondary" : "ghost-muted"} onClick={() => void actions.setChannel(channel)}>
             {label}
           </Button>
         ))}
-      </SettingsPanel.Row>
-      <SettingsPanel.Row label="Status" description={statusWords(state)}>
-        {state.status === "ready" ? (
-          <Button size="sm" onClick={() => void actions.install()}>
-            Restart to update
-          </Button>
-        ) : state.status !== "disabled" ? (
-          <Button size="sm" variant="ghost-muted" disabled={busy} onClick={() => void actions.check()}>
-            Check now
-          </Button>
-        ) : null}
-      </SettingsPanel.Row>
-    </SettingsPanel.Group>
+      />
+      <SettingsRow
+        title="Status"
+        description={statusWords(state)}
+        control={
+          state.status === "ready" ? (
+            <Button size="sm" onClick={() => void actions.install()}>
+              Restart to update
+            </Button>
+          ) : state.status !== "disabled" ? (
+            <Button size="sm" variant="ghost-muted" disabled={busy} onClick={() => void actions.check()}>
+              Check now
+            </Button>
+          ) : null
+        }
+      />
+    </SettingsSection>
   );
 }

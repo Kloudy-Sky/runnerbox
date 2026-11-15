@@ -1,7 +1,9 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Eye, Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { handleSettingsSectionKeyDown } from "../components/settings/settingsSectionNavigation.ts";
+import { SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar.tsx";
+import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSeparator } from "../components/WorkspaceBreadcrumb.tsx";
 import type { RootSearch } from "../lib/search.ts";
-import { cn } from "../lib/utils.ts";
 
 const SECTIONS = [
   { to: "/settings/accounts", label: "Accounts", icon: KeyRound },
@@ -12,26 +14,51 @@ const SECTIONS = [
   { to: "/settings/about", label: "About", icon: Info },
 ] as const;
 
-// Settings as T3 Code lays them out: a short list of sections on the left, the section on the right.
+// Settings as T3 Code lays them out: the sections in a rail on the left, arrow keys moving between
+// them, and the open one on the right under a breadcrumb.
 export function SettingsPage() {
   const path = useRouterState({ select: (state) => state.location.pathname });
+  const current = SECTIONS.find((section) => section.to === path);
   return (
-    <div className="flex min-h-0 flex-1">
-      <nav className="flex w-48 shrink-0 flex-col gap-0.5 px-2 pt-8" aria-label="Settings">
-        {SECTIONS.map(({ to, label, icon: Icon }) => (
-          <Link
-            key={to}
-            to={to}
-            search={(previous: RootSearch) => previous}
-            className={cn("flex h-8 items-center gap-2 rounded-[var(--control-radius)] px-2.5 transition-colors hover:bg-accent [&>svg]:size-4 [&>svg]:text-muted-foreground", path === to && "bg-accent")}
-          >
-            <Icon />
-            {label}
-          </Link>
-        ))}
+    <div className="relative flex min-h-0 flex-1">
+      <nav aria-label="Settings sections" className="flex w-60 shrink-0 flex-col border-e bg-sidebar text-sidebar-foreground max-md:w-14">
+        <SidebarContent className="overflow-x-hidden">
+          <SidebarGroup>
+            <SidebarMenu onKeyDown={handleSettingsSectionKeyDown}>
+              {SECTIONS.map(({ to, label, icon: Icon }) => (
+                <SidebarMenuItem key={to}>
+                  <SidebarMenuButton
+                    data-settings-section={to}
+                    aria-current={path === to ? "page" : undefined}
+                    isActive={path === to}
+                    render={<Link to={to} search={(previous: RootSearch) => previous} />}
+                  >
+                    <Icon />
+                    <span className="truncate max-md:sr-only">{label}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
       </nav>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <Outlet />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
+          <WorkspaceBreadcrumb ariaLabel="Settings breadcrumb">
+            {current ? (
+              <>
+                <WorkspaceBreadcrumbItem>Settings</WorkspaceBreadcrumbItem>
+                <WorkspaceBreadcrumbSeparator />
+              </>
+            ) : null}
+            <WorkspaceBreadcrumbItem current className="truncate">
+              {current?.label ?? "Settings"}
+            </WorkspaceBreadcrumbItem>
+          </WorkspaceBreadcrumb>
+        </header>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <Outlet />
+        </div>
       </div>
     </div>
   );
