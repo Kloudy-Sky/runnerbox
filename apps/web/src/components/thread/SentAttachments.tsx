@@ -2,13 +2,14 @@ import type { Attachment } from "@runnerbox/contracts";
 import { FileTextIcon } from "lucide-react";
 import { useSentImage } from "../../hooks/useSentImage.ts";
 import { formatBytes } from "../../lib/format.ts";
+import { imagesFirst } from "../../lib/imagesFirst.ts";
 
-// The files sent with a question, under it: each image as a picture, each text file by name.
+// The files sent with a question, under it: each image as a picture, then each text file by name.
 export function SentAttachments({ environmentId, threadId, attachments }: { environmentId: string; threadId: string; attachments: ReadonlyArray<Attachment> }) {
   if (attachments.length === 0) return null;
   return (
     <div className="mt-1.5 flex flex-wrap items-end gap-2">
-      {attachments.map((attachment) =>
+      {imagesFirst(attachments).map((attachment) =>
         attachment.kind === "image" ? (
           <SentImage key={attachment.id} environmentId={environmentId} threadId={threadId} attachment={attachment} />
         ) : (

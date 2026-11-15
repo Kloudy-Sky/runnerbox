@@ -3,6 +3,7 @@ import type { StagedFile } from "../../composerDraftStore.ts";
 import type { Uploading } from "../../hooks/useComposerAttachments.ts";
 import { attachmentPreviews } from "../../lib/attachmentPreviews.ts";
 import { formatBytes } from "../../lib/format.ts";
+import { imagesFirst } from "../../lib/imagesFirst.ts";
 
 // The files attached to the draft, above the editor: a picture or a file icon, the name and size,
 // and a way to take each off. One still uploading says how far it has got, without moving parts.
@@ -10,7 +11,7 @@ export function AttachmentStrip({ staged, uploading, onRemove }: { staged: Reado
   if (staged.length === 0 && uploading.length === 0) return null;
   return (
     <ul className="flex flex-wrap gap-1.5 pb-2" aria-label="Attached files">
-      {staged.map((file) => (
+      {imagesFirst(staged).map((file) => (
         <Chip key={file.id} name={file.name} detail={formatBytes(file.size)} kind={file.kind} preview={attachmentPreviews.get(file.id) ?? null} onRemove={() => onRemove(file.id)} />
       ))}
       {uploading.map((file) => (
