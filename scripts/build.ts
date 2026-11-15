@@ -12,7 +12,7 @@ if (repository !== "" && !REPOSITORY.test(repository)) {
 }
 
 await build({
-  entryPoints: ["src/cli.ts"],
+  entryPoints: ["src/main.ts"],
   bundle: true,
   platform: "node",
   format: "esm",
