@@ -43,6 +43,8 @@ import packageJson from "../package.json" with { type: "json" };
 import { githubReleases, type ReleaseSource } from "./update/download.ts";
 import { releaseRepository } from "./update/releaseRepository.ts";
 import * as ServerUpdate from "./update/ServerUpdate.ts";
+import { builtInReleaseKeys } from "./update/supervisor/releaseKeys.ts";
+import type { ReleaseKey } from "./update/supervisor/signature.ts";
 import * as Supervision from "./update/Supervision.ts";
 
 export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string; readonly codex?: boolean };
@@ -54,8 +56,8 @@ type CodexProvider = Layer.Layer<CodexProviderAdapter, never, ServerPaths.Server
 
 // Where updates come from and who carries them out. Tests swap in a local release server and a
 // stand-in supervisor; a release uses its own repository and the supervisor that started it.
-export type UpdateWiring = { readonly source: ReleaseSource | null; readonly supervision: Layer.Layer<Supervision.Supervision> };
-const releaseUpdates: UpdateWiring = { source: releaseRepository === null ? null : githubReleases(releaseRepository), supervision: Supervision.layer };
+export type UpdateWiring = { readonly source: ReleaseSource | null; readonly keys: ReadonlyArray<ReleaseKey>; readonly supervision: Layer.Layer<Supervision.Supervision> };
+const releaseUpdates: UpdateWiring = { source: releaseRepository === null ? null : githubReleases(releaseRepository), keys: builtInReleaseKeys, supervision: Supervision.layer };
 
 type ServicesInput = {
   stateDir: string;
@@ -76,7 +78,7 @@ export const layerServices = (input: ServicesInput) => Monitors.layer.pipe(Layer
 
 // Everything but the monitor, which sits on top so a test can run it on a fake clock.
 export const layerCore = (input: ServicesInput) =>
-  ServerUpdate.layer((input.updates ?? releaseUpdates).source).pipe(
+  ServerUpdate.layer((input.updates ?? releaseUpdates).source, (input.updates ?? releaseUpdates).keys).pipe(
     Layer.provideMerge(Layer.mergeAll(Threads.layer, Providers.layer, (input.updates ?? releaseUpdates).supervision)),
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),

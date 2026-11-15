@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
@@ -15,6 +15,7 @@ import * as Stream from "effect/Stream";
 import { makeFakeProvider } from "../testing/FakeProvider.ts";
 import { startTestServer } from "../testing/testServer.ts";
 import type { ReleaseSource } from "./download.ts";
+import { type ReleaseKey, releaseMessage } from "./supervisor/signature.ts";
 import * as Supervision from "./Supervision.ts";
 import { updatePaths } from "./supervisor/updateFiles.ts";
 
@@ -23,7 +24,8 @@ const RELEASE = "// runnerbox.js 0.3.2\n".repeat(50_000);
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 // What the stand-in for GitHub serves for v0.3.2.
-type Release = { checksum?: string; status?: number; redirectTo?: string };
+// `signature` is runnerbox.js.sig's text; without it the release has none.
+type Release = { checksum?: string; status?: number; redirectTo?: string; signature?: string };
 
 // A local server in GitHub's place, serving one release under /v<version>/.
 async function startReleases(release: Release = {}) {
@@ -33,6 +35,7 @@ async function startReleases(release: Release = {}) {
     if (release.redirectTo) return void response.writeHead(302, { location: release.redirectTo }).end();
     if (release.status) return void response.writeHead(release.status).end();
     if (request.url === `/v${NEW}/runnerbox.js`) return void response.writeHead(200, { "content-length": Buffer.byteLength(RELEASE) }).end(RELEASE);
+    if (request.url === `/v${NEW}/runnerbox.js.sig` && release.signature !== undefined) return void response.writeHead(200).end(`${release.signature}\n`);
     if (request.url === `/v${NEW}/runnerbox.js.sha256`) return void response.writeHead(200).end(`${release.checksum ?? sha256(RELEASE)}  runnerbox.js\n`);
     response.writeHead(404).end();
   });
@@ -46,10 +49,10 @@ async function startReleases(release: Release = {}) {
   return { source, requests, close: () => new Promise<void>((resolve) => server.close(() => resolve())) };
 }
 
-type Asked = { version: string; path: string; sha256: string };
+type Asked = { version: string; path: string; sha256: string; signature: string | null };
 
 // A server under a stand-in supervisor that accepts every update, or answers `refuse`.
-async function withUpdates(options: { release?: Release; refuse?: string; supervised?: boolean; source?: "none" }, body: (context: { server: Awaited<ReturnType<typeof startTestServer>>; file: string; asked: Asked[] }) => Promise<void>, provider?: ReturnType<typeof makeFakeProvider>) {
+async function withUpdates(options: { release?: Release; refuse?: string; supervised?: boolean; source?: "none"; keys?: ReadonlyArray<ReleaseKey> }, body: (context: { server: Awaited<ReturnType<typeof startTestServer>>; file: string; asked: Asked[] }) => Promise<void>, provider?: ReturnType<typeof makeFakeProvider>) {
   const dir = await mkdtemp(join(tmpdir(), "runnerbox-server-update-"));
   const file = join(dir, "runnerbox.js");
   await writeFile(file, "// runnerbox.js 0.0.0\n");
@@ -59,7 +62,7 @@ async function withUpdates(options: { release?: Release; refuse?: string; superv
     asked.push(request);
     return options.refuse ? Effect.fail(new Supervision.UpdateRefused({ reason: options.refuse })) : Effect.succeed("0123456789abcdef");
   });
-  const server = await startTestServer({ updates: { source: options.source === "none" ? null : releases.source, supervision }, ...(provider ? { provider } : {}) });
+  const server = await startTestServer({ updates: { source: options.source === "none" ? null : releases.source, keys: options.keys ?? [], supervision }, ...(provider ? { provider } : {}) });
   try {
     await body({ server, file, asked });
   } finally {
@@ -94,7 +97,7 @@ test("an update downloads the release beside runnerbox.js, checks it, and hands 
     const downloading = exit.value.filter((step) => step._tag === "Downloading").at(-1);
     assert.deepEqual(downloading, { _tag: "Downloading", received: Buffer.byteLength(RELEASE), total: Buffer.byteLength(RELEASE) });
     const staged = updatePaths(file).staged(NEW);
-    assert.deepEqual(asked, [{ version: NEW, path: staged, sha256: sha256(RELEASE) }]);
+    assert.deepEqual(asked, [{ version: NEW, path: staged, sha256: sha256(RELEASE), signature: null }]);
     assert.equal(await readFile(staged, "utf8"), RELEASE);
     // Handed over: the server stops in a moment, so nothing else may start.
     assert.equal((await statusOf(server, token)).blocker, "updating");
@@ -256,4 +259,59 @@ test("an update the supervisor refuses lets turns start again", async () => {
     },
     makeFakeProvider({ turns: [[{ text: "Because." }]] }),
   );
+});
+
+// A throwaway signing key, made for the test, and the signature it gives a release.
+const throwawayKey = (id: string) => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const key: ReleaseKey = { id, publicKey: publicKey.export({ type: "spki", format: "pem" }).toString() };
+  return { key, sign: (version: string, checksum = sha256(RELEASE)) => cryptoSign(null, Buffer.from(releaseMessage(version, checksum)), privateKey).toString("base64") };
+};
+
+test("with a key it trusts, a server installs a release signed by it, and hands the signature on", async () => {
+  const signer = throwawayKey("current");
+  const signature = signer.sign(NEW);
+  await withUpdates({ keys: [signer.key], release: { signature } }, async ({ server, asked }) => {
+    const token = await session(server);
+    assert.deepEqual(await Effect.runPromise(Effect.scoped(Effect.flatMap(openSession(server.baseUrl, token), ({ client }) => client["server.checkRelease"]({ version: NEW })))), { signature: "valid" });
+    assert.ok(Exit.isSuccess(await updateTo(server, token)));
+    assert.equal(asked[0]?.signature, signature);
+  });
+});
+
+test("while keys are rotated, a release signed by either key in the list installs", async () => {
+  const [old, next] = [throwawayKey("old"), throwawayKey("next")];
+  for (const signer of [old, next]) {
+    await withUpdates({ keys: [old.key, next.key], release: { signature: signer.sign(NEW) } }, async ({ server }) => {
+      assert.ok(Exit.isSuccess(await updateTo(server, await session(server))));
+    });
+  }
+});
+
+for (const [name, signature, check, why] of [
+  ["no signature", undefined, "missing", /This release isn't signed, so it can't be installed from here\. Run the command on the machine instead\./],
+  ["a signature by a key it doesn't trust", throwawayKey("stranger").sign(NEW), "invalid", /isn't by a key this server trusts/],
+  ["a signature for another version", "other-version", "invalid", /isn't by a key this server trusts/],
+  ["a signature over another file", "other-file", "invalid", /isn't by a key this server trusts/],
+] as const) {
+  test(`with a key it trusts, a server refuses a release with ${name} before downloading it`, async () => {
+    const signer = throwawayKey("current");
+    const text = signature === "other-version" ? signer.sign("0.3.1") : signature === "other-file" ? signer.sign(NEW, "0".repeat(64)) : signature;
+    await withUpdates({ keys: [signer.key], release: text === undefined ? {} : { signature: text } }, async ({ server, file, asked }) => {
+      const token = await session(server);
+      assert.deepEqual(await Effect.runPromise(Effect.scoped(Effect.flatMap(openSession(server.baseUrl, token), ({ client }) => client["server.checkRelease"]({ version: NEW })))), { signature: check });
+      assert.match(failure(await updateTo(server, token)), why);
+      assert.deepEqual(asked, []);
+      assert.ok(!existsSync(`${updatePaths(file).staged(NEW)}.part`), "nothing was downloaded");
+    });
+  });
+}
+
+test("a server that trusts no key yet asks for no signature", async () => {
+  await withUpdates({}, async ({ server, asked }) => {
+    const token = await session(server);
+    assert.deepEqual(await Effect.runPromise(Effect.scoped(Effect.flatMap(openSession(server.baseUrl, token), ({ client }) => client["server.checkRelease"]({ version: NEW })))), { signature: "not-required" });
+    assert.ok(Exit.isSuccess(await updateTo(server, token)));
+    assert.equal(asked[0]?.signature, null);
+  });
 });

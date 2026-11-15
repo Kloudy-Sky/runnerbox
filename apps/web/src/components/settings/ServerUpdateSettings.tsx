@@ -4,10 +4,10 @@ import { useCopyToClipboard } from "../../hooks/useCopyToClipboard.ts";
 import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
 import { useRunnerState } from "../../hooks/useRunnerState.ts";
 import { useServerCapabilityState } from "../../hooks/useServerCapabilities.ts";
-import { BLOCKED_WORDS, isUnderway, needsCommand, restartCommand, serverIsBehind, staleInstalls, underwayLine } from "../../lib/serverUpdate.ts";
+import { BLOCKED_WORDS, isUnderway, needsCommand, restartCommand, serverIsBehind, SIGNATURE_WORDS, staleInstalls, underwayLine } from "../../lib/serverUpdate.ts";
 import { startUpdate } from "../../state/serverUpdates.ts";
 import { ServerUpdateCommand } from "../ServerUpdateCommand.tsx";
-import { useUpdateAccess, useUpdateRun } from "../ServerUpdateNotice.tsx";
+import { useReleaseSignature, useUpdateAccess, useUpdateRun } from "../ServerUpdateNotice.tsx";
 import { Button } from "../ui/button.tsx";
 import { SettingsRow, SettingsSection } from "./settingsLayout.tsx";
 
@@ -38,10 +38,20 @@ function LastUpdate({ last }: { last: UpdateOutcome }) {
 export function ServerUpdateControls({ environment, serverVersion, appVersion }: { environment: SavedEnvironment; serverVersion: string; appVersion: string }) {
   const { capable, known, denied, status } = useUpdateStatus(environment);
   const run = useUpdateRun(environment.environmentId);
-  if (!known) return null;
   const behind = serverIsBehind(appVersion, serverVersion);
+  const unsigned = useReleaseSignature(appVersion, capable && denied === null && behind);
+  if (!known) return null;
   const last = status.data?.lastUpdate ?? null;
   if (!capable) return behind ? <ServerUpdateCommand appVersion={appVersion} /> : null;
+  if (behind && (unsigned === "missing" || unsigned === "invalid")) {
+    return (
+      <div className="flex flex-col gap-1.5 pb-2">
+        {last ? <LastUpdate last={last} /> : null}
+        <p className="text-muted-foreground text-xs">{SIGNATURE_WORDS[unsigned]}</p>
+        {unsigned === "missing" ? <ServerUpdateCommand appVersion={appVersion} /> : null}
+      </div>
+    );
+  }
   const blocker = status.data?.blocker ?? null;
   const why = denied ?? (blocker === null ? null : BLOCKED_WORDS[blocker]);
   const tried = last?.status === "rolled-back" && last.to === appVersion;
@@ -51,7 +61,7 @@ export function ServerUpdateControls({ environment, serverVersion, appVersion }:
       {run && isUnderway(run) ? <p className="text-xs">{underwayLine(run, environment.label)}</p> : null}
       {behind && !(run && isUnderway(run)) && blocker !== "checkout" ? (
         <div className="flex items-center gap-3">
-          <Button size="xs" variant={tried || why !== null ? "secondary" : "default"} disabled={why !== null || !status.isSuccess} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
+          <Button size="xs" variant={tried || why !== null ? "secondary" : "default"} disabled={why !== null || !status.isSuccess || unsigned === "pending"} onClick={() => void startUpdate(environment.environmentId, appVersion)}>
             {tried ? "Try again" : `Update to ${appVersion}`}
           </Button>
           {why ? <span className="text-muted-foreground text-xs">{why}</span> : null}

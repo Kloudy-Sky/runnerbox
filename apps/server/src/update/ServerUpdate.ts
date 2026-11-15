@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { access, mkdir, rename, rm } from "node:fs/promises";
 import { dirname } from "node:path";
-import { ServerUpdateError, type UpdateBlocker, type UpdateOutcome, type UpdateProgress, type UpdateStatus } from "@runnerbox/contracts";
+import { type ReleaseCheck, ServerUpdateError, type UpdateBlocker, type UpdateOutcome, type UpdateProgress, type UpdateStatus } from "@runnerbox/contracts";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -11,7 +11,8 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import packageJson from "../../package.json" with { type: "json" };
 import * as Threads from "../threads/Threads.ts";
-import { DownloadError, downloadRelease, fetchChecksum, type ReleaseSource } from "./download.ts";
+import { DownloadError, downloadRelease, fetchChecksum, fetchSignature, type ReleaseSource } from "./download.ts";
+import { type ReleaseKey, verifyRelease } from "./supervisor/signature.ts";
 import * as Supervision from "./Supervision.ts";
 import { readRecord, updatePaths } from "./supervisor/updateFiles.ts";
 import { compareVersions } from "./supervisor/version.ts";
@@ -47,6 +48,7 @@ export class ServerUpdate extends Context.Service<
   {
     readonly status: Effect.Effect<UpdateStatus>;
     readonly update: (version: string) => Stream.Stream<UpdateProgress, ServerUpdateError>;
+    readonly checkRelease: (version: string) => Effect.Effect<ReleaseCheck, ServerUpdateError>;
   }
 >()("runnerbox/server/update/ServerUpdate") {}
 
@@ -77,7 +79,22 @@ const fromDownload = (error: unknown) =>
     : new ServerUpdateError({ reason: "download-failed", detail: `The download failed: ${error instanceof Error ? error.message : String(error)}` });
 
 // `source` is null for a build from a checkout, which has no releases.
-const make = (source: ReleaseSource | null) =>
+export const UNSIGNED = "This release isn't signed, so it can't be installed from here. Run the command on the machine instead.";
+const BAD_SIGNATURE = "This release's signature isn't by a key this server trusts, so it wasn't installed.";
+
+// A release's checksum, and its signature as `keys` judge it. With no keys, nothing is asked to
+// be signed and the signature isn't fetched.
+async function signedChecksum(releases: ReleaseSource, keys: ReadonlyArray<ReleaseKey>, version: string, signal: AbortSignal) {
+  const sha256 = await fetchChecksum(releases, version, signal);
+  if (keys.length === 0) return { sha256, signature: null, check: "not-required" as const };
+  const signature = await fetchSignature(releases, version, signal);
+  const check = signature === null ? ("missing" as const) : verifyRelease(keys, version, sha256, signature) ? ("valid" as const) : ("invalid" as const);
+  return { sha256, signature, check };
+}
+
+// `source` is null for a build from a checkout, which has no releases. `keys` are the ones its
+// releases must be signed by, none for a build from before any was committed.
+const make = (source: ReleaseSource | null, keys: ReadonlyArray<ReleaseKey>) =>
   Effect.gen(function* () {
     const supervision = yield* Supervision.Supervision;
     const threads = yield* Threads.Threads;
@@ -114,7 +131,10 @@ const make = (source: ReleaseSource | null) =>
         yield* Effect.promise(() => mkdir(paths.dir, { recursive: true, mode: 0o700 }));
         const sha256 = yield* Effect.tryPromise({
           try: async (signal) => {
-            const expected = await fetchChecksum(releases, version, signal);
+            // Before the download: a release that won't be accepted isn't worth fetching.
+            const { sha256: expected, signature, check } = await signedChecksum(releases, keys, version, signal);
+            if (check === "missing") throw new DownloadError("unsigned", UNSIGNED);
+            if (check === "invalid") throw new DownloadError("bad-signature", BAD_SIGNATURE);
             let reported = 0;
             const actual = await downloadRelease(
               releases,
@@ -127,7 +147,7 @@ const make = (source: ReleaseSource | null) =>
               },
               signal,
             );
-            return { expected, actual };
+            return { expected, actual, signature };
           },
           catch: fromDownload,
         }).pipe(
@@ -140,7 +160,7 @@ const make = (source: ReleaseSource | null) =>
         // restart nothing new starts, unless the update doesn't go ahead.
         const now = blockerOf(yield* threads.holdForRestart);
         if (now !== null) return yield* Effect.andThen(threads.resume, Effect.fail(blocked(now)));
-        const updateId = yield* supervision.requestUpdate({ version, path: staged, sha256: sha256.actual }).pipe(
+        const updateId = yield* supervision.requestUpdate({ version, path: staged, sha256: sha256.actual, signature: sha256.signature }).pipe(
           Effect.tapError(() => threads.resume),
           Effect.mapError((refused) => new ServerUpdateError({ reason: "refused", detail: refused.reason })),
         );
@@ -175,7 +195,12 @@ const make = (source: ReleaseSource | null) =>
         ),
       );
 
-    return ServerUpdate.of({ status, update });
+    const checkRelease = (version: string) =>
+      source === null
+        ? Effect.fail(blocked("checkout"))
+        : Effect.tryPromise({ try: (signal) => signedChecksum(source, keys, version, signal), catch: fromDownload }).pipe(Effect.map(({ check }) => ({ signature: check })));
+
+    return ServerUpdate.of({ status, update, checkRelease });
   });
 
-export const layer = (source: ReleaseSource | null) => Layer.effect(ServerUpdate, make(source));
+export const layer = (source: ReleaseSource | null, keys: ReadonlyArray<ReleaseKey>) => Layer.effect(ServerUpdate, make(source, keys));

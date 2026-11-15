@@ -62,6 +62,54 @@ Then, under Actions, General, check that workflows from fork pull requests don't
 
 Once the first nightly by hand looks right, set `NIGHTLY_ENABLED` to `true` (above).
 
+## Signing runnerbox.js
+
+A server that updates itself from the app installs only a release signed by a key it trusts. The keys are the public ones in [`release-keys.json`](../release-keys.json), which `scripts/build.ts` writes into `runnerbox.js`. While that list is empty, as it is until you add a key, nothing is signed and no server asks for a signature. The first release built after a key is in the list is the first one signed, and a server updated to it asks for a signature from then on.
+
+The signature is Ed25519, over the release's version and the sha256 of `runnerbox.js`. It ships as `runnerbox.js.sig`. The `sign` job in the release workflow makes it, and it's the only job that can read the key: it runs in the `release` environment, which only `main` may use, gets the `cli` artifact alone, and has a token that can only read. It fails the release if the signature it made doesn't verify against `release-keys.json`, so a secret and a committed key that don't match are caught before anything ships. `publish` checks again and refuses to publish a release that should be signed and isn't.
+
+A release made by pushing a tag runs from the tag's commit, which the `release` environment refuses, so it stays unsigned. A server that checks won't install it from the app, which gives the command to run on the machine instead.
+
+### Adding the key
+
+Do this on your own machine. Nobody else, and no agent, needs or should see the private key.
+
+1. Make the key in a directory only you can read:
+
+   ```bash
+   umask 077
+   openssl genpkey -algorithm ed25519 -out runnerbox-release-signing.pem
+   ```
+
+2. In the repository's Settings, Environments, `release`, add an environment secret named `RUNNERBOX_RELEASE_SIGNING_KEY`. Its value is the whole file, the `BEGIN` and `END` lines included. On a Mac, `pbcopy < runnerbox-release-signing.pem` puts it on the clipboard.
+
+3. Print the public key as the entry `release-keys.json` takes. Pick an `id` that says when it was made:
+
+   ```bash
+   openssl pkey -in runnerbox-release-signing.pem -pubout |
+     node -e 'let pem = ""; process.stdin.on("data", (d) => (pem += d)).on("end", () => console.log(JSON.stringify({ id: "2026-11", publicKey: pem }, null, 2)))'
+   ```
+
+   That output is public. Put it in the list in a pull request, or hand it to whoever opens one:
+
+   ```json
+   { "keys": [{ "id": "2026-11", "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA...\n-----END PUBLIC KEY-----\n" }] }
+   ```
+
+4. Keep the private key offline: copy `runnerbox-release-signing.pem` to an encrypted drive or your password manager, then delete it from the machine (`rm -P` on a Mac, `shred -u` on Linux). GitHub never shows a secret again once it's saved.
+
+Add the secret before the pull request merges. If the list has a key and the environment doesn't, the next nightly or stable fails in `sign`, and nothing is published.
+
+### If the key is lost or leaks
+
+A lost key can't sign again. Servers that trust only that key won't install a release signed by a new one from the app, so each needs one manual install of a release whose list has the new key.
+
+A leaked key is worse: whoever holds it can sign releases those servers accept, as long as they can also publish a release on this repository. Make a new key at once, put only the new key in the list, release, and install that release by hand on each machine. The app can't rotate away from a key the running server trusts.
+
+### Rotating the key
+
+Add the new key beside the old one in `release-keys.json` and release, still signed with the old key. Once servers are on that release, replace `RUNNERBOX_RELEASE_SIGNING_KEY` with the new key. Remove the old key from the list in a later release.
+
 ## What has and hasn't been exercised
 
-The version rules and the planner are unit-tested. `release-check` packages Linux and unsigned macOS on pull requests and checks which feed each produces. Signing, notarization, publishing a release and installing an update haven't run yet: the first nightly run by hand after the secrets are added is their first test.
+The version rules and the planner are unit-tested. `release-check` packages Linux and unsigned macOS on pull requests and checks which feed each produces. Signing (the app's and `runnerbox.js`'s), notarization, publishing a release and installing an update haven't run yet: the first nightly run by hand after the secrets are added is their first test.

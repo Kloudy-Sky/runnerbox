@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { type ChildProcess, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { type Behaviour, standIn } from "./testing/standIn.ts";
 import { type UpdateStep } from "./Supervisor.ts";
+import { type ReleaseKey, releaseMessage } from "./signature.ts";
 import { readRecord, updatePaths } from "./updateFiles.ts";
 
 const HARNESS = new URL("./testing/harness.ts", import.meta.url).pathname;
@@ -78,7 +79,7 @@ const serving = (install: Install, version: string, role = "active", times = 1) 
   until(`${version} to be ready as ${role}`, async () => (await log(install)).filter((line) => line === `ready ${version} ${role}`).length >= times);
 const started = (install: Install, version: string, role: string) => until(`${version} to start as ${role}`, async () => (await events(install)).includes(`start ${version} ${role}`));
 // Written whole, then renamed, so the stand-in never reads half of it.
-const ask = async ({ dir }: Install, ...requests: ReadonlyArray<{ version: string; path: string; sha256: string }>) => {
+const ask = async ({ dir }: Install, ...requests: ReadonlyArray<{ version: string; path: string; sha256: string; signature?: string | null }>) => {
   await writeFile(join(dir, "request.tmp"), JSON.stringify(requests));
   await rename(join(dir, "request.tmp"), join(dir, "request.json"));
 };
@@ -280,6 +281,58 @@ test("a failure to put the new file in place, such as a full disk, keeps the old
       assert.match(done?.reason ?? "", /couldn't be put in place/);
       assert.equal(await readFile(install.file, "utf8"), standIn(OLD));
       await until("the old version to start again", async () => (await events(install)).filter((line) => line === `start ${OLD} active`).length === 2);
+    } finally {
+      await killGroup(started);
+    }
+  });
+});
+
+// A throwaway signing key, made for the test.
+const throwawayKey = (id: string) => {
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const key: ReleaseKey = { id, publicKey: publicKey.export({ type: "spki", format: "pem" }).toString() };
+  return { key, sign: (version: string, checksum: string) => sign(null, Buffer.from(releaseMessage(version, checksum)), privateKey).toString("base64") };
+};
+
+test("a supervisor that trusts a key installs a release signed by it", async () => {
+  const signer = throwawayKey("current");
+  await withInstall(async (install) => {
+    const started = supervise(install, "-", { TEST_RELEASE_KEYS: JSON.stringify([signer.key]) });
+    try {
+      await serving(install, OLD);
+      const staged = await stage(install, NEW);
+      await ask(install, { ...staged, signature: signer.sign(NEW, staged.sha256) });
+      assert.equal((await settled(install))?.status, "committed");
+    } finally {
+      await killGroup(started);
+    }
+  });
+});
+
+// The server checks first, but the supervisor decides what runs, so it checks again on its own.
+test("a supervisor that trusts a key refuses a release a server sends it unsigned or wrongly signed", async () => {
+  const [signer, stranger] = [throwawayKey("current"), throwawayKey("stranger")];
+  await withInstall(async (install) => {
+    const started = supervise(install, "-", { TEST_RELEASE_KEYS: JSON.stringify([signer.key]) });
+    try {
+      await serving(install, OLD);
+      const staged = await stage(install, NEW);
+      const requests = [
+        { ...staged, signature: null },
+        { ...staged },
+        { ...staged, signature: stranger.sign(NEW, staged.sha256) },
+        { ...staged, signature: signer.sign("0.3.3", staged.sha256) },
+        { ...staged, signature: signer.sign(NEW, "0".repeat(64)) },
+        { ...staged, signature: "not a signature" },
+      ];
+      for (const [index, request] of requests.entries()) {
+        await ask(install, request);
+        const answer = await reply(install, index + 1);
+        assert.equal(answer.type, "update-refused", `request ${index}`);
+        assert.match(answer.reason, /isn't signed with a key this version trusts/);
+      }
+      assert.equal(await record(install), null);
+      assert.deepEqual(await events(install), [`start ${OLD} active`], "the old server never stopped");
     } finally {
       await killGroup(started);
     }
