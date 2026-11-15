@@ -1,5 +1,6 @@
 import { CircleArrowUp } from "lucide-react";
 import { useDesktopUpdates } from "../hooks/useDesktopUpdates.ts";
+import { railFade } from "./railFade.ts";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "./ui/sidebar.tsx";
 
 // The sidebar's place for updating, above the account. It holds the desktop app's own restart
@@ -10,9 +11,9 @@ export function SidebarUpdateSlot() {
   return (
     <SidebarMenu>
       <SidebarMenuItem>
-        <SidebarMenuButton title={`runnerbox ${updates.state.pending ?? ""} is downloaded`} onClick={() => void updates.actions.install()}>
+        <SidebarMenuButton tooltip="Restart to update" title={`runnerbox ${updates.state.pending ?? ""} is downloaded`} onClick={() => void updates.actions.install()}>
           <CircleArrowUp />
-          <span>Restart to update</span>
+          <span className={railFade}>Restart to update</span>
         </SidebarMenuButton>
       </SidebarMenuItem>
     </SidebarMenu>

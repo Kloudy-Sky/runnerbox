@@ -23,7 +23,7 @@ export function ItemPage() {
   const monitors = useMonitors();
   const unread = itemId !== undefined && (monitors.status?.unread.includes(itemId) ?? false);
   const { markRead } = monitors;
-  // Opening an item a monitor looked into reads what it left, so the sidebar's mark goes.
+  // Opening an item a monitor looked into reads what it left, so its "looked into" mark on Needs you goes.
   useEffect(() => {
     if (unread && itemId) void markRead(itemId);
   }, [unread, itemId]);
