@@ -171,7 +171,7 @@ test("a turn on the owner's login stops before the question if Codex says one of
     ownerHome: true,
     ownerServers: [{ name: "docs", enabled: true }],
     mcpStatus: [
-      { name: "runnerbox", runtimeStatus: "ready", tools: { ci_overview: {} } },
+      { name: "runnerbox", runtimeStatus: "connected", tools: { ci_overview: {} } },
       { name: "docs", runtimeStatus: "ready", tools: { search: {} } },
     ],
   });

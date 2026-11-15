@@ -91,7 +91,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     });
   }
   if (message.method === "config/read") send({ id: message.id, result: { config: settings.config ?? { model_provider: "openai" } } });
-  if (message.method === "mcpServerStatus/list") send({ id: message.id, result: { data: settings.mcpStatus ?? [{ name: "runnerbox", runtimeStatus: "ready", tools: { ci_overview: {} } }], nextCursor: null } });
+  if (message.method === "mcpServerStatus/list") send({ id: message.id, result: { data: settings.mcpStatus ?? [{ name: "runnerbox", runtimeStatus: "connected", tools: { ci_overview: {} } }], nextCursor: null } });
   if (message.method === "turn/start") {
     send({ id: message.id, result: { turn: { id: "u", items: [], status: "inProgress" } } });
     play();
