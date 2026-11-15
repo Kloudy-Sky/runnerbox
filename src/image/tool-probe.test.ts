@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseProbe } from "./tool-probe.ts";
+import { parseProbe, probeCommand } from "./tool-probe.ts";
 
 test("the probe's output becomes the build time and each known tool's version", () => {
   const output = [
@@ -39,4 +39,10 @@ test("output the image garbled gives nulls, never a long or made-up value", () =
   assert.equal(tools[0]?.name.length, 40);
   assert.equal(tools[0]?.version, null);
   assert.equal(tools.find((tool) => tool.name === "gh")?.version, null);
+});
+
+test("a probe is killed inside its container, and replaces any probe left running", () => {
+  const command = probeCommand("example", "linux", "app-ci:aaaaaaaaaaaa");
+  assert.match(command, /^docker rm -f 'example-linux-probe' >\/dev\/null 2>&1; /);
+  assert.match(command, /docker run --rm --name 'example-linux-probe' --network none .*--entrypoint timeout 'app-ci:aaaaaaaaaaaa' -k 2 12 \/bin\/sh -c /);
 });

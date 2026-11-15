@@ -284,7 +284,7 @@ async function keepImage(
   const probe = async () => {
     const tag = keeper.current();
     if (!tag || tag === probed) return;
-    const output = await inBuilder(() => readFromVm({ vm, command: probeCommand(tag) }));
+    const output = await inBuilder(() => readFromVm({ vm, command: probeCommand(config.name, runner.name, tag) }));
     probed = tag;
     state.probed(tag, parseProbe(output));
   };

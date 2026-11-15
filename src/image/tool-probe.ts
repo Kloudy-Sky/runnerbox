@@ -2,9 +2,10 @@ import { shellQuote } from "../launcher/docker-command.ts";
 
 // The tools a job is most likely to call, in the order the UI shows them. The same list for every
 // project, so a project names nothing here. Node is also looked for in the tool cache, where the
-// base image keeps it off PATH for actions/setup-node.
+// base image keeps it off PATH for actions/setup-node. A tool that hangs is cut off after 2 seconds
+// and reported as missing, so it can't take the others with it.
 const PROBE_SCRIPT = `
-v() { l=$1; shift; printf '%s\\t%s\\n' "$l" "$("$@" 2>/dev/null | head -n 1)"; }
+v() { l=$1; shift; printf '%s\\t%s\\n' "$l" "$(timeout -k 1 2 "$@" 2>/dev/null | head -n 1)"; }
 . /etc/os-release 2>/dev/null; printf 'os\\t%s\\nosversion\\t%s\\n' "\${NAME:-}" "\${VERSION_ID:-}"
 if command -v node >/dev/null 2>&1; then v node node --version; else printf 'node\\t%s\\n' "$(ls /opt/hostedtoolcache/node 2>/dev/null | sort -V | tail -n 1)"; fi
 v gh gh --version
@@ -20,12 +21,16 @@ const TOOLS = ["node", "gh", "git", "docker", "python", "aws", "runner"] as cons
 export type Tool = { name: string; version: string | null };
 
 // One SSH command: when the image was built, then the probe in a throwaway container with no
-// network, mounts, registration or token, so the image can only report on itself.
-export const probeCommand = (tag: string) =>
-  [
-    `docker image inspect -f '{{.Created}}' ${shellQuote(tag)}`,
-    `docker run --rm --network none --memory 256m --pids-limit 64 --entrypoint /bin/sh ${shellQuote(tag)} -c ${shellQuote(PROBE_SCRIPT)}`,
+// network, mounts, registration or token, so the image can only report on itself. Killing SSH
+// doesn't stop a container, so the probe is killed inside it before SSH's 20 seconds run out, and
+// its fixed name means a leftover is removed before the next one starts.
+export const probeCommand = (install: string, kind: string, tag: string) => {
+  const name = shellQuote(`${install}-${kind}-probe`);
+  return [
+    `docker rm -f ${name} >/dev/null 2>&1; docker image inspect -f '{{.Created}}' ${shellQuote(tag)}`,
+    `docker run --rm --name ${name} --network none --memory 256m --pids-limit 64 --entrypoint timeout ${shellQuote(tag)} -k 2 12 /bin/sh -c ${shellQuote(PROBE_SCRIPT)}`,
   ].join(" && ");
+};
 
 const version = (text: string) => /\d+(?:\.\d+)+/.exec(text)?.[0].slice(0, 40) ?? null;
 
