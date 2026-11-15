@@ -51,7 +51,8 @@ const fake = makeFakeProvider({
         },
       },
       {
-        text: "Confirmed: the machine. The VM's available memory fell to about a tenth of its total during the failed attempt, and its runner's container exited 137, the kernel's out-of-memory kill. The retry on the same commit passed with plenty free.\n\nI proposed raising the VM's memory floor from 1500 to 4000 MiB, so a second job waits until there's room. It changes nothing until you approve it. Press Reproduce if you want me to rerun the test step on its own.",
+        // Markdown, as answers are shown: a list, code, a GitHub link and one the app shows as text.
+        text: "Confirmed: the machine.\n\n- The VM's available memory fell to about a tenth of its total during the failed attempt.\n- Its runner's container exited `137`, the kernel's out-of-memory kill.\n- The retry on the same commit [passed](https://github.com/owner/name/actions/runs/5217) with plenty free.\n\nI proposed raising `memoryFloor.vmMiB` from 1500 to 4000 MiB, so a second job waits until there's room. It changes nothing until you approve it. More on exit 137 [here](https://example.com/oom). Press Reproduce if you want me to rerun the test step on its own.",
       },
     ],
     [

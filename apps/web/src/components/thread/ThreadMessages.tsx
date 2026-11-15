@@ -6,8 +6,9 @@ import { toolPhrase } from "../../lib/toolPhrases.ts";
 import { useProposals } from "../../hooks/useProposals.ts";
 import { ProposalBlock } from "../proposals/ProposalBlock.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
+import { MessageMarkdown } from "./MessageMarkdown.tsx";
 
-// The thread under an item: the owner's questions, the agent's answers, and each tool call as one
+// The thread under an item: the owner's questions and the agent's answers as Markdown, and each tool call as one
 // quiet line saying what it read, with the raw call behind it. Text that's still streaming fades in once and then sits still: no cursor.
 export function ThreadMessages({ view, error }: { view: ThreadView; error: string | null }) {
   if (view.items.length === 0 && !view.partial && !error) return null;
@@ -16,7 +17,11 @@ export function ThreadMessages({ view, error }: { view: ThreadView; error: strin
       {view.items.map((item) => (
         <Item key={item.seq} item={item} />
       ))}
-      {view.partial ? <p className="enter whitespace-pre-wrap">{view.partial.text}</p> : null}
+      {view.partial ? (
+        <div className="enter">
+          <MessageMarkdown text={view.partial.text} from="agent" />
+        </div>
+      ) : null}
       {error ? <p className="text-destructive">{error}</p> : null}
     </div>
   );
@@ -28,11 +33,15 @@ function Item({ item }: { item: ThreadItem }) {
       return (
         <div className="enter">
           <div className="text-muted-foreground text-xs">{item.source === "monitor" ? "Monitor" : "You"}</div>
-          <p className="whitespace-pre-wrap">{item.text}</p>
+          <MessageMarkdown text={item.text} from="owner" />
         </div>
       );
     case "AgentText":
-      return <p className="enter whitespace-pre-wrap">{item.text}</p>;
+      return (
+        <div className="enter">
+          <MessageMarkdown text={item.text} from="agent" />
+        </div>
+      );
     case "ToolCall":
       // Its command and result are the ReproduceCommand line that follows, and a proposal's the
       // block that follows.
