@@ -48,7 +48,10 @@ export async function writeRunnerScenario(dir: string, now: number, scenario: Ru
     lengths.forEach((ms, index) => ran("linux", (index % 2) + 1, now - 58 * MINUTE + index * 5 * MINUTE, ms, index % 2 ? "ci / build" : "ci / test"));
   };
 
-  const live = createSlotState(join(dir, INSTALL, "state.json"), INSTALL, KINDS, () => now, FLOOR);
+  // A live clock, so the heartbeat keeps the state fresh, set back while runners take their jobs so
+  // they've been at it for a while.
+  let behind = 0;
+  const live = createSlotState(join(dir, INSTALL, "state.json"), INSTALL, KINDS, () => Date.now() - behind, FLOOR);
   for (const kind of ["linux", "docker", "light"]) live.image(kind, `app-${kind}:3f9a1c2b7d4e`, null);
   const ready = (kind: string, slots: number[]) => slots.forEach((slot) => live.slot(kind, slot, "registered", { runner: `${INSTALL}-${kind}-${slot}-${Math.floor(now / 1000) - 600}` }));
   let availableNow = 11_000;
@@ -62,15 +65,18 @@ export async function writeRunnerScenario(dir: string, now: number, scenario: Ru
       const docker = index % 3 === 0;
       stepAside(docker ? "docker" : "light", docker ? 1 : index % 3, now - 31 * MINUTE + index * 2 * MINUTE, MINUTE + (index % 3) * 10_000, index % 4 === 0);
     }
+    behind = 2 * MINUTE + 10_000;
     live.slot("linux", 1, "busy", { runner: `${INSTALL}-linux-1-${Math.floor(now / 1000) - 140}` });
     live.job("linux", 1, "ci / test");
     live.slot("linux", 2, "busy", { runner: `${INSTALL}-linux-2-${Math.floor(now / 1000) - 130}` });
     live.job("linux", 2, "ci / integration (node 22, ubuntu)");
-    live.slot("docker", 1, "waiting", { detail: "The VM has 0.8 GB free. Runnerbox keeps 2.0 GB free before it starts another runner." });
+    behind = 70_000;
+    live.slot("docker", 1, "waiting", { detail: "The VM has 1.8 GB free. Runnerbox keeps 2.0 GB free before it starts another runner." });
+    behind = 0;
     ready("light", [1, 2, 3]);
-    availableNow = 2_800;
+    availableNow = 1_850;
     containers = [
-      { name: `${INSTALL}-linux-slot1`, cpuPercent: 180, memMiB: 5_400 },
+      { name: `${INSTALL}-linux-slot1`, cpuPercent: 180, memMiB: 5_900 },
       { name: `${INSTALL}-linux-slot2`, cpuPercent: 140, memMiB: 4_300 },
     ];
   } else if (scenario === "quiet") {
