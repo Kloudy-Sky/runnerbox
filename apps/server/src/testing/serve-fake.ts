@@ -8,6 +8,7 @@
 // It writes fixtures under <dir>, prints a pairing code, and runs until stopped. Never point it
 // at a real state directory. Keep <dir> short: the reproduce socket's path must fit in about
 // 100 characters.
+import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { ALL_SCOPES } from "@runnerbox/contracts";
@@ -20,10 +21,9 @@ import { layerApp } from "../server.ts";
 import * as CodexAdapter from "../threads/provider/CodexAdapter.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
 import { startFakeUp } from "./fakeUp.ts";
+import { startFakeGitHub } from "./fakeGitHub.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
 
-// The fake server never reads a real report.env or reaches GitHub.
-const NO_GITHUB = { apiBase: "http://127.0.0.1:9", reportEnvPath: "/nonexistent/report.env", timing: { pollMs: 20_000, slowMs: 120_000, maxBackoffMs: 300_000, idleMs: 60_000, checkMs: 1_000 } };
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false }, codex: { type: "boolean", default: false } } });
 // What a server from before the composer work doesn't answer.
@@ -45,6 +45,12 @@ if (!target) {
 }
 const stateDir = join(resolve(target), "runnerbox");
 await writeFixtures(stateDir, Date.now());
+// Its queue poll asks a local stand-in for GitHub, with a made-up token in a file beside the
+// fixtures, and never reads a real report.env or reaches GitHub.
+const fakeGitHub = await startFakeGitHub(Date.now());
+const fakeReportEnv = join(resolve(target), "report.env");
+await writeFile(fakeReportEnv, "GITHUB_TOKEN=not-a-real-token\n", { mode: 0o600 });
+const FAKE_GITHUB = { apiBase: fakeGitHub.apiBase, reportEnvPath: fakeReportEnv, timing: { pollMs: 20_000, slowMs: 120_000, maxBackoffMs: 300_000, idleMs: 60_000, checkMs: 1_000 } };
 
 const fake = makeFakeProvider({
   available: !values["no-provider"],
@@ -97,7 +103,7 @@ await startFakeUp(join(stateDir, "example"), {
 });
 
 const program = Effect.gen(function* () {
-  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, ...(values.codex ? { codex: CodexAdapter.layer } : {}), withoutMethods: values.older ? OLDER_SERVER_LACKS : [], queue: QueueConfig.layerTest(NO_GITHUB) }));
+  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, ...(values.codex ? { codex: CodexAdapter.layer } : {}), withoutMethods: values.older ? OLDER_SERVER_LACKS : [], queue: QueueConfig.layerTest(FAKE_GITHUB) }));
   const { code } = yield* Context.get(context, AuthStore.AuthStore).createPairingCode(ALL_SCOPES);
   console.log(`Serving fixtures from ${stateDir} on http://127.0.0.1:${values.port}. Pairing code: ${code}`);
   return yield* Effect.never;

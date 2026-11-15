@@ -13,9 +13,11 @@ export type Capabilities = {
   readonly providers: boolean;
   // `history.jobResources`: a job's steps, memory and CPU.
   readonly jobResources: boolean;
+  // `runners.subscribeQueue`: the jobs GitHub has queued for this machine's runners.
+  readonly waitingJobs: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -28,5 +30,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     deleteThread: has(RPC_METHODS.threadsDelete),
     providers: has(RPC_METHODS.providersList) && has(RPC_METHODS.providersSave),
     jobResources: has(RPC_METHODS.historyJobResources),
+    waitingJobs: has(RPC_METHODS.runnersSubscribeQueue),
   };
 }
