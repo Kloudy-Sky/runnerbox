@@ -20,7 +20,8 @@ export const JobRecord = type({
   createdAt: "string",
   startedAt: "string | null",
   completedAt: "string | null",
-  steps: type({ name: "string", conclusion: "string | null", ms: "number | null" }).array(),
+  // `startedAt` places a step in its job; lines synced before it was recorded have only `ms`.
+  steps: type({ name: "string", conclusion: "string | null", ms: "number | null", "startedAt?": "string" }).array(),
 });
 
 export type JobRecord = typeof JobRecord.infer;
@@ -67,6 +68,7 @@ export function toJobRecord(repo: string, job: GitHubJob): JobRecord {
       name: step.name,
       conclusion: step.conclusion,
       ms: elapsedMs(step.started_at, step.completed_at),
+      ...(step.started_at ? { startedAt: step.started_at } : {}),
     })),
   };
 }

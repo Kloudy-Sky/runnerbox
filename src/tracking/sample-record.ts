@@ -20,6 +20,11 @@ export const SampleRecord = type({
   "containers?": ContainerRecord.array(),
 });
 
+// One line of containers.ndjson: the VM's containers alone, read more often than samples.ndjson
+// while jobs run.
+export const ContainerSampleRecord = type({ time: "string", containers: ContainerRecord.array() });
+
 export type Machine = typeof MachineRecord.infer;
 export type Container = typeof ContainerRecord.infer;
 export type Sample = typeof SampleRecord.infer;
+export type ContainerSample = typeof ContainerSampleRecord.infer;
