@@ -24,6 +24,7 @@ export const useUpdateEverything = create<{ readonly run: EverythingRun | null }
 export const COUNTDOWN_MS = 10_000;
 
 let countdown: ReturnType<typeof setTimeout> | undefined;
+let stopWatching = () => {};
 
 const change = (next: (run: EverythingRun) => EverythingRun) => useUpdateEverything.setState(({ run }) => ({ run: run && next(run) }));
 const current = () => useUpdateEverything.getState().run;
@@ -67,11 +68,31 @@ export async function afterServers(run: EverythingRun) {
   if (!run.installsApp) return useUpdateEverything.setState({ run: null });
   const app = await appDownloaded();
   if (current() !== run || app?.status !== "ready") return;
+  startCountdown(ids);
+}
+
+// Stops the app's countdown, and the watch over its servers.
+function stopCountdown() {
+  clearTimeout(countdown);
+  stopWatching();
+  stopWatching = () => {};
+}
+
+// A server still restarting when the countdown starts can yet roll back or not come back. That
+// holds the restart too, as a failure before it does, so Retry isn't lost to it.
+function startCountdown(ids: ReadonlyArray<string>) {
+  stopCountdown();
   change((latest) => ({ ...latest, phase: "countdown", restartAt: Date.now() + COUNTDOWN_MS }));
   countdown = setTimeout(restartApp, COUNTDOWN_MS);
+  stopWatching = useServerUpdates.subscribe(() => {
+    if (!ids.some((id) => statusOf(id) === "failed")) return;
+    stopCountdown();
+    change((latest) => ({ ...latest, phase: "servers", restartAt: null }));
+  });
 }
 
 export function updateEverything(target: string, servers: ReadonlyArray<{ readonly environmentId: string; readonly label: string }>, installsApp: boolean) {
+  stopCountdown();
   const startedAt = Date.now();
   const run: EverythingRun = { target, installsApp, phase: "servers", restartAt: null, machines: servers.map(({ environmentId, label }) => ({ environmentId, label, startedAt })) };
   useUpdateEverything.setState({ run });
@@ -81,6 +102,7 @@ export function updateEverything(target: string, servers: ReadonlyArray<{ readon
 
 // Asks each failed server again, and starts waiting for them over.
 export function retryFailed() {
+  stopCountdown();
   const run = current();
   if (!run) return;
   const failed = new Set(run.machines.filter(({ environmentId }) => statusOf(environmentId) === "failed").map(({ environmentId }) => environmentId));
@@ -92,18 +114,18 @@ export function retryFailed() {
 }
 
 export function restartLater() {
-  clearTimeout(countdown);
+  stopCountdown();
   change((run) => ({ ...run, phase: "later", restartAt: null }));
 }
 
 export function restartApp() {
-  clearTimeout(countdown);
+  stopCountdown();
   change((run) => ({ ...run, phase: "installing", restartAt: null }));
   // The app quits here. If it doesn't, the row offers Restart again.
   void platform.updates?.install().catch(() => change((run) => ({ ...run, phase: "later" })));
 }
 
 export function dismissRun() {
-  clearTimeout(countdown);
+  stopCountdown();
   useUpdateEverything.setState({ run: null });
 }

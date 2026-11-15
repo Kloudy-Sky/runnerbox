@@ -10,11 +10,11 @@ const desktop: ClientPlatform = {
   updates: { state: async () => ready, subscribe: () => () => {}, setChannel: async () => {}, check: async () => {}, install: async () => void installs.push("install") },
 };
 Object.assign(globalThis, { window: { runnerbox: desktop } });
-const { afterServers, restartApp, useUpdateEverything } = await import("./updateEverything.ts");
+const { afterServers, COUNTDOWN_MS, restartApp, useUpdateEverything } = await import("./updateEverything.ts");
 const { useServerUpdates } = await import("./serverUpdates.ts");
 
 const run = { target: "0.4.1", installsApp: true, phase: "servers" as const, restartAt: null, machines: [{ environmentId: "a", label: "example-a", startedAt: 0 }, { environmentId: "b", label: "example-b", startedAt: 0 }] };
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+const settle = () => new Promise((resolve) => setImmediate(resolve));
 
 test("the app's restart counts down once every server's supervisor has its update", async () => {
   useUpdateEverything.setState({ run });
@@ -34,4 +34,18 @@ test("a server that fails holds the app's restart, so Retry stays on screen", as
   useServerUpdates.setState({ runs: { a: { step: "starting", version: "0.4.1", updateId: "1" }, b: { step: "refused", version: "0.4.1", detail: "GitHub answered 503 for runnerbox.js." } } });
   await afterServers(run);
   assert.deepEqual([useUpdateEverything.getState().run?.phase, useUpdateEverything.getState().run?.restartAt], ["servers", null]);
+});
+
+test("a server that fails during the countdown stops it, and the app doesn't restart", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  installs.length = 0;
+  useUpdateEverything.setState({ run });
+  useServerUpdates.setState({ runs: { a: { step: "starting", version: "0.4.1", updateId: "1" }, b: { step: "done", version: "0.4.1" } } });
+  await afterServers(run);
+  assert.equal(useUpdateEverything.getState().run?.phase, "countdown");
+  // example-a's new version didn't come up, so its old one runs again.
+  useServerUpdates.setState({ runs: { a: { step: "rolled-back", version: "0.4.1", reason: null }, b: { step: "done", version: "0.4.1" } } });
+  assert.deepEqual([useUpdateEverything.getState().run?.phase, useUpdateEverything.getState().run?.restartAt], ["servers", null]);
+  t.mock.timers.tick(COUNTDOWN_MS);
+  assert.deepEqual(installs, []);
 });
