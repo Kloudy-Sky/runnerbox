@@ -64,7 +64,7 @@ Once the first nightly by hand looks right, set `NIGHTLY_ENABLED` to `true` (abo
 
 ## Signing runnerbox.js
 
-A server that updates itself from the app installs only a release signed by a key it trusts. The keys are the public ones in [`release-keys.json`](../release-keys.json), which `scripts/build.ts` writes into `runnerbox.js`. While that list is empty, as it is until you add a key, nothing is signed and no server asks for a signature. The first release built after a key is in the list is the first one signed, and a server updated to it asks for a signature from then on.
+A server that updates itself from the app installs only a release signed by a key it trusts. The keys are the public ones in [`release-keys.json`](../release-keys.json), which `scripts/build.ts` writes into `runnerbox.js`. While that list is empty, nothing is signed and no server asks for a signature. The first release built after a key is in the list is the first one signed, and a server updated to it asks for a signature from then on.
 
 The signature is Ed25519, over the release's version and the sha256 of `runnerbox.js`. It ships as `runnerbox.js.sig`. The `sign` job in the release workflow makes it, and it's the only job that can read the key: it runs in the `release` environment, which only `main` may use, gets the `cli` artifact alone, and has a token that can only read. It fails the release if the signature it made doesn't verify against `release-keys.json`, so a secret and a committed key that don't match are caught before anything ships. `publish` checks again and refuses to publish a release that should be signed and isn't.
 
@@ -74,23 +74,21 @@ A release made by pushing a tag runs from the tag's commit, which the `release` 
 
 Do this on your own machine. Nobody else, and no agent, needs or should see the private key.
 
-1. Make the key in a directory only you can read:
+1. Make the key, readable only by you. This prints the public half as the entry `release-keys.json` takes; pick an `id` that says when it was made. It uses Node, since the `openssl` macOS ships (LibreSSL) can't make Ed25519 keys:
 
    ```bash
-   umask 077
-   openssl genpkey -algorithm ed25519 -out runnerbox-release-signing.pem
+   node -e '
+   const { generateKeyPairSync } = require("node:crypto");
+   const { writeFileSync } = require("node:fs");
+   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+   writeFileSync("runnerbox-release-signing.pem", privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600, flag: "wx" });
+   console.log(JSON.stringify({ id: "2026-11", publicKey: publicKey.export({ type: "spki", format: "pem" }) }, null, 2));
+   '
    ```
 
 2. In the repository's Settings, Environments, `release`, add an environment secret named `RUNNERBOX_RELEASE_SIGNING_KEY`. Its value is the whole file, the `BEGIN` and `END` lines included. On a Mac, `pbcopy < runnerbox-release-signing.pem` puts it on the clipboard.
 
-3. Print the public key as the entry `release-keys.json` takes. Pick an `id` that says when it was made:
-
-   ```bash
-   openssl pkey -in runnerbox-release-signing.pem -pubout |
-     node -e 'let pem = ""; process.stdin.on("data", (d) => (pem += d)).on("end", () => console.log(JSON.stringify({ id: "2026-11", publicKey: pem }, null, 2)))'
-   ```
-
-   That output is public. Put it in the list in a pull request, or hand it to whoever opens one:
+3. The entry step 1 printed is public. Put it in the list in a pull request, or hand it to whoever opens one:
 
    ```json
    { "keys": [{ "id": "2026-11", "publicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA...\n-----END PUBLIC KEY-----\n" }] }
