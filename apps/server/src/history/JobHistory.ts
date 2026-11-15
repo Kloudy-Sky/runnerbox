@@ -130,9 +130,15 @@ const make = Effect.gen(function* () {
     const report = kindUsage({ now, jobs: yield* logs.allJobs(start), machine: machineLookup(samples), events, installs }, days);
     // Every machine known, by its live state, its events or its samples, so one with no samples still says so.
     const names = [...new Set([...installs.map((state) => state.install), ...events.map((event) => event.install), ...samples.map((sample) => sample.install)])].toSorted();
-    // The VM's free memory is the install's, so its line is the install's floor. A machine whose
-    // `up` is too old to record it reads as not saying, and its sentence says so.
-    const floorOf = (install: string) => installs.find((state) => state.install === install)?.memoryFloor?.vmMiB ?? null;
+    // The VM's free memory is the install's, so its line is the install's floor; kinds with a lower
+    // floor of their own are named, since their jobs didn't wait for it. A machine whose `up` is
+    // too old to record it reads as not saying, and its sentence says so.
+    const floorOf = (install: string) => {
+      const state = installs.find((each) => each.install === install);
+      const vmMiB = state?.memoryFloor?.vmMiB;
+      if (vmMiB === undefined) return null;
+      return { vmMiB, lowerKinds: (state?.kinds ?? []).filter((kind) => kind.memoryFloor && kind.memoryFloor.vmMiB < vmMiB).map((kind) => kind.name) };
+    };
     return { ...report, machines: machineFit(names, floorOf, samples, report.kinds) };
   });
 
