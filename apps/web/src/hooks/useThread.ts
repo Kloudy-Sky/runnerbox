@@ -1,4 +1,4 @@
-import { type ReproduceNetwork, subjectKey, type ThreadSubject } from "@runnerbox/contracts";
+import { type ReproduceNetwork, subjectKey, type ThreadReference, type ThreadSubject } from "@runnerbox/contracts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Predicate from "effect/Predicate";
 import { useEffect, useState } from "react";
@@ -6,6 +6,13 @@ import { draftKeyOf } from "../composerDraftStore.ts";
 import { EMPTY_VIEW, foldThread, isReproducing, type ThreadView } from "../lib/threadView.ts";
 import { runtime } from "../runtime.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
+
+type SendOptions = {
+  readonly accountId?: string | undefined;
+  readonly model?: string | undefined;
+  readonly attachments?: ReadonlyArray<string>;
+  readonly references?: ReadonlyArray<ThreadReference>;
+};
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : "That didn't work.");
 
@@ -76,9 +83,10 @@ export function useThread(subject: ThreadSubject, days: number) {
     runtime.run(environmentId, (client) => client["threads.stopReproduce"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
   };
 
-  // `accountId` picks the account the turn runs as; without it, the default. `attachments` are
-  // files this session staged, which the turn takes into the thread.
-  const send = async (text: string, accountId?: string, attachments: ReadonlyArray<string> = []) => {
+  // `accountId` picks the account the turn runs as, and `model` one of its harness's models; without
+  // them, the defaults. `attachments` are files this session staged, which the turn takes into the
+  // thread, and `references` other threads and runs it brings in as data.
+  const send = async (text: string, { accountId, model, attachments = [], references = [] }: SendOptions = {}) => {
     setError(null);
     try {
       let id = threadId;
@@ -89,7 +97,14 @@ export function useThread(subject: ThreadSubject, days: number) {
       }
       const target = id;
       await runtime.run(environmentId, (client) =>
-        client["threads.startTurn"]({ id: target, text, ...(accountId ? { accountId } : {}), ...(attachments.length > 0 ? { attachments } : {}) }),
+        client["threads.startTurn"]({
+          id: target,
+          text,
+          ...(accountId ? { accountId } : {}),
+          ...(model ? { model } : {}),
+          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(references.length > 0 ? { references } : {}),
+        }),
       );
       return true;
     } catch (cause) {

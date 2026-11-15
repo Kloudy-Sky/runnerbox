@@ -1,6 +1,7 @@
 // A stand-in of runnerbox's, not T3 Code's file: how the copied composer shows context
 // records (images, files, terminals, review comments) inline. Runnerbox's composer has none of
-// those in its text, so a reference shows as its label.
+// those in its text; a reference to a thread or run shows as its icon and label.
+import { FileTextIcon, PlayIcon } from "lucide-react";
 import { createContext, use } from "react";
 import { ContextChip } from "./ContextChip";
 
@@ -12,7 +13,14 @@ export const EMPTY_COMPOSER_CONTEXT_RECORDS: ComposerDraftContextRecords = new M
 
 export const ComposerContextRecordsContext = createContext<ComposerDraftContextRecords>(EMPTY_COMPOSER_CONTEXT_RECORDS);
 
-export function ComposerContextReferenceChip({ label }: { kind: string; contextId: string; label: string }) {
+// A thread or run a question refers to, with the icon its `@` list shows.
+export function ComposerContextReferenceChip({ kind, label }: { kind: string; contextId: string; label: string }) {
   use(ComposerContextRecordsContext);
-  return <ContextChip contentEditable={false}>{label}</ContextChip>;
+  const Icon = kind === "run" ? PlayIcon : FileTextIcon;
+  return (
+    <ContextChip contentEditable={false}>
+      <Icon />
+      {label}
+    </ContextChip>
+  );
 }
