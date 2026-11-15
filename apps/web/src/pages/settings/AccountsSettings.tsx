@@ -37,16 +37,18 @@ export function AccountsSettings() {
         </>
       }
       description={`${account.driver === "claude" ? "Claude" : account.driver}, ${billingWords(account).toLowerCase()}, model ${account.model ?? "default"}`}
-      status={account.id === editing && !account.status.available && account.status.fix ? account.status.fix : undefined}
+      status={!account.status.available && account.status.fix ? account.status.fix : undefined}
       control={
         <>
           <span className="inline-flex items-center gap-1.5 text-muted-foreground text-xs">
             <span className={cn("size-1.5 rounded-full", account.status.available ? "bg-success" : "bg-destructive")} />
             {statusWords(account)}
           </span>
-          <Button size="xs" variant={account.id === editing ? "secondary" : "ghost-muted"} onClick={() => setEditing(account.id === editing ? null : account.id)}>
-            {canEdit ? "Edit" : "Details"}
-          </Button>
+          {canEdit ? (
+            <Button size="xs" variant={account.id === editing ? "secondary" : "ghost-muted"} onClick={() => setEditing(account.id === editing ? null : account.id)}>
+              Edit
+            </Button>
+          ) : null}
         </>
       }
     />
