@@ -45,7 +45,7 @@ import type { Executed } from "../reproduce/UpSocket.ts";
 import { systemPrompt, turnPrompt } from "./prompt.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
 import { Drivers } from "./provider/Drivers.ts";
-import { HARNESSES, offersModel } from "./provider/harnesses.ts";
+import { driverStatus, HARNESSES, offersModel } from "./provider/harnesses.ts";
 import type { ProviderEvent } from "./provider/ProviderAdapter.ts";
 import { resolveReference } from "./references.ts";
 import { subjectPacket } from "./subjectPacket.ts";
@@ -134,17 +134,11 @@ const make = Effect.gen(function* () {
     Effect.flatMap((account) => drivers.get(account.driver).status({ hasKey: account.apiKey !== null })),
     Effect.catch(() => Effect.succeed<ProviderStatus>({ provider: "Claude", available: false, fix: "Couldn't read the accounts file on the server." })),
   );
-  // A harness can run here when any of its accounts can, and says the first account's fix otherwise.
   // An unreadable accounts file says so, as `provider` does, since adding an account would fail too.
   const harnessesOf = (status: (driver: ProviderDriver, label: string) => ProviderStatus) =>
     ProviderDriver.literals.map((driver): Harness => ({ driver, label: HARNESSES[driver].label, status: status(driver, HARNESSES[driver].label), models: HARNESSES[driver].models }));
   const harnesses = accounts.list.pipe(
-    Effect.map((all) =>
-      harnessesOf((driver, label) => {
-        const own = all.filter((account) => account.driver === driver);
-        return own.find((account) => account.status.available)?.status ?? own[0]?.status ?? { provider: label, available: false, fix: "Add an account for it in Settings, Accounts." };
-      }),
-    ),
+    Effect.map((all) => harnessesOf((driver, label) => driverStatus(label, all.filter((account) => account.driver === driver)))),
     Effect.catch(() => Effect.succeed(harnessesOf((_, label) => ({ provider: label, available: false, fix: "Couldn't read the accounts file on the server." })))),
   );
   const auth = yield* AuthStore.AuthStore;

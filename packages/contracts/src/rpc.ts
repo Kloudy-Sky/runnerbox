@@ -8,6 +8,7 @@ import { Inbox } from "./inbox.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, ChunkReceived, StageAttachment } from "./attachments.ts";
 import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
+import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
 import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
@@ -89,6 +90,8 @@ export const RPC_METHODS = {
   accountsSave: "accounts.save",
   accountsRemove: "accounts.remove",
   accountsSetDefault: "accounts.setDefault",
+  providersList: "providers.list",
+  providersSave: "providers.save",
   serverAbout: "server.about",
   serverMethods: "server.methods",
   proposalsList: "proposals.list",
@@ -199,6 +202,11 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.accountsSave, { payload: SaveAccount, success: Account, error: Schema.Union([AuthorizationError, AccountError]) }),
   Rpc.make(RPC_METHODS.accountsRemove, { payload: { id: AccountId }, error: Schema.Union([AuthorizationError, AccountError]) }),
   Rpc.make(RPC_METHODS.accountsSetDefault, { payload: { id: AccountId }, error: Schema.Union([AuthorizationError, AccountError]) }),
+  // Every driver with its accounts, for apps that read `driver` as an open ID. `accounts.list` keeps
+  // its own shape for older apps. Removing an account or making it the default goes by ID alone, so
+  // `accounts.remove` and `accounts.setDefault` serve every driver.
+  Rpc.make(RPC_METHODS.providersList, { success: Schema.Array(Provider), error: Schema.Union([AuthorizationError, AccountError]) }),
+  Rpc.make(RPC_METHODS.providersSave, { payload: SaveProviderAccount, success: ProviderAccount, error: Schema.Union([AuthorizationError, AccountError]) }),
   Rpc.make(RPC_METHODS.proposalsList, { success: ProposalList, error: ProposalFailure }),
   // The owner's approval of one exact proposal: `hash` is what the screen showed, and must match.
   Rpc.make(RPC_METHODS.proposalsApprove, { payload: { ...ProposalId, hash: Schema.String, when: ApplyWhen }, success: Proposal, error: ProposalFailure }),
@@ -266,6 +274,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.accountsSave]: ["access:write", "threads:operate"],
   [RPC_METHODS.accountsRemove]: ["access:write", "threads:operate"],
   [RPC_METHODS.accountsSetDefault]: ["access:write", "threads:operate"],
+  [RPC_METHODS.providersList]: THREADS,
+  [RPC_METHODS.providersSave]: ["access:write", "threads:operate"],
   // Public already: the descriptor says the same to anyone.
   [RPC_METHODS.serverAbout]: [],
   // Public already: which methods exist says nothing about any data.

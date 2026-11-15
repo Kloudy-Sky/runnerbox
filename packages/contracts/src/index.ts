@@ -7,6 +7,7 @@ export * from "./runners.ts";
 export * from "./connect.ts";
 export * from "./threads.ts";
 export * from "./accounts.ts";
+export * from "./providers.ts";
 export * from "./proposals.ts";
 export * from "./monitors.ts";
 export * from "./attachments.ts";

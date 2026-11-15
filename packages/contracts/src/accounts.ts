@@ -53,7 +53,7 @@ export const SaveAccount = Schema.Struct({
 export type SaveAccount = typeof SaveAccount.Type;
 
 export class AccountError extends Schema.TaggedError<AccountError>()("AccountError", {
-  reason: Schema.Literals(["not_found", "built_in", "unreadable"]),
+  reason: Schema.Literals(["not_found", "built_in", "unreadable", "unknown_driver"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -63,6 +63,8 @@ export class AccountError extends Schema.TaggedError<AccountError>()("AccountErr
         return "The subscription account can't be removed or given a key.";
       case "unreadable":
         return "Couldn't read or write the accounts file on the server.";
+      case "unknown_driver":
+        return "This server can't run that provider.";
     }
   }
 }
