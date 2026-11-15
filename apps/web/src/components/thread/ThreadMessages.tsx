@@ -7,15 +7,16 @@ import { useProposals } from "../../hooks/useProposals.ts";
 import { ProposalBlock } from "../proposals/ProposalBlock.tsx";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
 import { MessageMarkdown } from "./MessageMarkdown.tsx";
+import { SentAttachments } from "./SentAttachments.tsx";
 
 // The thread under an item: the owner's questions and the agent's answers as Markdown, and each tool call as one
 // quiet line saying what it read, with the raw call behind it. Text that's still streaming fades in once and then sits still: no cursor.
-export function ThreadMessages({ view, error }: { view: ThreadView; error: string | null }) {
+export function ThreadMessages({ view, error, environmentId }: { view: ThreadView; error: string | null; environmentId: string }) {
   if (view.items.length === 0 && !view.partial && !error) return null;
   return (
     <div className="flex flex-col gap-3" data-slot="thread">
       {view.items.map((item) => (
-        <Item key={item.seq} item={item} />
+        <Item key={item.seq} item={item} environmentId={environmentId} threadId={view.thread?.id ?? null} />
       ))}
       {view.partial ? (
         <div className="enter">
@@ -27,13 +28,14 @@ export function ThreadMessages({ view, error }: { view: ThreadView; error: strin
   );
 }
 
-function Item({ item }: { item: ThreadItem }) {
+function Item({ item, environmentId, threadId }: { item: ThreadItem; environmentId: string; threadId: string | null }) {
   switch (item._tag) {
     case "UserMessage":
       return (
         <div className="enter">
           <div className="text-muted-foreground text-xs">{item.source === "monitor" ? "Monitor" : "You"}</div>
           <MessageMarkdown text={item.text} from="owner" />
+          {item.attachments && threadId !== null ? <SentAttachments environmentId={environmentId} threadId={threadId} attachments={item.attachments} /> : null}
         </div>
       );
     case "AgentText":

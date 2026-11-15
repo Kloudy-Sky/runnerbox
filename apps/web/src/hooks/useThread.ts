@@ -76,8 +76,9 @@ export function useThread(subject: ThreadSubject, days: number) {
     runtime.run(environmentId, (client) => client["threads.stopReproduce"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
   };
 
-  // `accountId` picks the account the turn runs as; without it, the default.
-  const send = async (text: string, accountId?: string) => {
+  // `accountId` picks the account the turn runs as; without it, the default. `attachments` are
+  // files this session staged, which the turn takes into the thread.
+  const send = async (text: string, accountId?: string, attachments: ReadonlyArray<string> = []) => {
     setError(null);
     try {
       let id = threadId;
@@ -87,7 +88,9 @@ export function useThread(subject: ThreadSubject, days: number) {
         void queryClient.invalidateQueries({ queryKey: [environmentId, "threads", key] });
       }
       const target = id;
-      await runtime.run(environmentId, (client) => client["threads.startTurn"]({ id: target, text, ...(accountId ? { accountId } : {}) }));
+      await runtime.run(environmentId, (client) =>
+        client["threads.startTurn"]({ id: target, text, ...(accountId ? { accountId } : {}), ...(attachments.length > 0 ? { attachments } : {}) }),
+      );
       return true;
     } catch (cause) {
       setError(errorText(cause));
@@ -99,7 +102,23 @@ export function useThread(subject: ThreadSubject, days: number) {
     runtime.run(environmentId, (client) => client["threads.interrupt"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
   };
 
+  // Removes the thread, its messages and its files, from the server. The subject then has none.
+  const remove = async () => {
+    if (threadId === null) return false;
+    setError(null);
+    try {
+      await runtime.run(environmentId, (client) => client["threads.delete"]({ id: threadId }));
+      setChosen({ key, id: null });
+      void queryClient.invalidateQueries({ queryKey: [environmentId, "threads"] });
+      return true;
+    } catch (cause) {
+      setError(errorText(cause));
+      return false;
+    }
+  };
+
   return {
+    environmentId,
     // Where the composer keeps this subject's unsent question.
     draftKey: draftKeyOf(environmentId, key),
     permitted,
@@ -108,6 +127,7 @@ export function useThread(subject: ThreadSubject, days: number) {
     reproduce: { check: reproduce.data ?? null, running: reproducing, start: startReproduce, stop: stopReproduce },
     error,
     send,
+    remove,
     interrupt,
     startFresh: () => setChosen({ key, id: null }),
   };
