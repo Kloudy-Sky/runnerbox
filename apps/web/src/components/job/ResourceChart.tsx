@@ -20,13 +20,16 @@ type Props = {
   // The step the sentence names, shaded, with where it starts under the axis.
   readonly mark: { readonly fromMs: number; readonly toMs: number; readonly label: string } | null;
   readonly format: (value: number) => string;
-  readonly stepAt: (offsetMs: number) => string | null;
+  // The tooltip's heading for a reading, such as "2m 10s in, Test" or a date.
+  readonly describe: (offsetMs: number) => string;
+  // Under the axis's two ends. A job's run starts at "0s" and ends at its length.
+  readonly edges?: readonly [string, string];
 };
 
 // One series over one job, drawn the T3 Code way (see THIRD_PARTY_NOTICES.md): a monotone curve
 // over a faint fill, recessive grid, and on hover a crosshair at the nearest reading with a tooltip
 // that follows the pointer and stays inside the plot. One series, one colour.
-export function ResourceChart({ label, points, durationMs, max, ticks, limit, mark, format, stepAt }: Props) {
+export function ResourceChart({ label, points, durationMs, max, ticks, limit, mark, format, describe, edges = ["0s", formatDuration(durationMs)] }: Props) {
   const [hover, setHover] = useState<number | null>(null);
   const plotRef = useRef<HTMLDivElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
@@ -117,22 +120,20 @@ export function ResourceChart({ label, points, durationMs, max, ticks, limit, ma
               className="surface-glass pointer-events-none absolute z-10 min-w-28 max-w-full rounded-xl border border-border/50 px-2.5 py-2 text-xs shadow-lg"
               style={{ left: "var(--chart-tooltip-left, 0px)", top: "var(--chart-tooltip-top, 0px)" }}
             >
-              <div className="mb-1 text-muted-foreground">
-                {formatDuration(hovered.offsetMs)} in{stepAt(hovered.offsetMs) ? `, ${stepAt(hovered.offsetMs)}` : ""}
-              </div>
+              <div className="mb-1 text-muted-foreground">{describe(hovered.offsetMs)}</div>
               <div className="text-foreground tabular-nums">{format(hovered.value)}</div>
             </div>
           ) : null}
         </div>
       </div>
       <div className="relative h-4 pl-12 text-3xs text-muted-foreground">
-        <span className="absolute left-12">0s</span>
+        <span className="absolute left-12">{edges[0]}</span>
         {mark && x(mark.fromMs) > VIEW_WIDTH * 0.12 && x(mark.fromMs) < VIEW_WIDTH * 0.8 ? (
           <span className="absolute" style={{ left: `calc(3rem + (100% - 3rem) * ${x(mark.fromMs) / VIEW_WIDTH})` }}>
             {mark.label}
           </span>
         ) : null}
-        <span className="absolute right-0">{formatDuration(durationMs)}</span>
+        <span className="absolute right-0">{edges[1]}</span>
       </div>
     </div>
   );
