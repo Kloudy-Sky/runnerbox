@@ -63,7 +63,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   const referring = trigger?.kind === "path" && dismissedAt !== trigger.rangeStart;
   const candidates = useReferenceCandidates(thread.environmentId, days, view.thread?.id ?? null, referring);
   const query = trigger?.query.toLowerCase() ?? "";
-  const matches = referring ? candidates.filter((candidate) => candidate.label.toLowerCase().includes(query)).slice(0, MAX_MENU_ITEMS) : [];
+  const matches = referring ? candidates.items.filter((candidate) => candidate.label.toLowerCase().includes(query)).slice(0, MAX_MENU_ITEMS) : [];
   const [highlight, setHighlight] = useState(0);
   const active = Math.min(highlight, Math.max(0, matches.length - 1));
 
@@ -101,7 +101,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   };
 
   // A question needs words; files wait until every one has finished uploading.
-  const sending = withReferences(draft.trim(), days);
+  const sending = withReferences(draft.trim());
   const canSend = sending.text !== "" && !attachments.busy && !sending.tooMany;
   const submit = async () => {
     if (!canSend || view.running) return;
@@ -127,9 +127,11 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
         setHighlight((active + (key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length);
         return true;
       }
-      const chosen = matches[active];
-      if ((key === "Enter" || key === "Tab") && !event.shiftKey && chosen) {
-        pick(chosen);
+      // Enter and Tab pick while the list is open, and do nothing while it's still loading, so a
+      // half-typed `@word` is never sent by the key meant to pick it.
+      if ((key === "Enter" || key === "Tab") && !event.shiftKey) {
+        const chosen = matches[active];
+        if (chosen) pick(chosen);
         return true;
       }
     }
@@ -142,7 +144,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   return (
     <div className="flex flex-col gap-1.5" data-slot="composer">
       <div className="relative rounded-2xl border border-input bg-background text-sm has-focus-visible:border-ring dark:bg-input/32">
-        {referring ? <ReferenceMenu items={matches} active={active} onPick={pick} /> : null}
+        {referring ? <ReferenceMenu items={matches} active={active} loading={candidates.loading} failed={candidates.failed} onPick={pick} /> : null}
         <div className="px-3.5 pt-3">
           <AttachmentStrip staged={attachments.staged} uploading={attachments.uploading} onRemove={attachments.remove} />
           <ComposerPromptEditorTiptap

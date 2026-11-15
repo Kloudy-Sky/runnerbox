@@ -4,11 +4,11 @@ import { cn } from "~/lib/utils";
 
 // The `@` list above the composer: matching threads and runs, the highlighted one picked with Enter
 // or Tab. The editor keeps the keyboard, so nothing here takes focus.
-export function ReferenceMenu({ items, active, onPick }: { items: ReadonlyArray<ReferenceCandidate>; active: number; onPick: (item: ReferenceCandidate) => void }) {
+export function ReferenceMenu({ items, active, loading, failed, onPick }: { items: ReadonlyArray<ReferenceCandidate>; active: number; loading: boolean; failed: boolean; onPick: (item: ReferenceCandidate) => void }) {
   return (
     <div className="absolute inset-x-0 bottom-full z-20 mb-1 max-h-64 overflow-y-auto rounded-lg border border-border bg-popover p-1 text-sm shadow-lg" role="listbox" aria-label="Refer to a thread or run">
       {items.length === 0 ? (
-        <p className="px-2 py-1.5 text-muted-foreground">No thread or run matches.</p>
+        <p className="px-2 py-1.5 text-muted-foreground">{loading ? "Looking for threads and runs" : failed ? "Couldn't list threads and runs on the server." : "No thread or run matches."}</p>
       ) : (
         items.map((item, index) => (
           <button

@@ -16,14 +16,15 @@ export function useReferenceCandidates(environmentId: string, days: number, curr
         Effect.gen(function* () {
           const threads = yield* client["threads.list"]({});
           const repos = yield* client["history.repos"]();
-          const runs = yield* Effect.forEach(repos, (repo) => client["history.runs"]({ repo, days, limit: RUNS_PER_REPO }));
+          const runs = yield* Effect.forEach(repos, (repo) => client["history.runs"]({ repo, days, limit: RUNS_PER_REPO }), { concurrency: "unbounded" });
           const fromThreads = threads.map((thread): ReferenceCandidate => ({ kind: "thread", id: thread.id, label: thread.title, detail: "thread" }));
-          const fromRuns = runs.flat().map((run): ReferenceCandidate => ({ kind: "run", repo: run.repo, jobId: run.jobId, label: `${jobName(run)} #${run.runId}`, detail: `run, ${run.conclusion ?? "running"}` }));
+          const fromRuns = runs.flat().map((run): ReferenceCandidate => ({ kind: "run", repo: run.repo, jobId: run.jobId, days, label: `${jobName(run)} #${run.runId}`, detail: `run, ${run.conclusion ?? "running"}` }));
           return [...fromThreads, ...fromRuns];
         }),
       ),
     enabled: open,
     staleTime: 30_000,
   });
-  return (candidates.data ?? []).filter((candidate) => !(candidate.kind === "thread" && candidate.id === currentThreadId));
+  const items = (candidates.data ?? []).filter((candidate) => !(candidate.kind === "thread" && candidate.id === currentThreadId));
+  return { items, loading: candidates.isPending, failed: candidates.isError };
 }
