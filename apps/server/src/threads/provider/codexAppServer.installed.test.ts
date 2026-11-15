@@ -59,6 +59,10 @@ test("the installed Codex takes Runnerbox's settings and applies them, before an
       if (message.id === 2) {
         assert.equal(message.error, undefined, JSON.stringify(message.error));
         applied = message.result;
+        send({ id: 3, method: "config/read", params: { cwd } });
+      }
+      if (message.id === 3) {
+        assert.deepEqual(providerProblems(message.result), [], "a home with no config goes to the built-in provider at its default address");
         break;
       }
     }

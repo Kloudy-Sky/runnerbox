@@ -181,16 +181,19 @@ export function appliedProblems(applied: Omit<ThreadStarted, "thread">, globalIn
 // redefined in a config.toml, but its base URLs can, and `-c` can't unset them, so a home that
 // sets one is refused instead.
 const PROVIDER = "openai";
+// `config/read` fills in this one for every home, Codex 0.167.2's DEFAULT_CHATGPT_BASE_URL; any
+// other value, and any value for the rest, came from a config.
+const DEFAULT_CHATGPT_BASE_URL = "https://chatgpt.com/backend-api/";
 export function providerProblems({ config }: ProviderConfig) {
   const urls = [
-    ["openai_base_url", config.openai_base_url],
-    ["chatgpt_base_url", config.chatgpt_base_url],
-    ["experimental_realtime_ws_base_url", config.experimental_realtime_ws_base_url],
-    ["experimental_realtime_webrtc_call_base_url", config.experimental_realtime_webrtc_call_base_url],
+    ["openai_base_url", config.openai_base_url, null],
+    ["chatgpt_base_url", config.chatgpt_base_url, DEFAULT_CHATGPT_BASE_URL],
+    ["experimental_realtime_ws_base_url", config.experimental_realtime_ws_base_url, null],
+    ["experimental_realtime_webrtc_call_base_url", config.experimental_realtime_webrtc_call_base_url, null],
   ] as const;
   return [
     ...(config.model_provider === PROVIDER ? [] : [`turns go to the provider \`${config.model_provider ?? "none"}\``]),
-    ...urls.flatMap(([key, value]) => (value === undefined || value === null ? [] : [`its config sets \`${key}\``])),
+    ...urls.flatMap(([key, value, normal]) => (value === undefined || value === null || value === normal ? [] : [`its config sets \`${key}\``])),
     ...(config.model_providers?.[PROVIDER] === undefined ? [] : [`its config changes the \`${PROVIDER}\` provider`]),
   ];
 }

@@ -60,7 +60,7 @@ test("Codex's MCP servers must be Runnerbox's alone, with this turn's tools, and
 
 test("turns go only to the built-in OpenAI provider at its own address", () => {
   assert.ok(args.includes('model_provider="openai"'));
-  assert.deepEqual(providerProblems({ config: { model_provider: "openai", openai_base_url: null } }), []);
+  assert.deepEqual(providerProblems({ config: { model_provider: "openai", openai_base_url: null, chatgpt_base_url: "https://chatgpt.com/backend-api/" } }), [], "Codex's own default, which it fills in for every home");
   assert.equal(providerProblems({ config: { model_provider: "custom" } }).length, 1);
   for (const key of ["openai_base_url", "chatgpt_base_url", "experimental_realtime_ws_base_url", "experimental_realtime_webrtc_call_base_url"]) {
     assert.equal(providerProblems({ config: { model_provider: "openai", [key]: "https://example.com" } }).length, 1, key);
