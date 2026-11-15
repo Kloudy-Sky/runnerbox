@@ -83,7 +83,18 @@ test("an install the server can't ask, such as one whose Runnerbox isn't running
   });
 });
 
-test("an install whose config doesn't turn on changes says so beside its command", async () => {
+test("a running install with neither changes nor reproduce, so no control socket, says to turn on changes beside its command", async () => {
+  await withUp(async (server) => {
+    const { createSlotState } = await import("runnerbox/src/launcher/slot-state.ts");
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(join(server.stateDir, "plain"), { recursive: true });
+    await createSlotState(join(server.stateDir, "plain", "state.json"), "plain", [{ name: "linux", label: "plain-linux", slots: 1, runsIn: "container" }]).flush();
+    const status = value(await withClient(server, await session(server, "desktop"), (client) => client["runners.restartStatus"]({ install: "plain" })));
+    assert.equal(status.unavailable, "To restart these from here, turn on changes in this machine's Runnerbox config.");
+  });
+});
+
+test("an install with reproduce on but changes off says so beside its command", async () => {
   await withUp(async (server) => {
     // As `up` runs an install without `"changes": true`: a control socket with no change logic.
     const { listenForControl } = await import("runnerbox/src/control/socket.ts");

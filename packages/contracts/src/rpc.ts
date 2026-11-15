@@ -258,15 +258,15 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.serverUpdateStatus, { success: UpdateStatus, error: AuthorizationError }),
   // Moves this server to `version`, a newer release of the repository it was built from, and
   // restarts it there. A second call for the same version while one runs follows the same steps.
+  Rpc.make(RPC_METHODS.serverUpdate, { payload: { version: ReleaseVersion }, success: UpdateProgress, error: Schema.Union([AuthorizationError, ServerUpdateError]), stream: true }),
   // Whether `version` can be installed from here: signed by a key this server trusts, or not
   // needing to be. It reads the release's checksum and signature, not runnerbox.js itself.
+  Rpc.make(RPC_METHODS.serverCheckRelease, { payload: { version: ReleaseVersion }, success: ReleaseCheck, error: Schema.Union([AuthorizationError, ServerUpdateError]) }),
   // Whether an install's runners can be restarted from here, any restart waiting, and how the last ended.
   Rpc.make(RPC_METHODS.runnersRestartStatus, { payload: { install: InstallName }, success: RunnerRestart, error: Schema.Union([AuthorizationError, RunnerRestartError]) }),
   // The owner's click: the install restarts its runners at the first moment no job is running,
   // within 6 hours. The install decides when; nothing is forced.
   Rpc.make(RPC_METHODS.runnersRestartWhenIdle, { payload: { install: InstallName }, success: RunnerRestart, error: Schema.Union([AuthorizationError, RunnerRestartError]) }),
-  Rpc.make(RPC_METHODS.serverCheckRelease, { payload: { version: ReleaseVersion }, success: ReleaseCheck, error: Schema.Union([AuthorizationError, ServerUpdateError]) }),
-  Rpc.make(RPC_METHODS.serverUpdate, { payload: { version: ReleaseVersion }, success: UpdateProgress, error: Schema.Union([AuthorizationError, ServerUpdateError]), stream: true }),
 ).middleware(RpcScopeAuthorization);
 
 export type RpcMethod = RpcGroup.Rpcs<typeof RunnerboxRpcGroup>["_tag"];

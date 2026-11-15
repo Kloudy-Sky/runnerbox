@@ -69,12 +69,16 @@ export class UpSocket extends Context.Service<
   }
 >()("runnerbox/server/reproduce/UpSocket") {}
 
+// An install whose `up` opened no control socket: one with neither `reproduce` nor `changes`, or
+// one that isn't running.
+export const NOT_TAKING_REQUESTS = "Runnerbox on that machine isn't taking these requests. Turn on reproduce or changes in its config, then restart it.";
+
 const uid = () => process.getuid?.() ?? -1;
 
 export async function checkOwnership(path: string) {
   for (const [what, entry, kind] of [["Its directory", dirname(path), "directory"], ["The socket", path, "socket"]] as const) {
     const found = await lstat(entry).catch(() => null);
-    if (!found) throw new Error("Runnerbox on that machine isn't taking these requests. Turn on reproduce or changes in its config, then restart it.");
+    if (!found) throw new Error(NOT_TAKING_REQUESTS);
     if (kind === "directory" ? !found.isDirectory() : !found.isSocket()) throw new Error(`${what} isn't a ${kind}, so the server won't use it.`);
     if (found.uid !== uid()) throw new Error(`${what} belongs to another user, so the server won't use it.`);
     if ((found.mode & 0o077) !== 0) throw new Error(`${what} is open to other users, so the server won't use it.`);

@@ -143,6 +143,10 @@ export function createChanges(actions: ChangesActions) {
     } catch (cause) {
       actions.log(`change ${proposalId}: written, but couldn't log it: ${cause}`);
     } finally {
+      // The drain below restarts the runners, which is what a waiting restart asked for.
+      const asked = restartWaiting;
+      restartWaiting = null;
+      if (asked) await note({ kind: "restart", outcome: "restarted", requestedBy: asked.requestedBy, reason: `change ${proposalId} restarted them` });
       actions.log(`change ${proposalId}: written, restarting once busy jobs finish`);
       actions.drain(`applying change ${proposalId}`);
     }
@@ -159,12 +163,6 @@ export function createChanges(actions: ChangesActions) {
   async function accept(request: ApplyRequest): Promise<Accepted> {
     if (waiting) throw new ChangeRefused("Another change is already waiting to apply.");
     await plan(request);
-    // Applying the change restarts the runners anyway.
-    if (restartWaiting) {
-      const { requestedBy } = restartWaiting;
-      restartWaiting = null;
-      await note({ kind: "restart", outcome: "not_restarted", requestedBy, reason: "a change that restarts the runners was approved" });
-    }
     await record({ outcome: "accepted", proposalId: request.proposalId, hash: request.hash, approvedBy: request.approvedBy, when: request.when, changes: request.changes });
     if (request.when === "idle") {
       waiting = { ...request, since: now() };
@@ -194,28 +192,29 @@ export function createChanges(actions: ChangesActions) {
   // Applies a waiting change at the first moment no job is running, or drops it after 6 hours.
   // It never throws: `every` runs it unwatched, and a fault here must not stop `up`.
   const check = () => exclusive(idleCheck);
+  // A change approved while a restart waits goes first: written, it restarts the runners and
+  // settles the restart too; not applied, the restart keeps waiting on its own.
   async function idleCheck() {
     const asked = restartWaiting;
-    if (asked) {
-      if (now() - asked.since > IDLE_LIMIT_MS) {
-        restartWaiting = null;
-        await note({ kind: "restart", outcome: "not_restarted", requestedBy: asked.requestedBy, reason: NOT_IDLE });
-      } else if (!(await actions.busy().catch(() => true))) {
-        restartWaiting = null;
-        await note({ kind: "restart", outcome: "restarted", requestedBy: asked.requestedBy });
-        actions.log(`restarting the runners, as ${asked.requestedBy.label} asked`);
-        actions.drain("restarting the runners, as the owner asked from the app");
-      }
-      return;
+    if (asked && now() - asked.since > IDLE_LIMIT_MS) {
+      restartWaiting = null;
+      await note({ kind: "restart", outcome: "not_restarted", requestedBy: asked.requestedBy, reason: NOT_IDLE });
     }
     const change = waiting;
-    if (!change) return;
-    if (now() - change.since > IDLE_LIMIT_MS) {
-      waiting = null;
-      await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: NOT_IDLE });
+    if (change) {
+      if (now() - change.since > IDLE_LIMIT_MS) {
+        waiting = null;
+        await note({ outcome: "not_applied", proposalId: change.proposalId, hash: change.hash, approvedBy: change.approvedBy, changes: change.changes, reason: NOT_IDLE });
+      } else if (!(await actions.busy().catch(() => true))) await commit(change);
       return;
     }
-    if (!(await actions.busy().catch(() => true))) await commit(change);
+    const still = restartWaiting;
+    if (still && !(await actions.busy().catch(() => true))) {
+      restartWaiting = null;
+      await note({ kind: "restart", outcome: "restarted", requestedBy: still.requestedBy });
+      actions.log(`restarting the runners, as ${still.requestedBy.label} asked`);
+      actions.drain("restarting the runners, as the owner asked from the app");
+    }
   }
 
   let stopChecking: (() => void) | null = null;

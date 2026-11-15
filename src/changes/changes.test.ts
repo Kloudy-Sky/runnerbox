@@ -355,3 +355,38 @@ test("a second restart, or one while a change waits, is refused; one on an insta
     await host.done();
   }
 });
+
+test("a change approved while a restart waits goes first: applied, it settles the restart; not applied, the restart still runs", async () => {
+  const applied = await setup();
+  try {
+    applied.state.busy = true;
+    await applied.changes.restart(restartRequest);
+    await applied.changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }], "idle"));
+    applied.state.busy = false;
+    await applied.changes.check();
+    assert.equal(applied.state.drains.length, 1, "one restart, for both");
+    assert.deepEqual(applied.changes.restartWaiting(), { restart: null });
+    assert.equal((await restarts(applied.log)).at(-1)?.outcome, "restarted");
+  } finally {
+    await applied.done();
+  }
+  const refused = await setup();
+  try {
+    refused.state.busy = true;
+    await refused.changes.restart(restartRequest);
+    await refused.changes.apply(request([{ path: "runners.linux.slots", from: 1, to: 2 }], "idle"));
+    // Someone edits the config by hand, so the change no longer applies.
+    const edited = JSON.parse(await readFile(refused.configPath, "utf8"));
+    edited.runners[0].slots = 2;
+    await writeFile(refused.configPath, JSON.stringify(edited));
+    refused.state.busy = false;
+    await refused.changes.check();
+    assert.deepEqual(refused.state.drains, [], "the change wasn't written");
+    assert.notEqual(refused.changes.restartWaiting().restart, null, "the owner's restart still waits");
+    await refused.changes.check();
+    assert.equal(refused.state.drains.length, 1);
+    assert.equal((await restarts(refused.log)).at(-1)?.outcome, "restarted");
+  } finally {
+    await refused.done();
+  }
+});
