@@ -15,11 +15,15 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as AuthStore from "../auth/AuthStore.ts";
+import * as QueueConfig from "../runners/QueueConfig.ts";
 import { layerApp } from "../server.ts";
 import * as CodexAdapter from "../threads/provider/CodexAdapter.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
 import { startFakeUp } from "./fakeUp.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
+
+// The fake server never reads a real report.env or reaches GitHub.
+const NO_GITHUB = { apiBase: "http://127.0.0.1:9", reportEnvPath: "/nonexistent/report.env", timing: { pollMs: 20_000, slowMs: 120_000, maxBackoffMs: 300_000, idleMs: 60_000, checkMs: 1_000 } };
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false }, codex: { type: "boolean", default: false } } });
 // What a server from before the composer work doesn't answer.
@@ -93,7 +97,7 @@ await startFakeUp(join(stateDir, "example"), {
 });
 
 const program = Effect.gen(function* () {
-  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, ...(values.codex ? { codex: CodexAdapter.layer } : {}), withoutMethods: values.older ? OLDER_SERVER_LACKS : [] }));
+  const context = yield* Layer.build(layerApp({ host: "127.0.0.1", port: Number(values.port), tunnelPort: null, stateDir, label: "example", provider: fake.layer, ...(values.codex ? { codex: CodexAdapter.layer } : {}), withoutMethods: values.older ? OLDER_SERVER_LACKS : [], queue: QueueConfig.layerTest(NO_GITHUB) }));
   const { code } = yield* Context.get(context, AuthStore.AuthStore).createPairingCode(ALL_SCOPES);
   console.log(`Serving fixtures from ${stateDir} on http://127.0.0.1:${values.port}. Pairing code: ${code}`);
   return yield* Effect.never;

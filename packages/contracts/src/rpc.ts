@@ -8,6 +8,7 @@ import { Inbox } from "./inbox.ts";
 import { JobResources } from "./resources.ts";
 import { JobTrend, KindUsageReport } from "./usage.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
+import { QueueView } from "./queue.ts";
 import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, ChunkReceived, StageAttachment } from "./attachments.ts";
 import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
@@ -70,6 +71,7 @@ export const RPC_METHODS = {
   runnersSamples: "runners.samples",
   runnersState: "runners.state",
   runnersSubscribeState: "runners.subscribeState",
+  runnersSubscribeQueue: "runners.subscribeQueue",
   accessSessions: "access.sessions",
   accessCreatePairingCode: "access.createPairingCode",
   accessRevokeSession: "access.revokeSession",
@@ -164,6 +166,9 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.runnersState, { success: Schema.Array(InstallState), error: ReadError }),
   // Sends every install's state now, then again whenever it changes.
   Rpc.make(RPC_METHODS.runnersSubscribeState, { success: Schema.Array(InstallState), error: ReadError, stream: true }),
+  // Jobs GitHub has queued for this machine's labels, now and whenever that changes. Watching it
+  // is what makes the server poll GitHub, with the token report.env holds.
+  Rpc.make(RPC_METHODS.runnersSubscribeQueue, { success: QueueView, stream: true }),
   Rpc.make(RPC_METHODS.accessSessions, { success: Schema.Array(SessionSummary), error: AuthorizationError }),
   Rpc.make(RPC_METHODS.accessCreatePairingCode, {
     payload: { scopes: Schema.Array(AuthScopeSchema) },
@@ -268,6 +273,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.runnersSamples]: RUNNERS,
   [RPC_METHODS.runnersState]: RUNNERS,
   [RPC_METHODS.runnersSubscribeState]: RUNNERS,
+  // Job names are history, and the labels come from runner state.
+  [RPC_METHODS.runnersSubscribeQueue]: ["history:read", "runners:read"],
   [RPC_METHODS.accessSessions]: ACCESS,
   [RPC_METHODS.accessCreatePairingCode]: ACCESS,
   [RPC_METHODS.accessRevokeSession]: ACCESS,
