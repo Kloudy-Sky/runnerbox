@@ -2,7 +2,7 @@ import { ArrowUp } from "lucide-react";
 import { useDesktopUpdates } from "../../hooks/useDesktopUpdates.ts";
 import { useNow } from "../../hooks/useNow.ts";
 import { cn } from "../../lib/utils.ts";
-import { type AppStep, describeRow, failureOf, formatElapsed, isActive, isHandedOff, machineStatus, STATUS_WORDS } from "../../lib/updateEverything.ts";
+import { type AppStep, describeRow, failureOf, formatElapsed, isActive, isHandedOff, machineStatus, secondsLeft, STATUS_WORDS } from "../../lib/updateEverything.ts";
 import { useServerUpdates } from "../../state/serverUpdates.ts";
 import { dismissRun, type EverythingRun, restartApp, restartLater, retryFailed } from "../../state/updateEverything.ts";
 import { Button } from "../ui/button.tsx";
@@ -28,14 +28,16 @@ export function UpdateRunRow({ run }: { run: EverythingRun }) {
   const action = view.action === null ? null : ACTIONS[view.action];
   const appWords =
     run.phase === "countdown" && run.restartAt !== null
-      ? `restarts in ${Math.max(0, Math.ceil((run.restartAt - now) / 1000))}s`
+      ? `restarts in ${secondsLeft(run.restartAt, now)}s`
       : run.phase === "installing"
         ? "restarting"
         : app === "failed"
           ? (desktop?.state.message ?? "its update stopped")
           : app === "downloading"
             ? "downloading"
-            : "restarts after the servers";
+            : held
+              ? "held"
+              : "restarts after the servers";
   return (
     <Popover>
       <div className={cn(ROW, "pr-0 hover:bg-transparent", view.tone === "failed" && "text-destructive")}>
@@ -58,7 +60,7 @@ export function UpdateRunRow({ run }: { run: EverythingRun }) {
         <div className="flex flex-col gap-1 text-xs">
           {run.installsApp ? (
             <div className="flex justify-between gap-3">
-              <span>This app</span>
+              <span className="shrink-0">This app</span>
               <span className={cn("text-right", app === "failed" ? "text-destructive" : "text-muted-foreground")}>{appWords}</span>
             </div>
           ) : null}

@@ -156,6 +156,10 @@ export const STATUS_WORDS: Record<MachineStatus, string> = {
   failed: "failed",
 };
 
+// Seconds until the app restarts. `now` from useNow is rounded down to the second, so this rounds
+// down too, or a 10 second countdown would open on 11.
+export const secondsLeft = (restartAt: number, now: number) => Math.max(0, Math.floor((restartAt - now) / 1000));
+
 // The one line the Update row shows during a run, and the one action beside it.
 export function describeRow(
   phase: RunPhase,
@@ -164,7 +168,7 @@ export function describeRow(
   app: AppStep,
   now: number,
 ): RowView {
-  if (phase === "countdown" && restartAt !== null) return { tone: "default", label: `App restarts in ${Math.max(0, Math.ceil((restartAt - now) / 1000))}s`, elapsed: null, action: "later" };
+  if (phase === "countdown" && restartAt !== null) return { tone: "default", label: `App restarts in ${secondsLeft(restartAt, now)}s`, elapsed: null, action: "later" };
   if (phase === "installing") return { tone: "default", label: "Restarting", elapsed: null, action: null };
   const slowest = machines.filter(({ status }) => isActive(status)).toSorted((a, b) => a.startedAt - b.startedAt)[0];
   if (slowest && now - slowest.startedAt >= SLOW_AFTER_MS) {

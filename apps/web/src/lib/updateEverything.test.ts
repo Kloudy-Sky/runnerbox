@@ -64,5 +64,5 @@ test("the row counts progress, names a slow machine, and holds on a failure with
   assert.deepEqual([slow.tone, slow.label, slow.elapsed], ["slow", "example-b downloading", "4m"]);
   const failed = describeRow("servers", null, [{ label: "example-a", startedAt: started, status: "restarting" }, { label: "example-b", startedAt: started, status: "failed" }], "ready", now);
   assert.deepEqual([failed.tone, failed.label, failed.action], ["failed", "example-b failed", "retry"]);
-  assert.deepEqual(describeRow("countdown", now + 7_400, [], "ready", now), { tone: "default", label: "App restarts in 8s", elapsed: null, action: "later" });
+  assert.deepEqual(describeRow("countdown", now + 10_000, [], "ready", now), { tone: "default", label: "App restarts in 10s", elapsed: null, action: "later" });
 });
