@@ -27,6 +27,7 @@ const install = (slots: { linux?: Slot[]; docker?: Slot[]; light?: Slot[] } = {}
     image: `${name}:1`,
     building: null,
     runsIn: "container" as const,
+    ...(name === "light" ? { memoryFloor: { hostMiB: 512, vmMiB: 1024 } } : {}),
     slots: slots[name] ?? Array.from({ length: { linux: 2, docker: 1, light: 3 }[name] }, (_, index) => slot(index + 1, "registered")),
   })),
   ...extra,
@@ -127,7 +128,7 @@ test("a kind whose runners keep failing says so up top, and its episode gives th
   const events = Array.from({ length: 4 }, (_, index) => runner("docker", 1, NOW - 10 * MINUTE + index * 2 * MINUTE, 3000, { exitCode: 125 }));
   const retrying = [slot(1, "backoff", { detail: "the last runner exited 125 within a minute" })];
   const result = explain({ install: install({ docker: retrying }), events });
-  assert.match(result.headline, /The docker runners keep failing to start, so Runnerbox waits before each try\./);
+  assert.match(result.headline, /The docker runners keep failing before they take a job, so Runnerbox waits before each try\./);
   const tile = result.runners.find((each) => each.kind === "docker");
   assert.equal(tile?.state, "retrying");
   assert.equal(tile?.why, "Its last runner stopped within a minute of starting.");
@@ -162,6 +163,7 @@ test("the memory picture follows where jobs run, and says when there's no readin
   assert.equal(containers._tag, "reading");
   if (containers._tag === "reading") {
     assert.deepEqual([containers.machine, containers.floorMiB, containers.jobs.map((job) => job.memMiB)], ["VM", 2048, [3_000]]);
+    assert.deepEqual(containers.kindFloors, [{ kind: "light", floorMiB: 1024 }], "a kind with its own floor is named");
   }
 
   const jobVms = { ...busy, kinds: busy.kinds.map((kind) => ({ ...kind, runsIn: "job_vm" as const })) };

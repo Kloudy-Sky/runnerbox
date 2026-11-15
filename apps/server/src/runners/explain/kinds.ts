@@ -47,7 +47,7 @@ export function kindStories(input: ExplainInput, runners: readonly RunnerTile[],
       .reduce((latest, end) => Math.max(latest, end), -Infinity);
     const allReady = own.length > 0 && own.every((tile) => tile.state === "ready");
     const extra = [
-      failing.has(kind.name) ? `${one ? "Its runner keeps" : "Its runners keep"} failing to start.` : null,
+      failing.has(kind.name) ? `${one ? "Its runner keeps" : "Its runners keep"} failing before ${one ? "it takes" : "they take"} a job.` : null,
       aside > 0 ? `${one ? "It" : "They"} stepped aside ${times(aside)} in the last half hour.` : null,
       allReady
         ? now - lastJob < HOUR_MS

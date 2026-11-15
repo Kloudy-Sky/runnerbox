@@ -25,7 +25,7 @@ export function headline(install: InstallState, runners: readonly RunnerTile[], 
   const waits = full.length > 0 ? `New jobs for ${listed(full.map((kind) => kind.label))} will wait.` : null;
   const failingWords = install.kinds
     .filter((kind) => failing.has(kind.name))
-    .map((kind) => `The ${kind.name} runners keep failing to start, so Runnerbox waits before each try.`);
+    .map((kind) => `The ${kind.name} runners keep failing before they take a job, so Runnerbox waits before each try.`);
   const images = install.kinds.map((kind) =>
     kind.building
       ? `The ${kind.name} image is rebuilding.`

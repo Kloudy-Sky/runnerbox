@@ -23,14 +23,17 @@ export function memoryPicture(input: ExplainInput): MemoryPicture {
   const latest = input.samples.findLast(({ sample }) => now - Date.parse(sample.time) <= FRESH_MS)?.sample;
   const machine = runsIn === "job_vm" ? latest?.host : latest?.vm;
   if (!latest || !machine) return { _tag: "none", why: NO_READING };
-  const floor = install.memoryFloor ?? null;
+  // The floor on the machine drawn: the host's for job VMs, the VM's otherwise.
+  const onMachine = (floor: { hostMiB: number; vmMiB: number }) => (runsIn === "job_vm" ? floor.hostMiB : floor.vmMiB);
+  const floorMiB = install.memoryFloor ? onMachine(install.memoryFloor) : null;
   const base = {
     _tag: "reading" as const,
     machine: runsIn === "job_vm" ? ("host" as const) : ("VM" as const),
     at: latest.time,
     totalMiB: machine.totalMiB,
     availableMiB: machine.availableMiB,
-    floorMiB: floor === null ? null : runsIn === "job_vm" ? floor.hostMiB : floor.vmMiB,
+    floorMiB,
+    kindFloors: install.kinds.flatMap((kind) => (kind.memoryFloor && onMachine(kind.memoryFloor) !== floorMiB ? [{ kind: kind.name, floorMiB: onMachine(kind.memoryFloor) }] : [])),
   };
   if (runsIn === "job_vm") return { ...base, jobs: [], unmeasured: "Each job runs in a VM of its own, which isn't measured on its own." };
 

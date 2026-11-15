@@ -26,13 +26,14 @@ export type RunnerTile = typeof RunnerTile.Type;
 
 // The machine's memory now. `jobs` are the running jobs measured one by one; when they aren't,
 // `unmeasured` says why in words. `floorMiB` is what Runnerbox keeps free, or null when the records
-// don't say.
+// don't say, and `kindFloors` the kinds that keep a different amount free on this machine.
 export const MemoryReading = Schema.TaggedStruct("reading", {
   machine: Schema.Literals(["VM", "host"]),
   at: Schema.String,
   totalMiB: Schema.Number,
   availableMiB: Schema.Number,
   floorMiB: Schema.NullOr(Schema.Number),
+  kindFloors: Schema.Array(Schema.Struct({ kind: Schema.String, floorMiB: Schema.Number })),
   jobs: Schema.Array(Schema.Struct({ kind: Schema.String, slot: Schema.Number, job: Schema.NullOr(Schema.String), memMiB: Schema.Number })),
   unmeasured: Schema.NullOr(Schema.String),
 });
