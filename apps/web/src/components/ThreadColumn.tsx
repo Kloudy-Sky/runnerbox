@@ -38,16 +38,25 @@ export function ThreadColumn(props: { subject: ThreadSubject; placeholder: strin
     following.current = true;
     element.scrollTo({ top: element.scrollHeight });
   };
+  const running = useRef(thread.view.running);
   useEffect(() => {
+    running.current = thread.view.running;
     if (thread.view.running) following.current = true;
   }, [thread.view.running]);
-  // Follows content outside React's state: the scroller's own size and position.
+  // Follows content outside React's state: whatever changes the scroller's size or its content's,
+  // streamed text, a fold opened, the window resized, keeps the end in view while following and
+  // says whether it's at the end.
   useEffect(() => {
     const element = scroller.current;
     if (!element) return;
-    if (thread.view.running && following.current) element.scrollTo({ top: element.scrollHeight });
-    measure(element);
-  }, [thread.view.items.length, thread.view.partial?.text, thread.view.running, thread.view.queued]);
+    const observer = new ResizeObserver(() => {
+      if (running.current && following.current) element.scrollTo({ top: element.scrollHeight });
+      measure(element);
+    });
+    observer.observe(element);
+    for (const child of element.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, []);
   return (
     <div
       className={cn("flex min-h-0 flex-1 flex-col rounded-2xl", dragging && "bg-accent/45 ring-1 ring-inset ring-primary/70")}
