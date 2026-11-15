@@ -74,12 +74,18 @@ const jobOn = (event: LauncherEvent, ms: number, conclusion = "success", name = 
 const explain = (input: Partial<ExplainInput> = {}) =>
   explainInstall({ now: NOW, install: install(), events: [], jobs: [], samples: [], containerSamples: [], ...input });
 
-test("a busy machine short of memory says so, and which label's jobs will wait", () => {
-  const busy = [slot(1, "busy", { job: "ci / test" }), slot(2, "busy", { job: "ci / build" })];
+const busy = [slot(1, "busy", { job: "ci / test" }), slot(2, "busy", { job: "ci / build" })];
+
+test("a machine with no runner free anywhere says there's no room, and which labels' jobs will wait", () => {
   const aside = [slot(1, "waiting", { detail: "The VM has 0.8 GB free. Runnerbox keeps 2.0 GB free before it starts another runner." })];
-  const result = explain({ install: install({ linux: busy, docker: aside }) });
-  assert.equal(result.headline, "2 jobs running. No room for another until one finishes. New jobs for example-linux and example-docker will wait.");
+  const result = explain({ install: install({ linux: busy, docker: aside, light: [slot(1, "waiting"), slot(2, "waiting"), slot(3, "waiting")] }) });
+  assert.equal(result.headline, "2 jobs running. No room for another until one finishes. New jobs for example-linux, example-docker and example-light will wait.");
   assert.equal(result.runners.find((tile) => tile.kind === "docker")?.why, "The VM has 0.8 GB free. Runnerbox keeps 2.0 GB free before it starts another runner.");
+});
+
+test("with some kinds full and another ready, it names which wait and which can still take jobs, not that there's no room", () => {
+  const result = explain({ install: install({ linux: busy, docker: [slot(1, "waiting")] }) });
+  assert.equal(result.headline, "2 jobs running. New jobs for example-linux and example-docker will wait. light can still take jobs.");
 });
 
 test("a quiet machine says how many runners are ready, and never that a label's jobs will wait", () => {
