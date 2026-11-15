@@ -29,8 +29,8 @@ export function imageStatus(kind: typeof KindState.Type, now: number, typicalBui
     return {
       word: kind.image ? "Rebuild failed" : "Build failed",
       tone: "destructive",
-      sentence: kind.image && kind.builtAt
-        ? `Jobs still run on the one from ${age(kind.builtAt)}. Runnerbox tries again within 5 minutes.`
+      sentence: kind.image
+        ? `Jobs still run on the ${kind.builtAt ? `one from ${age(kind.builtAt)}` : "current one"}. Runnerbox tries again within 5 minutes.`
         : "These runners take no jobs until a build works. Runnerbox tries again within 5 minutes.",
       progress: null,
     };
@@ -39,7 +39,10 @@ export function imageStatus(kind: typeof KindState.Type, now: number, typicalBui
   if (!kind.rebuildDays) {
     return { word: `Built ${age(kind.builtAt)}`, tone: "muted", sentence: "Rebuilt only when its files change.", progress: null };
   }
-  if (now - Date.parse(kind.builtAt) < kind.rebuildDays * DAY_MS) {
+  // The machine rebuilds when a new period starts, not when the image turns `rebuildDays` old, so
+  // an image is fresh only while it's from the current period.
+  const period = kind.rebuildDays * DAY_MS;
+  if (Math.floor(Date.parse(kind.builtAt) / period) === Math.floor(now / period)) {
     return { word: "Fresh", tone: "success", sentence: `Rebuilt ${age(kind.builtAt)}, next ${nextWords(kind.rebuildDays, now)}.`, progress: null };
   }
   return { word: "Rebuild due", tone: "warning", sentence: `Built ${age(kind.builtAt)}. It rebuilds once the machine has room.`, progress: null };

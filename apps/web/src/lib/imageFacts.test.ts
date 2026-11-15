@@ -30,6 +30,20 @@ test("an image's word follows what's happening to it, a build first", () => {
   assert.equal(word({ builtAt: null }), null);
 });
 
+test("an image goes due when the machine's period turns, however young it is", () => {
+  const week = 7 * DAY;
+  const boundary = Math.floor(now / week) * week;
+  const at = (ms: number) => new Date(ms).toISOString();
+  assert.equal(imageStatus({ ...kind, builtAt: at(boundary - 2 * DAY) }, boundary + 3_600_000, null)?.word, "Rebuild due");
+  assert.equal(imageStatus({ ...kind, builtAt: at(boundary + 60_000) }, boundary + 3_600_000, null)?.word, "Fresh");
+});
+
+test("a failed rebuild never says jobs stopped while an image still serves them", () => {
+  const failed = { ...kind, buildFailedAt: ago(60_000) };
+  assert.match(imageStatus({ ...failed, builtAt: null }, now, null)?.sentence ?? "", /^Jobs still run on the current one\./);
+  assert.match(imageStatus({ ...failed, image: null, builtAt: null }, now, null)?.sentence ?? "", /^These runners take no jobs/);
+});
+
 test("a build in progress says how far it is against its typical length, and never claims done", () => {
   const building = { ...kind, building: "app-ci:bbbbbbbbbbbb", buildingSince: ago(2 * 60_000) };
   assert.equal(imageStatus(building, now, 6 * 60_000)?.sentence, "2m in, typically 6m. Jobs keep the current image until it's done.");
