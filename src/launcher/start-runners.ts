@@ -8,6 +8,7 @@ import { anyRunnerBusy, mintRegistration, removeRunner } from "../github/runner-
 import { installPaths } from "../host/install-paths.ts";
 import { buildInVm } from "../image/build-in-vm.ts";
 import { hashContext } from "../image/context-hash.ts";
+import { withRebuildPeriod } from "../image/rebuild-period.ts";
 import { createImageKeeper } from "../image/image-keeper.ts";
 import type { InTurn } from "../jobvm/in-turn.ts";
 import { startJobVms } from "../jobvm/start-job-vms.ts";
@@ -245,12 +246,12 @@ async function keepImage(
 
   const inVm = (command: string) => inBuilder(() => readFromVm({ vm, command })).then((output) => output.trim() === "yes");
   const keeper = createImageKeeper(image.name, {
-    contextHash: () => hashContext(image.context),
+    contextHash: async () => withRebuildPeriod(await hashContext(image.context), image.rebuildDays, Date.now()),
     existsInVm: (tag) => inVm(`docker image inspect ${shellQuote(tag)} >/dev/null 2>&1 && echo yes || echo no`),
     build: async (tag) => {
       onImage(keeper.current(), tag);
       try {
-        return await inBuilder(() => buildInVm({ vm, context: image.context, tag }));
+        return await inBuilder(() => buildInVm({ vm, context: image.context, tag, noCache: image.rebuildDays !== undefined }));
       } finally {
         onImage(keeper.current(), null);
       }

@@ -26,11 +26,12 @@ const RunnerType = type({
   // How many of this type's runners wait for jobs at once.
   slots: "1 <= number.integer <= 64",
   // A prebuilt image's reference, or a build context on the host that `up` builds in the VM and
-  // rebuilds when its files change.
+  // rebuilds when its files change. `rebuildDays` also rebuilds it from scratch on that schedule.
   image: type("/^[a-z0-9][a-z0-9._\\/:@-]*$/").or({
     "+": "reject",
     name: "/^[a-z0-9][a-z0-9._\\/-]*$/",
     context: AbsolutePath,
+    "rebuildDays?": "1 <= number.integer <= 90",
   }),
   limits: {
     "+": "reject",
