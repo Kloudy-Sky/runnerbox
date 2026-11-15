@@ -13,8 +13,9 @@ const cpus = (percent: number) => {
 };
 
 // One job's steps, its container's memory and CPU as two graphs with one axis each, and the
-// server's sentence about them. Used on a run's page and in Speed and cost's job panel.
-export function JobResourcesView({ resources }: { readonly resources: JobResources }) {
+// server's sentence about them, unless the page shows that sentence as its Why instead. Used on a
+// run's page and in Speed and cost's job panel.
+export function JobResourcesView({ resources, sentenceShown = true }: { readonly resources: JobResources; readonly sentenceShown?: boolean }) {
   const { steps, points, limits, sentence } = resources;
   const durationMs = resources.job.durationMs ?? points.at(-1)?.offsetMs ?? 0;
   const marked = steps.find((step): step is PlacedStep & { offsetMs: number; ms: number } => step.name === sentence?.step && step.exact && step.offsetMs !== null && step.ms !== null);
@@ -66,7 +67,7 @@ export function JobResourcesView({ resources }: { readonly resources: JobResourc
           </section>
         </div>
       ) : null}
-      {sentence ? <p className="text-foreground/90">{sentence.text}</p> : null}
+      {sentence && sentenceShown ? <p className="text-foreground/90">{sentence.text}</p> : null}
     </div>
   );
 }

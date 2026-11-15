@@ -46,14 +46,16 @@ const within = (points: readonly ResourcePoint[], step: PlacedStep) =>
 // when the evidence fell inside that step's own time. Readings are a few seconds apart, so a peak
 // between two is missed, and "the highest reading" says so.
 export function resourceSentence(input: SentenceInput): ResourceSentence | null {
-  const say = (kind: ResourceSentence["case"], text: string, step: string | null = null): ResourceSentence => ({ case: kind, text, step });
+  const say = (kind: ResourceSentence["case"], text: string, step: string | null = null, advice: string | null = null): ResourceSentence => ({ case: kind, text, step, advice });
+  const lessMemory = (step: string | null) => `Raise this kind's memory limit, or make ${step ? `the ${step} step` : "this job"} use less.`;
+  const moreCpus = (step: string | null) => `Give this kind more CPUs, or expect ${step ?? "this job"} to take this long.`;
   const { points, limits, steps } = input;
   if (input.coverage === "no_runner") return null;
   // The runner's event says it was stopped, with or without readings of it.
   if (input.stoppedForMemory) {
     const { step } = input.stoppedForMemory;
     const limit = limits ? `, at its ${memory(limits.memoryMiB)} limit` : "";
-    return say("stopped_for_memory", `The container was stopped for using too much memory${step ? ` during ${step}` : " while this job ran"}${limit}.`, step);
+    return say("stopped_for_memory", `The container was stopped for using too much memory${step ? ` during ${step}` : " while this job ran"}${limit}.`, step, lessMemory(step));
   }
   const unsampled = NOT_SAMPLED[input.coverage];
   if (unsampled) return say("not_sampled", unsampled);
@@ -62,16 +64,16 @@ export function resourceSentence(input: SentenceInput): ResourceSentence | null 
     const reached = points.find((point) => point.memMiB >= limits.memoryMiB * MEMORY_AT_LIMIT);
     if (reached) {
       const step = stepAt(steps, reached.offsetMs)?.name ?? null;
-      return say("memory_limit", `Memory reached this kind's ${memory(limits.memoryMiB)} limit${step ? ` in ${step}` : " while this job ran"}.`, step);
+      return say("memory_limit", `Memory reached this kind's ${memory(limits.memoryMiB)} limit${step ? ` in ${step}` : " while this job ran"}.`, step, lessMemory(step));
     }
     const job = input.durationMs ?? 0;
     const bound = steps.find((step) => step.exact && (step.ms ?? 0) >= job * CPU_STEP_SHARE && within(points, step).length >= MIN_READINGS && atLimit(within(points, step), limits));
-    if (bound) return say("cpu_limit", `CPU was at this kind's limit of ${cpus(limits.cpus)} for most of ${bound.name}, so that step was held back by CPU.`, bound.name);
-    if (points.length >= MIN_READINGS && atLimit(points, limits)) return say("cpu_limit", `CPU was at this kind's limit of ${cpus(limits.cpus)} for most of this job, so it was held back by CPU.`);
+    if (bound) return say("cpu_limit", `CPU was at this kind's limit of ${cpus(limits.cpus)} for most of ${bound.name}, so that step was held back by CPU.`, bound.name, moreCpus(bound.name));
+    if (points.length >= MIN_READINGS && atLimit(points, limits)) return say("cpu_limit", `CPU was at this kind's limit of ${cpus(limits.cpus)} for most of this job, so it was held back by CPU.`, null, moreCpus(null));
   }
   const lowest = input.vm.reduce<VmPoint | undefined>((low, point) => (low === undefined || point.availableMiB < low.availableMiB ? point : low), undefined);
   if (lowest && lowest.availableMiB < lowest.totalMiB * LOW_MEMORY_SHARE && (!limits || peak < limits.memoryMiB * WELL_UNDER)) {
-    return say("vm_low", `The VM ran low on memory while this job ran${limits ? ", though the job itself stayed well under its limit" : ""}.`);
+    return say("vm_low", `The VM ran low on memory while this job ran${limits ? ", though the job itself stayed well under its limit" : ""}.`, null, "Give the VM more memory, or run fewer jobs at once.");
   }
   if (points.length < MIN_READINGS) return say("few_readings", `Only ${plural(points.length, "reading was", "readings were")} taken while this job ran, too few to say more.`);
   // Readings come at a steady pace, so the span they cover is first to last plus one gap.

@@ -28,8 +28,9 @@ export const VmPoint = Schema.Struct({ offsetMs: Schema.Number, availableMiB: Sc
 export type VmPoint = typeof VmPoint.Type;
 
 // One plain sentence about what the readings show, by rules on the server. `step` is named only
-// when the evidence fell inside that step's own time.
-export const ResourceSentence = Schema.Struct({ case: SentenceCase, text: Schema.String, step: NullableString });
+// when the evidence fell inside that step's own time. `advice` is what the owner can do about a
+// finding, and null when there's nothing to do; when it's set, the sentence is the job's Why.
+export const ResourceSentence = Schema.Struct({ case: SentenceCase, text: Schema.String, step: NullableString, advice: NullableString });
 export type ResourceSentence = typeof ResourceSentence.Type;
 
 // One job attempt with its steps on its timeline, its container's memory and CPU, and the VM's
