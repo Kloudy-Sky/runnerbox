@@ -219,3 +219,41 @@ test("a monitor's look holds an update back as a turn does, and says it's a moni
     provider,
   );
 });
+
+// Asks a question in a new thread, and says how it went.
+const ask = (server: Awaited<ReturnType<typeof startTestServer>>, token: string) =>
+  Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { client } = yield* openSession(server.baseUrl, token);
+        const [item] = (yield* client["inbox.list"]({ days: 14 })).items;
+        assert.ok(item);
+        const thread = yield* client["threads.create"]({ subject: { _tag: "inbox", itemId: item.id }, days: 14 });
+        return yield* Effect.exit(client["threads.startTurn"]({ id: thread.id, text: "Why?" }));
+      }),
+    ),
+  );
+
+test("once an update is handed over, no new turn starts for the restart to cut", async () => {
+  await withUpdates(
+    {},
+    async ({ server }) => {
+      const token = await session(server);
+      assert.ok(Exit.isSuccess(await updateTo(server, token)));
+      assert.match(failure(await ask(server, token)), /restarting on a new version\. Ask again in a moment/);
+    },
+    makeFakeProvider({ turns: [[{ text: "Because." }]] }),
+  );
+});
+
+test("an update the supervisor refuses lets turns start again", async () => {
+  await withUpdates(
+    { refuse: "The new version won't run on this machine. SyntaxError: this needs Node 99" },
+    async ({ server }) => {
+      const token = await session(server);
+      assert.ok(Exit.isFailure(await updateTo(server, token)));
+      assert.ok(Exit.isSuccess(await ask(server, token)), "the turn started");
+    },
+    makeFakeProvider({ turns: [[{ text: "Because." }]] }),
+  );
+});

@@ -6,6 +6,7 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import packageJson from "../../package.json" with { type: "json" };
@@ -84,10 +85,12 @@ const make = (source: ReleaseSource | null) =>
     const file = supervision.context?.file ?? null;
     let job: { readonly version: string; readonly state: SubscriptionRef.SubscriptionRef<JobState> } | null = null;
 
-    // What a restart would cut short now.
-    const busy = Effect.map(threads.busy, ({ turn, reproduce }): UpdateBlocker | null =>
-      turn === "owner" ? "turn-running" : turn === "monitor" ? "monitor-running" : reproduce ? "reproduce-running" : null,
-    );
+    // What a restart would cut short.
+    const blockerOf = ({ turn, reproduce }: Threads.Busy): UpdateBlocker | null =>
+      turn === "owner" ? "turn-running" : turn === "monitor" ? "monitor-running" : reproduce ? "reproduce-running" : null;
+    const busy = Effect.map(threads.busy, blockerOf);
+    // Two calls arriving together decide one at a time, so only one starts a job.
+    const starting = yield* Semaphore.make(1);
 
     const blocker = Effect.gen(function* () {
       if (source === null) return "checkout" as const;
@@ -133,12 +136,14 @@ const make = (source: ReleaseSource | null) =>
         if (sha256.actual !== sha256.expected) return yield* new ServerUpdateError({ reason: "checksum-mismatch", detail: "The download didn't match its checksum, so nothing was installed." });
         yield* Effect.tryPromise({ try: () => rename(partial, staged), catch: fromDownload });
         yield* SubscriptionRef.set(state, { _tag: "Running", progress: { _tag: "Checking" } });
-        // The download took a while; something may have started since.
-        const now = yield* busy;
-        if (now !== null) return yield* blocked(now);
-        const updateId = yield* supervision
-          .requestUpdate({ version, path: staged, sha256: sha256.actual })
-          .pipe(Effect.mapError((refused) => new ServerUpdateError({ reason: "refused", detail: refused.reason })));
+        // The download took a while, and something may have started since. From here until the
+        // restart nothing new starts, unless the update doesn't go ahead.
+        const now = blockerOf(yield* threads.holdForRestart);
+        if (now !== null) return yield* Effect.andThen(threads.resume, Effect.fail(blocked(now)));
+        const updateId = yield* supervision.requestUpdate({ version, path: staged, sha256: sha256.actual }).pipe(
+          Effect.tapError(() => threads.resume),
+          Effect.mapError((refused) => new ServerUpdateError({ reason: "refused", detail: refused.reason })),
+        );
         yield* SubscriptionRef.set(state, { _tag: "Started", updateId });
       }).pipe(
         // A started update keeps its job: the server stops in a moment, and nothing else may start.
@@ -153,19 +158,21 @@ const make = (source: ReleaseSource | null) =>
 
     const update = (version: string) =>
       Stream.unwrap(
-        Effect.gen(function* () {
-          if (job?.version === version) return follow(job.state);
-          const reason = yield* blocker;
-          if (reason !== null) return Stream.fail(blocked(reason));
-          if (source === null || file === null) return Stream.fail(blocked(source === null ? "checkout" : "unsupervised"));
-          if (compareVersions(version, SERVER_VERSION) <= 0) {
-            return Stream.fail(new ServerUpdateError({ reason: "not-newer", detail: `This server runs ${SERVER_VERSION}, and ${version} isn't newer. An update never goes back.` }));
-          }
-          const state = yield* SubscriptionRef.make<JobState>({ _tag: "Running", progress: { _tag: "Downloading", received: 0, total: null } });
-          job = { version, state };
-          yield* run(source, file, version, state).pipe(Effect.forkIn(scope));
-          return follow(state);
-        }),
+        starting.withPermits(1)(
+          Effect.gen(function* () {
+            if (job?.version === version) return follow(job.state);
+            const reason = yield* blocker;
+            if (reason !== null) return Stream.fail(blocked(reason));
+            if (source === null || file === null) return Stream.fail(blocked(source === null ? "checkout" : "unsupervised"));
+            if (compareVersions(version, SERVER_VERSION) <= 0) {
+              return Stream.fail(new ServerUpdateError({ reason: "not-newer", detail: `This server runs ${SERVER_VERSION}, and ${version} isn't newer. An update never goes back.` }));
+            }
+            const state = yield* SubscriptionRef.make<JobState>({ _tag: "Running", progress: { _tag: "Downloading", received: 0, total: null } });
+            job = { version, state };
+            yield* run(source, file, version, state).pipe(Effect.forkIn(scope));
+            return follow(state);
+          }),
+        ),
       );
 
     return ServerUpdate.of({ status, update });

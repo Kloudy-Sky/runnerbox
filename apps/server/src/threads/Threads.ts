@@ -90,9 +90,13 @@ export class Threads extends Context.Service<
     // A command from the agent's `repro_exec`, for the thread its turn token is bound to. Logged
     // in that turn with the end of its output.
     readonly reproduceExec: (sessionId: string, command: string, timeoutSec: number) => Effect.Effect<Executed, ReproduceError>;
-    // The agent's `propose_change`, for the thread its turn token is bound to. It only records.
     // What a server restart would cut short now: an owner's turn, a monitor's look, or a reproduce.
-    readonly busy: Effect.Effect<{ readonly turn: "owner" | "monitor" | null; readonly reproduce: boolean }>;
+    readonly busy: Effect.Effect<Busy>;
+    // Before an update restarts the server: from now no turn, look or reproduce starts, and what's
+    // already running is returned. `resume` lets them start again if the update doesn't go ahead.
+    readonly holdForRestart: Effect.Effect<Busy>;
+    readonly resume: Effect.Effect<void>;
+    // The agent's `propose_change`, for the thread its turn token is bound to. It only records.
     readonly proposeChange: (sessionId: string, input: { readonly install: string; readonly changes: ProposeInput["changes"]; readonly reason: string }) => Effect.Effect<Proposal, ProposalError>;
   }
 >()("runnerbox/server/threads/Threads") {}
@@ -110,6 +114,7 @@ export type TurnOptions = {
   readonly monitor?: { readonly model: string } | undefined;
 };
 
+export type Busy = { readonly turn: "owner" | "monitor" | null; readonly reproduce: boolean };
 type Waiting = { readonly message: QueuedMessage; readonly options: TurnOptions };
 // `yieldsToQueue` is set when a monitor stops its look, so the question waiting behind it still
 // goes; a stop by the server leaves it to be lost with the restart.
@@ -157,6 +162,8 @@ const make = Effect.gen(function* () {
   const reproduceStarting = new Set<string>();
   // In memory only: a restart loses it, and the client hands its text back to the composer.
   const queued = new Map<string, Waiting>();
+  // Set while an update restarts the server, so nothing new starts that the restart would cut.
+  let held = false;
 
   const publish = (threadId: string, event: ThreadEvent) => PubSub.publish(events, { threadId, event }).pipe(Effect.asVoid);
   const appendUnlocked = (threadId: string, item: ThreadItem) => log.append(threadId, item).pipe(Effect.andThen(publish(threadId, item)));
@@ -318,6 +325,7 @@ const make = Effect.gen(function* () {
     if (!status.available) return yield* new ThreadError({ reason: "provider_unavailable" });
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
+        if (held) return yield* new ThreadError({ reason: "server_updating" });
         if (running.has(id) || (fromQueue === null ? queued.has(id) : queued.get(id) !== fromQueue)) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
         const turn: Running = { monitor: monitor !== undefined, turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
@@ -482,6 +490,7 @@ const make = Effect.gen(function* () {
     const { packet, subject } = yield* lock.withPermits(1)(
       Effect.gen(function* () {
         const found = yield* header(id);
+        if (held) return yield* new ThreadError({ reason: "server_updating" });
         if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
         reproduceStarting.add(id);
         return found;
@@ -535,15 +544,18 @@ const make = Effect.gen(function* () {
     return proposal;
   });
 
-  const busy = Effect.sync(() => {
+  const busy = Effect.sync((): Busy => {
     const turns = [...running.values()];
     return {
-      turn: turns.some((turn) => !turn.monitor) ? ("owner" as const) : turns.length > 0 ? ("monitor" as const) : null,
+      turn: turns.some((turn) => !turn.monitor) ? "owner" : turns.length > 0 ? "monitor" : null,
       reproduce: reproduces.anyRunning() || reproduceStarting.size > 0,
     };
   });
+  // Under the lock, so a turn or reproduce that's past its own check has already been counted.
+  const holdForRestart = lock.withPermits(1)(Effect.sync(() => (held = true)).pipe(Effect.andThen(busy)));
+  const resume = Effect.sync(() => void (held = false));
 
-  return Threads.of({ busy, provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, stopTurn, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
+  return Threads.of({ busy, holdForRestart, resume, provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, stopTurn, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

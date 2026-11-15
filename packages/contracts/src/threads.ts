@@ -149,7 +149,7 @@ export const CreateThread = Schema.Struct({
 });
 
 export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError", {
-  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running", "reference_not_found", "reference_self", "queue_full"]),
+  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running", "reference_not_found", "reference_self", "queue_full", "server_updating"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -173,6 +173,8 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
         return "A thread can't refer to itself.";
       case "reproduce_running":
         return "Stop this thread's reproduce first.";
+      case "server_updating":
+        return "The server is restarting on a new version. Ask again in a moment.";
       case "model_not_offered":
         return "That model isn't offered for this account's harness. Pick another in the composer.";
     }
