@@ -22,7 +22,7 @@ In semver, which the updater compares with, each nightly sorts above the stable 
 
 ## Hosts that install by tag
 
-Hosts download `runnerbox.js` from a release by its tag, and every release still carries it. Pushing a `v*` tag yourself still releases `runnerbox.js` alone, exactly as before; a tag with a hyphen, like `v0.2.0-rc.4`, becomes a prerelease. Tags the workflow creates for nightly and stable releases never start it again. Nightlies are prereleases, so GitHub's "latest release" is always the newest stable.
+Hosts download `runnerbox.js` from a release by its tag, and every release still carries it. A running `serve` downloads the same two files when it updates itself, so a release must carry both under those names. Pushing a `v*` tag yourself still releases `runnerbox.js` alone, exactly as before; a tag with a hyphen, like `v0.2.0-rc.4`, becomes a prerelease. Tags the workflow creates for nightly and stable releases never start it again. Nightlies are prereleases, so GitHub's "latest release" is always the newest stable.
 
 ## The desktop app
 

@@ -90,6 +90,12 @@ export class Threads extends Context.Service<
     // A command from the agent's `repro_exec`, for the thread its turn token is bound to. Logged
     // in that turn with the end of its output.
     readonly reproduceExec: (sessionId: string, command: string, timeoutSec: number) => Effect.Effect<Executed, ReproduceError>;
+    // What a server restart would cut short now: an owner's turn, a monitor's look, or a reproduce.
+    readonly busy: Effect.Effect<Busy>;
+    // Before an update restarts the server: from now no turn, look or reproduce starts, and what's
+    // already running is returned. `resume` lets them start again if the update doesn't go ahead.
+    readonly holdForRestart: Effect.Effect<Busy>;
+    readonly resume: Effect.Effect<void>;
     // The agent's `propose_change`, for the thread its turn token is bound to. It only records.
     readonly proposeChange: (sessionId: string, input: { readonly install: string; readonly changes: ProposeInput["changes"]; readonly reason: string }) => Effect.Effect<Proposal, ProposalError>;
   }
@@ -108,11 +114,12 @@ export type TurnOptions = {
   readonly monitor?: { readonly model: string } | undefined;
 };
 
+export type Busy = { readonly turn: "owner" | "monitor" | null; readonly reproduce: boolean };
 type Waiting = { readonly message: QueuedMessage; readonly options: TurnOptions };
 // `yieldsToQueue` is set when a monitor stops its look, so the question waiting behind it still
 // goes; a stop by the server leaves it to be lost with the restart.
 type Running = {
-  yieldsToQueue?: boolean; readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
+  yieldsToQueue?: boolean; readonly monitor: boolean; readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
 
 const MAX_TOOL_INPUT = 300;
 // A turn's MCP token is revoked when the turn ends. This only bounds one a crash left behind.
@@ -155,6 +162,8 @@ const make = Effect.gen(function* () {
   const reproduceStarting = new Set<string>();
   // In memory only: a restart loses it, and the client hands its text back to the composer.
   const queued = new Map<string, Waiting>();
+  // Set while an update restarts the server, so nothing new starts that the restart would cut.
+  let held = false;
 
   const publish = (threadId: string, event: ThreadEvent) => PubSub.publish(events, { threadId, event }).pipe(Effect.asVoid);
   const appendUnlocked = (threadId: string, item: ThreadItem) => log.append(threadId, item).pipe(Effect.andThen(publish(threadId, item)));
@@ -316,9 +325,10 @@ const make = Effect.gen(function* () {
     if (!status.available) return yield* new ThreadError({ reason: "provider_unavailable" });
     return yield* lock.withPermits(1)(
       Effect.gen(function* () {
+        if (held) return yield* new ThreadError({ reason: "server_updating" });
         if (running.has(id) || (fromQueue === null ? queued.has(id) : queued.get(id) !== fromQueue)) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
-        const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
+        const turn: Running = { monitor: monitor !== undefined, turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
         const taken = attaching === undefined ? [] : yield* attachments.take(attaching.sessionId, attaching.ids);
         const attached = taken.map((each) => each.attachment);
         const contents = taken.map((each) => ({ ...each.attachment, bytes: each.bytes }));
@@ -480,6 +490,7 @@ const make = Effect.gen(function* () {
     const { packet, subject } = yield* lock.withPermits(1)(
       Effect.gen(function* () {
         const found = yield* header(id);
+        if (held) return yield* new ThreadError({ reason: "server_updating" });
         if (running.has(id)) return yield* new ThreadError({ reason: "turn_running" });
         reproduceStarting.add(id);
         return found;
@@ -533,7 +544,18 @@ const make = Effect.gen(function* () {
     return proposal;
   });
 
-  return Threads.of({ provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, stopTurn, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
+  const busy = Effect.sync((): Busy => {
+    const turns = [...running.values()];
+    return {
+      turn: turns.some((turn) => !turn.monitor) ? "owner" : turns.length > 0 ? "monitor" : null,
+      reproduce: reproduces.anyRunning() || reproduceStarting.size > 0,
+    };
+  });
+  // Under the lock, so a turn or reproduce that's past its own check has already been counted.
+  const holdForRestart = lock.withPermits(1)(Effect.sync(() => (held = true)).pipe(Effect.andThen(busy)));
+  const resume = Effect.sync(() => void (held = false));
+
+  return Threads.of({ busy, holdForRestart, resume, provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, stopTurn, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

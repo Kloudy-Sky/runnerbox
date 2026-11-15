@@ -14,6 +14,7 @@ import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } fro
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
+import { ReleaseVersion, ServerUpdateError, UpdateProgress, UpdateStatus } from "./update.ts";
 import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
 // A log under the state directory couldn't be read. The path stays on the server.
@@ -101,6 +102,8 @@ export const RPC_METHODS = {
   providersSave: "providers.save",
   serverAbout: "server.about",
   serverMethods: "server.methods",
+  serverUpdateStatus: "server.updateStatus",
+  serverUpdate: "server.update",
   proposalsList: "proposals.list",
   proposalsApprove: "proposals.approve",
   proposalsDecline: "proposals.decline",
@@ -244,6 +247,11 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.serverMethods, { success: Schema.Array(Schema.String), error: AuthorizationError }),
   // The same version facts the public descriptor gives, over whatever route the client uses.
   Rpc.make(RPC_METHODS.serverAbout, { success: Schema.Struct({ label: Schema.String, serverVersion: Schema.String, protocolVersion: Schema.Int }), error: AuthorizationError }),
+  // Whether this server can update now, and how its last update went.
+  Rpc.make(RPC_METHODS.serverUpdateStatus, { success: UpdateStatus, error: AuthorizationError }),
+  // Moves this server to `version`, a newer release of the repository it was built from, and
+  // restarts it there. A second call for the same version while one runs follows the same steps.
+  Rpc.make(RPC_METHODS.serverUpdate, { payload: { version: ReleaseVersion }, success: UpdateProgress, error: Schema.Union([AuthorizationError, ServerUpdateError]), stream: true }),
 ).middleware(RpcScopeAuthorization);
 
 export type RpcMethod = RpcGroup.Rpcs<typeof RunnerboxRpcGroup>["_tag"];
@@ -308,6 +316,10 @@ export const RPC_SCOPES = {
   [RPC_METHODS.serverAbout]: [],
   // Public already: which methods exist says nothing about any data.
   [RPC_METHODS.serverMethods]: [],
+  // Replacing the server's code: only a device the owner paired by address or SSH holds this.
+  // Connect sessions and MCP tokens never do, and a thread's agent turns are MCP tokens.
+  [RPC_METHODS.serverUpdateStatus]: ACCESS,
+  [RPC_METHODS.serverUpdate]: ACCESS,
   // Reading proposals is part of threads; deciding one changes how runners run.
   [RPC_METHODS.proposalsList]: THREADS,
   [RPC_METHODS.proposalsApprove]: [...THREADS, "changes:approve"],

@@ -26,6 +26,7 @@ export class Reproduces extends Context.Service<
     readonly check: (packet: string, jobId: number | null) => Effect.Effect<ReproduceCheck>;
     readonly start: (threadId: string, packet: string, jobId: number | null, network: ReproduceNetwork) => Effect.Effect<ReproduceStart, ReproduceError>;
     readonly running: (threadId: string) => boolean;
+    readonly anyRunning: () => boolean;
     // Whether this server started the thread's reproduce, running or not. One it didn't was
     // started before a restart, and nothing tracks it now.
     readonly startedHere: (threadId: string) => boolean;
@@ -113,7 +114,7 @@ const make = Effect.gen(function* () {
     );
   });
 
-  return Reproduces.of({ check, start, running: (threadId) => running.has(threadId), startedHere: (threadId) => startedHere.has(threadId), stop, refresh, bind, boundThread: (sessionId) => bindings.get(sessionId), exec });
+  return Reproduces.of({ check, start, running: (threadId) => running.has(threadId), anyRunning: () => running.size > 0, startedHere: (threadId) => startedHere.has(threadId), stop, refresh, bind, boundThread: (sessionId) => bindings.get(sessionId), exec });
 });
 
 export const layer = Layer.effect(Reproduces, make);

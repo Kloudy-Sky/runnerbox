@@ -45,7 +45,8 @@ const make = (label: string | undefined) =>
     // there already, so of two servers starting at once only one creates it and the other reads
     // the winner's, and no reader ever sees half a file.
     const create = (path: string, text: string) => {
-      const temporary = `${path}.${process.pid}.tmp`;
+      // Its own name, not just the process's: one server builds this layer more than once at start.
+      const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
       return fs.writeFileString(temporary, text, { mode: 0o600 }).pipe(
         Effect.andThen(fs.link(temporary, path)),
         Effect.ignore,

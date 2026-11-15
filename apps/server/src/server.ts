@@ -38,6 +38,11 @@ import * as Threads from "./threads/Threads.ts";
 import * as AccountStore from "./accounts/AccountStore.ts";
 import * as Providers from "./accounts/Providers.ts";
 import * as Drivers from "./threads/provider/Drivers.ts";
+import packageJson from "../package.json" with { type: "json" };
+import { githubReleases, type ReleaseSource } from "./update/download.ts";
+import { releaseRepository } from "./update/releaseRepository.ts";
+import * as ServerUpdate from "./update/ServerUpdate.ts";
+import * as Supervision from "./update/Supervision.ts";
 
 export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string; readonly codex?: boolean };
 
@@ -45,6 +50,11 @@ export type ServeOptions = { readonly host: string; readonly port: number; reado
 type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
 // Codex's, given only to a server that runs Codex.
 type CodexProvider = Layer.Layer<CodexProviderAdapter, never, ServerPaths.ServerPaths>;
+
+// Where updates come from and who carries them out. Tests swap in a local release server and a
+// stand-in supervisor; a release uses its own repository and the supervisor that started it.
+export type UpdateWiring = { readonly source: ReleaseSource | null; readonly supervision: Layer.Layer<Supervision.Supervision> };
+const releaseUpdates: UpdateWiring = { source: releaseRepository === null ? null : githubReleases(releaseRepository), supervision: Supervision.layer };
 
 type ServicesInput = {
   stateDir: string;
@@ -56,6 +66,7 @@ type ServicesInput = {
   codex?: CodexProvider | undefined;
   // Only tests replace where the queue poll sends requests and reads its token.
   queue?: Layer.Layer<QueueConfig.QueueConfig> | undefined;
+  updates?: UpdateWiring | undefined;
 };
 
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
@@ -64,7 +75,8 @@ export const layerServices = (input: ServicesInput) => Monitors.layer.pipe(Layer
 
 // Everything but the monitor, which sits on top so a test can run it on a fake clock.
 export const layerCore = (input: ServicesInput) =>
-  Layer.mergeAll(Threads.layer, Providers.layer).pipe(
+  ServerUpdate.layer((input.updates ?? releaseUpdates).source).pipe(
+    Layer.provideMerge(Layer.mergeAll(Threads.layer, Providers.layer, (input.updates ?? releaseUpdates).supervision)),
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
     Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer).pipe(Layer.provideMerge(UpSocket.layer))),
@@ -105,6 +117,7 @@ const serveOn = <E, R>(routes: Layer.Layer<never, E, R>, host: string, port: num
         const { address } = yield* HttpServer.HttpServer;
         const ports = yield* ListeningPorts.ListeningPorts;
         if ("port" in address) yield* Deferred.succeed(ports[which], address.port);
+        yield* Deferred.succeed(ports.bound[which], undefined);
       }),
     ),
   ).pipe(Layer.provide(listener(host, port)));
@@ -129,6 +142,7 @@ export const layerApp = (input: {
   codex?: CodexProvider;
   withoutMethods?: ReadonlyArray<RpcMethod>;
   queue?: Layer.Layer<QueueConfig.QueueConfig>;
+  updates?: UpdateWiring;
 }) =>
   layerListeners(input).pipe(Layer.provideMerge(layerServices(input)));
 
@@ -139,6 +153,19 @@ export const layerServer = ({ host, port, stateDir, label, codex }: ServeOptions
     Effect.gen(function* () {
       const link = yield* CloudLink.CloudLink;
       const state = yield* link.state.pipe(Effect.orElseSucceed(() => null));
-      return Layer.merge(layerListeners({ host, port, tunnelPort: state?.tunnelPort ?? null }), Connector.layer);
+      const tunnelPort = state?.tunnelPort ?? null;
+      return Layer.mergeAll(layerListeners({ host, port, tunnelPort }), Connector.layer, layerReady(tunnelPort !== null));
     }),
   ).pipe(Layer.provide(layerServices({ stateDir, host, port, label, codex: codex ? CodexAdapter.layer : undefined })));
+
+// Tells the supervisor once every listener this server opens is accepting, which is what puts a
+// new version in place after an update.
+export const layerReady = (tunnel: boolean) =>
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const { bound } = yield* ListeningPorts.ListeningPorts;
+      yield* Deferred.await(bound.local);
+      if (tunnel) yield* Deferred.await(bound.tunnel);
+      yield* (yield* Supervision.Supervision).ready(packageJson.version);
+    }).pipe(Effect.forkScoped),
+  );

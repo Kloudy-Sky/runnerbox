@@ -14,3 +14,4 @@ export * from "./proposals.ts";
 export * from "./monitors.ts";
 export * from "./attachments.ts";
 export * from "./queue.ts";
+export * from "./update.ts";
