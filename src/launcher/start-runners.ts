@@ -30,7 +30,7 @@ import { createMemoryLine } from "./memory-line.ts";
 import { memoryMiB } from "./memory-size.ts";
 import { runSlots } from "./run-slots.ts";
 import { runWithSecret } from "./run-with-secret.ts";
-import { createSlotState } from "./slot-state.ts";
+import { createSlotState, type RunsIn } from "./slot-state.ts";
 import { readTokenFile } from "./token-file.ts";
 
 const IMAGE_CHECK_MS = 5 * 60_000;
@@ -69,7 +69,8 @@ export async function startRunners(configPath: string) {
   const containers = "vm" in config && !config.jobVms ? startContainerSampler(config) : null;
   if ("vm" in config) startSampler(config, containers);
   // What each slot is doing now, for `runnerbox serve` to show live.
-  const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners);
+  const runsIn: RunsIn = !("vm" in config) ? "host" : config.jobVms ? "job_vm" : "container";
+  const slotState = createSlotState(join(stateDir(), config.name, "state.json"), config.name, config.runners.map((runner) => ({ ...runner, runsIn })));
   void slotState.flush();
   every(HEARTBEAT_MS, slotState.heartbeat);
   // Every runner type checks the install's floor unless it sets its own, so together they can't
