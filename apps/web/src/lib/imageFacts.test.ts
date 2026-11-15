@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { KindState } from "@runnerbox/contracts";
-import { imageStatus } from "./imageFacts.ts";
+import { imageStatus, oldToolNote } from "./imageFacts.ts";
 
 const DAY = 86_400_000;
 const now = Date.parse("2026-11-15T12:00:00Z");
@@ -49,4 +49,12 @@ test("a build in progress says how far it is against its typical length, and nev
   assert.equal(imageStatus(building, now, 6 * 60_000)?.sentence, "2m in, typically 6m. Jobs keep the current image until it's done.");
   assert.equal(imageStatus({ ...building, buildingSince: ago(20 * 60_000) }, now, 6 * 60_000)?.progress, 0.95);
   assert.equal(imageStatus(building, now, null)?.progress, null);
+});
+
+test("a tool is old only when its newest release came more than half a year after the installed one", () => {
+  const gh = { name: "gh", version: "2.45.0", releasedAt: "2024-02-07T00:00:00Z", newest: { version: "2.83.0", releasedAt: "2026-11-01T00:00:00Z" } };
+  assert.match(oldToolNote(gh) ?? "", /^gh 2\.45\.0 is from .*2024, and the newest is 2\.83\.0, from .*2026\./);
+  assert.equal(oldToolNote({ ...gh, newest: { version: "2.46.0", releasedAt: "2024-03-01T00:00:00Z" } }), null, "a month behind isn't old");
+  assert.equal(oldToolNote({ ...gh, newest: { ...gh.newest, version: "2.45.0" } }), null, "the newest itself isn't old");
+  assert.equal(oldToolNote({ name: "gh", version: "2.45.0" }), null, "no dates yet, nothing said");
 });
