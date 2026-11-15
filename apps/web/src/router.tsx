@@ -3,6 +3,7 @@ import { AppShell } from "./components/AppShell.tsx";
 import { parseSearch } from "./lib/search.ts";
 import { HomePage } from "./pages/HomePage.tsx";
 import { ItemPage } from "./pages/ItemPage.tsx";
+import { NowPage } from "./pages/NowPage.tsx";
 import { RunnersPage } from "./pages/RunnersPage.tsx";
 import { RunPage } from "./pages/RunPage.tsx";
 import { RunsPage } from "./pages/RunsPage.tsx";
@@ -15,13 +16,23 @@ import { ConnectionsSettings } from "./pages/settings/ConnectionsSettings.tsx";
 import { MonitorsSettings } from "./pages/settings/MonitorsSettings.tsx";
 import { SpeedPage } from "./pages/SpeedPage.tsx";
 
+// A window opened narrow, beside an editor, starts on Now. Only at launch: home stays one click
+// away after that, at any width.
+let launched = false;
+function openNarrowOnNow() {
+  const first = !launched;
+  launched = true;
+  if (first && window.matchMedia("(max-width: 767px)").matches) throw redirect({ to: "/now", search: true });
+}
+
 // The time range and repo live in the URL, so a view can be reloaded or linked as it is.
 const rootRoute = createRootRoute({ validateSearch: parseSearch, component: AppShell });
 
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsPage });
 
 const routeTree = rootRoute.addChildren([
-  createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage, beforeLoad: openNarrowOnNow }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/now", component: NowPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/item/$itemId", component: ItemPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", component: RunsPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$jobId", component: RunPage }),

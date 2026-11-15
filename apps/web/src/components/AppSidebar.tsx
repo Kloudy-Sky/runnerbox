@@ -1,7 +1,7 @@
 import type { InboxItem } from "@runnerbox/contracts";
 import { Button } from "./ui/button.tsx";
 import { Link, useParams, useRouterState } from "@tanstack/react-router";
-import { ChevronRight, Gauge, ListTree, Server, Settings } from "lucide-react";
+import { Activity, ChevronRight, Gauge, ListTree, Server, Settings } from "lucide-react";
 import { useDesktopUpdates } from "../hooks/useDesktopUpdates.ts";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useMonitors } from "../hooks/useMonitors.ts";
@@ -51,9 +51,10 @@ export function AppSidebar({ onOpenCommand }: { onOpenCommand: () => void }) {
   const isOpen = (item: InboxItem) => item.id === itemId;
 
   const browse = [
+    { to: "/now", label: "Now", icon: Activity, badge: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
     { to: "/runs", label: "All runs", icon: ListTree },
     { to: "/speed", label: "Speed and cost", icon: Gauge },
-    { to: "/runners", label: "Runners", icon: Server, badge: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
+    { to: "/runners", label: "Runners", icon: Server },
     { to: "/settings", label: "Settings", icon: Settings },
   ] as const;
 

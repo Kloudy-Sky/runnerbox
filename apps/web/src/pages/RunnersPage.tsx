@@ -20,12 +20,12 @@ export function RunnersPage() {
       </PageHeader.Root>
       <div className="px-6 text-[13px]">
       <Heading>Now</Heading>
-      {installs?.length === 0 ? <p className="text-muted-foreground">No install reports live state. It comes from runnerbox up on that machine while it runs.</p> : null}
+      {installs?.length === 0 ? <p className="text-muted-foreground">No install reports live state. It comes from Runnerbox on that machine while it runs.</p> : null}
       {installs?.map((install) => (
         <InstallState key={install.install} install={install} typicalBuildMs={(kind) => typicalBuildMs(events.data ?? [], install.install, kind)} />
       ))}
-      <Heading>What up did, newest first</Heading>
-      {events.isSuccess && recent.length === 0 ? <p className="text-muted-foreground">No launcher events. They come from runnerbox up on that machine.</p> : null}
+      <Heading>What Runnerbox did, newest first</Heading>
+      {events.isSuccess && recent.length === 0 ? <p className="text-muted-foreground">Nothing recorded yet. It comes from Runnerbox on that machine.</p> : null}
       <table className="border-collapse">
         <tbody>
           {recent.map((event) => (
