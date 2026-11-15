@@ -34,7 +34,8 @@ export function AppShell() {
   return (
     <TooltipProvider>
       <ToastProvider>
-        <SidebarProvider>
+        {/* Held to the window, so a long thread scrolls inside its column and the composer stays in view. */}
+        <SidebarProvider className="h-svh">
           <AppSidebar onOpenCommand={() => setCommandOpen(true)} />
           <SidebarInset>
             <div className="flex h-10 shrink-0 items-center gap-2 px-2">
