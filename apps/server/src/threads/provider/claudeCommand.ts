@@ -1,5 +1,6 @@
 import { MAX_COMMAND_SECONDS } from "runnerbox/src/reproduce/protocol.ts";
 import { RunnerboxToolkit } from "../../mcp/tools.ts";
+import { passedEnv } from "./agentEnv.ts";
 import type { TurnImage } from "./ProviderAdapter.ts";
 
 // How a thread's turn runs the environment's own `claude`: headless, streaming JSON in and out,
@@ -51,46 +52,17 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
   ];
 }
 
-// What `claude` needs to find its login and reach the network, and nothing else from the
-// server's environment: no API key, cloud-provider switch or unrelated secret. A turn bills the
-// account it runs as: the subscription's login, or a key the owner added in Settings.
-const PASSED = new Set([
-  "PATH",
-  "HOME",
-  "USER",
-  "LOGNAME",
-  "LANG",
-  "LANGUAGE",
-  "TMPDIR",
-  "TMP",
-  "TEMP",
-  "XDG_CONFIG_HOME",
-  "XDG_DATA_HOME",
-  "XDG_STATE_HOME",
-  "XDG_CACHE_HOME",
-  "XDG_RUNTIME_DIR",
-  // Where Claude Code keeps its login, when moved from ~/.claude.
-  "CLAUDE_CONFIG_DIR",
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "ALL_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "all_proxy",
-  "NODE_EXTRA_CA_CERTS",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-]);
+// Where Claude Code keeps its login, when moved from ~/.claude: the one name `claude` needs beyond
+// what every agent gets. A turn bills the account it runs as: the subscription's login, or a key the
+// owner added in Settings.
+const CLAUDE_PASSED = new Set(["CLAUDE_CONFIG_DIR"]);
 
 const TOOL_TIMEOUT_MS = (MAX_COMMAND_SECONDS + 60) * 1000;
 
 // `apiKey` is the turn's account's own key, the only credential that reaches `claude` from runnerbox.
 export function claudeEnv(from: Record<string, string | undefined>, apiKey: string | null = null) {
-  const passed = Object.entries(from).filter((entry): entry is [string, string] => entry[1] !== undefined && (PASSED.has(entry[0]) || entry[0].startsWith("LC_")));
   return {
-    ...Object.fromEntries(passed),
+    ...passedEnv(from, CLAUDE_PASSED),
     ...(apiKey === null ? {} : { ANTHROPIC_API_KEY: apiKey }),
     // claude.ai connectors are found outside the MCP config, so strict mode doesn't cover them.
     ENABLE_CLAUDEAI_MCP_SERVERS: "false",

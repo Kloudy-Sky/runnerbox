@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { clerkEndpoints, deviceAuthorize, loopbackAuthorize } from "@runnerbox/connect/oauth";
 import { relayClient } from "@runnerbox/connect/relay";
@@ -15,6 +17,8 @@ import * as ServerPaths from "./config/ServerPaths.ts";
 import * as EnvironmentIdentity from "./environment/EnvironmentIdentity.ts";
 import { SERVER_COMMANDS } from "./commandNames.ts";
 import { layerServer } from "./server.ts";
+import { findCodex } from "./threads/provider/CodexAdapter.ts";
+import { codexEnv, codexHome } from "./threads/provider/codexCommand.ts";
 
 const USAGE = `Usage:
   runnerbox serve [--host <address>] [--port <n>] [--label <name>]
@@ -23,6 +27,7 @@ const USAGE = `Usage:
   runnerbox link --relay <url> [--device] [--tunnel-port <n>]
   runnerbox unlink
   runnerbox link-status
+  runnerbox codex-login [--device] [--sign-out]
 
 serve: answers the desktop app over HTTP and WebSocket. Binds 127.0.0.1:4517 by default; reach
   it from another machine over SSH rather than binding a public address.
@@ -33,6 +38,9 @@ link: signs in to a Runnerbox Connect relay and links this environment, so your 
   any browser, for a machine you reach over SSH. --tunnel-port is the loopback port serve opens
   for the tunnel alone (default: --port plus one); it serves Connect and nothing else.
 unlink: removes the link and its tunnel. link-status: shows the link.
+codex-login: signs in Runnerbox's own Codex home, under the state directory, for Codex accounts
+  that use a login. It never touches ~/.codex. Opens a browser, or with --device shows a code to
+  approve from any browser. --sign-out signs that home out and deletes it.
 mcp-token: prints a token for an MCP client to send as a Bearer token to /mcp. It reads history
   and runner state, and works nowhere else. Revoke it from the app's access list.
 
@@ -55,6 +63,7 @@ export function runServerCommand(args: string[]) {
       relay: { type: "string" },
       device: { type: "boolean", default: false },
       "tunnel-port": { type: "string" },
+      "sign-out": { type: "boolean", default: false },
       help: { type: "boolean", default: false },
     },
   });
@@ -94,6 +103,8 @@ export function runServerCommand(args: string[]) {
     });
     return NodeRuntime.runMain(program.pipe(Effect.provide(layer)));
   }
+
+  if (command === "codex-login") return codexLogin(join(dir, ".server"), values.device, values["sign-out"]);
 
   if (command === "mcp-token") {
     const label = values.label ?? "agent";
@@ -139,11 +150,45 @@ export function runServerCommand(args: string[]) {
     const code = yield* store.createPairingCode(ALL_SCOPES);
     console.log(`Pairing code: ${code.code} (expires ${code.expiresAt})`);
   });
-  const server = layerServer({ host: values.host, port, stateDir: dir, ...(values.label ? { label: values.label } : {}) });
+  // Codex runs only where the owner turns it on, until its turns have passed a live check.
+  const codex = process.env.RUNNERBOX_EXPERIMENTAL_CODEX === "1";
+  const server = layerServer({ host: values.host, port, stateDir: dir, codex, ...(values.label ? { label: values.label } : {}) });
   const startup = Layer.effectDiscard(announce).pipe(
     Layer.provide(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(values.label)).pipe(Layer.provideMerge(paths), Layer.provideMerge(NodeServices.layer))),
   );
   NodeRuntime.runMain(Layer.launch(Layer.merge(server, startup)));
+}
+
+// Runs `codex login` or `codex logout` against Runnerbox's own Codex home, with the same
+// allow-listed environment turns get, so a CODEX_HOME or key in this shell can't redirect it.
+async function codexLogin(serverDir: string, device: boolean, signOut: boolean) {
+  const executable = findCodex();
+  const home = codexHome(serverDir);
+  const run = (args: ReadonlyArray<string>) =>
+    new Promise<number>((resolve) => {
+      if (executable === null) return resolve(1);
+      const child = spawn(executable, args, { stdio: "inherit", env: codexEnv(process.env, home) });
+      child.once("error", () => resolve(1));
+      child.once("close", (exit) => resolve(exit ?? 1));
+    });
+  // Signing out removes the home even when `codex` is gone or its logout fails, and says which.
+  if (signOut) {
+    const code = executable === null ? null : await run(["logout"]);
+    await rm(home, { recursive: true, force: true });
+    if (code === 0) return console.log(`Signed out, and removed ${home}.`);
+    console.error(`Removed ${home}, but ${code === null ? "Codex isn't installed to sign it out" : "`codex logout` failed"}, so its login may still be valid until it expires or is revoked from the ChatGPT account.`);
+    process.exitCode = 1;
+    return;
+  }
+  if (executable === null) {
+    console.error("Install Codex on this machine first.");
+    process.exitCode = 1;
+    return;
+  }
+  await mkdir(home, { recursive: true, mode: 0o700 });
+  const code = await run(["login", ...(device ? ["--device-auth"] : [])]);
+  if (code === 0) console.log(`Signed in. Runnerbox's Codex home is ${home}.`);
+  process.exitCode = code;
 }
 
 // Signs in to the relay's Clerk app as the CLI's public OAuth client, and returns an access token.

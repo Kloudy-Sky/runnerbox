@@ -1,4 +1,4 @@
-import type { ProviderStatus } from "@runnerbox/contracts";
+import type { HarnessModel, ProviderStatus } from "@runnerbox/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -34,14 +34,19 @@ export type TurnImage = { readonly mimeType: string; readonly base64: string };
 
 export type TurnAccount = { readonly label: string; readonly model: string | null; readonly apiKey: string | null };
 
-// One driver: how turns run on one kind of provider. Claude today; Codex would be a second
-// adapter registered in Drivers. Interrupting the stream must stop the provider's work.
+// One driver: how turns run on one kind of provider, Claude or Codex, each registered in Drivers.
+// Interrupting the stream must stop the provider's work.
 export class ProviderAdapter extends Context.Service<
   ProviderAdapter,
   {
     // Whether an account can run turns here: an API account needs only the CLI, a subscription
     // account also needs its login.
     readonly status: (account: { readonly hasKey: boolean }) => Effect.Effect<ProviderStatus>;
+    // The models a turn may pick here: the driver's own list, less any the installed CLI can't run.
+    readonly models: Effect.Effect<ReadonlyArray<HarnessModel>>;
     readonly runTurn: (input: TurnInput) => Stream.Stream<ProviderEvent, ProviderError>;
   }
 >()("runnerbox/server/threads/ProviderAdapter") {}
+
+// Codex's adapter, apart from Claude's, so a server runs Codex only when it was given one.
+export class CodexProviderAdapter extends Context.Service<CodexProviderAdapter, ProviderAdapter["Service"]>()("runnerbox/server/threads/CodexProviderAdapter") {}

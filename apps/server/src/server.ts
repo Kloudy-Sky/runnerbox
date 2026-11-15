@@ -25,7 +25,8 @@ import * as Ws from "./rpc/ws.ts";
 import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
 import * as ClaudeAdapter from "./threads/provider/ClaudeAdapter.ts";
-import type { ProviderAdapter } from "./threads/provider/ProviderAdapter.ts";
+import * as CodexAdapter from "./threads/provider/CodexAdapter.ts";
+import type { CodexProviderAdapter, ProviderAdapter } from "./threads/provider/ProviderAdapter.ts";
 import * as Monitors from "./monitors/Monitors.ts";
 import * as Proposals from "./proposals/Proposals.ts";
 import * as Reproduces from "./reproduce/Reproduces.ts";
@@ -35,12 +36,14 @@ import * as AccountStore from "./accounts/AccountStore.ts";
 import * as Providers from "./accounts/Providers.ts";
 import * as Drivers from "./threads/provider/Drivers.ts";
 
-export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string };
+export type ServeOptions = { readonly host: string; readonly port: number; readonly stateDir: string; readonly label?: string; readonly codex?: boolean };
 
 // Which agent provider threads use. Tests swap in a scripted one.
 type Provider = Layer.Layer<ProviderAdapter, never, ServerPaths.ServerPaths>;
+// Codex's, given only to a server that runs Codex.
+type CodexProvider = Layer.Layer<CodexProviderAdapter, never, ServerPaths.ServerPaths>;
 
-type ServicesInput = { stateDir: string; host: string; port: number; tunnelPort?: number | null | undefined; label?: string | undefined; provider?: Provider | undefined };
+type ServicesInput = { stateDir: string; host: string; port: number; tunnelPort?: number | null | undefined; label?: string | undefined; provider?: Provider | undefined; codex?: CodexProvider | undefined };
 
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
 // see the same instances.
@@ -53,6 +56,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provideMerge(Drivers.layer),
     Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer).pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
+    Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
     Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, CloudLink.layer)),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
@@ -101,16 +105,16 @@ const layerListeners = (input: { host: string; port: number; tunnelPort: number 
 // The listeners over the shared services, exposing the services so tests can mint codes on the
 // same instance.
 // `withoutMethods` serves the RPC as a build older than those methods would, for tests and the fake server.
-export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string; provider?: Provider; withoutMethods?: ReadonlyArray<RpcMethod> }) =>
+export const layerApp = (input: { host: string; port: number; tunnelPort: number | null; stateDir: string; label?: string; provider?: Provider; codex?: CodexProvider; withoutMethods?: ReadonlyArray<RpcMethod> }) =>
   layerListeners(input).pipe(Layer.provideMerge(layerServices(input)));
 
 // `serve`: the listeners, with the tunnel one on the port the link chose, and for a linked
 // environment its connector, all over one set of services.
-export const layerServer = ({ host, port, stateDir, label }: ServeOptions) =>
+export const layerServer = ({ host, port, stateDir, label, codex }: ServeOptions) =>
   Layer.unwrap(
     Effect.gen(function* () {
       const link = yield* CloudLink.CloudLink;
       const state = yield* link.state.pipe(Effect.orElseSucceed(() => null));
       return Layer.merge(layerListeners({ host, port, tunnelPort: state?.tunnelPort ?? null }), Connector.layer);
     }),
-  ).pipe(Layer.provide(layerServices({ stateDir, host, port, label })));
+  ).pipe(Layer.provide(layerServices({ stateDir, host, port, label, codex: codex ? CodexAdapter.layer : undefined })));

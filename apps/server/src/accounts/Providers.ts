@@ -1,9 +1,9 @@
-import { AccountError, type Provider, ProviderDriver, type ProviderAccount, type SaveProviderAccount } from "@runnerbox/contracts";
+import { AccountError, type Provider, type ProviderAccount, type SaveProviderAccount } from "@runnerbox/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
-import { driverStatus, HARNESSES } from "../threads/provider/harnesses.ts";
+import { Drivers } from "../threads/provider/Drivers.ts";
+import { type Driver, driverStatus, HARNESSES } from "../threads/provider/harnesses.ts";
 import { AccountStore } from "./AccountStore.ts";
 
 // The drivers this server runs, each with its models and accounts, for `providers.*`. Accounts are
@@ -17,24 +17,25 @@ export class Providers extends Context.Service<
   }
 >()("runnerbox/server/accounts/Providers") {}
 
-const isDriver = Schema.is(ProviderDriver);
-
 const make = Effect.gen(function* () {
   const accounts = yield* AccountStore;
+  const drivers = yield* Drivers;
+  const runs = (driver: string): driver is Driver => drivers.running.some((each) => each === driver);
 
-  const list = accounts.list.pipe(
-    Effect.map((all) =>
-      ProviderDriver.literals.map((driver): Provider => {
-        const { label, models } = HARNESSES[driver];
+  const list = Effect.gen(function* () {
+    const all = yield* accounts.listAll;
+    return yield* Effect.forEach(drivers.running, (driver) =>
+      Effect.gen(function* () {
+        const { label } = HARNESSES[driver];
         const own = all.filter((account) => account.driver === driver);
-        return { driver, label, status: driverStatus(label, own), models, accounts: own };
+        return { driver, label, status: driverStatus(label, own), models: yield* drivers.get(driver).models, accounts: own } satisfies Provider;
       }),
-    ),
-  );
+    );
+  });
 
   const save = Effect.fn("Providers.save")(function* ({ driver, ...input }: SaveProviderAccount) {
-    if (!isDriver(driver)) return yield* new AccountError({ reason: "unknown_driver" });
-    return yield* accounts.save({ ...input, driver });
+    if (!runs(driver)) return yield* new AccountError({ reason: "unknown_driver" });
+    return yield* accounts.saveAny({ ...input, driver });
   });
 
   return Providers.of({ list, save });

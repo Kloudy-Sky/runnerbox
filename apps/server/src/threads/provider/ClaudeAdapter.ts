@@ -12,6 +12,7 @@ import { newId } from "../../auth/secrets.ts";
 import * as ServerPaths from "../../config/ServerPaths.ts";
 import { claudeArgs, claudeEnv, mcpConfig, promptLine } from "./claudeCommand.ts";
 import { decodeLine } from "./claudeMessages.ts";
+import { HARNESSES } from "./harnesses.ts";
 import { ProviderAdapter, ProviderError, type ProviderEvent, type TurnInput } from "./ProviderAdapter.ts";
 
 const PROVIDER = "Claude";
@@ -142,7 +143,7 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  return ProviderAdapter.of({ status, runTurn });
+  return ProviderAdapter.of({ status, models: Effect.succeed(HARNESSES.claude.models), runTurn });
 });
 
 export const layer = Layer.effect(ProviderAdapter, make);
