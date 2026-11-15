@@ -14,6 +14,7 @@ import { ProvidersSettings } from "./pages/settings/ProvidersSettings.tsx";
 import { ChangesSettings } from "./pages/settings/ChangesSettings.tsx";
 import { ConnectionsSettings } from "./pages/settings/ConnectionsSettings.tsx";
 import { MonitorsSettings } from "./pages/settings/MonitorsSettings.tsx";
+import { NotificationsSettings } from "./pages/settings/NotificationsSettings.tsx";
 import { SpeedPage } from "./pages/SpeedPage.tsx";
 
 // A window opened narrow, beside an editor, starts on Now. Only the app's first route counts, so a
@@ -48,6 +49,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => settingsRoute, path: "/access", component: AccessSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/changes", component: ChangesSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/monitors", component: MonitorsSettings }),
+    createRoute({ getParentRoute: () => settingsRoute, path: "/notifications", component: NotificationsSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/about", component: AboutSettings }),
   ]),
   // Earlier names, so saved links still land somewhere.

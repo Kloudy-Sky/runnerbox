@@ -2,6 +2,7 @@ import { Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useStore } from "zustand";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
+import { useNeedsYouNotifications } from "../hooks/useNeedsYouNotifications.ts";
 import { ConnectPage } from "../pages/ConnectPage.tsx";
 import { runtime } from "../runtime.ts";
 import { AppSidebar } from "./AppSidebar.tsx";
@@ -17,6 +18,7 @@ export function AppShell() {
   const { environment } = useActiveEnvironment();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const [commandOpen, setCommandOpen] = useState(false);
+  useNeedsYouNotifications();
   // Cmd+K or Ctrl+K opens the palette from anywhere: a key press is outside React.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
