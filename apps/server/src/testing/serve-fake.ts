@@ -1,6 +1,6 @@
 // Serves fixture logs with a scripted agent, for driving the app's threads by hand without a
 // Claude login:
-//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex] [--updates commit|rollback]
+//   node apps/server/src/testing/serve-fake.ts <empty dir> [--port 4517] [--no-provider] [--older] [--codex] [--updates commit|rollback] [--runners <case>]
 // `--older` answers as a server from before the composer's model menu, attachments, references,
 // queue and delete, to see the app hold back what such a server can't do. `--codex` runs the real
 // Codex adapter beside the scripted Claude one, with a Codex home under <dir>, signed in with
@@ -8,6 +8,8 @@
 // `--updates` lets the app update it from a local release, ending as the flag says, and restarts
 // it on the same port for that (fakeUpdates.ts). Stamp apps/server's version below the app's to
 // see the app offer it.
+// `--runners` puts the install in one of the Runners page's cases: busy, quiet, failing,
+// rebuilding or no-samples.
 // It writes fixtures under <dir>, prints a pairing code, and runs until stopped. Never point it
 // at a real state directory. Keep <dir> short: the reproduce socket's path must fit in about
 // 100 characters.
@@ -29,9 +31,10 @@ import { fakeUpdates } from "./fakeUpdates.ts";
 import { startFakeUp } from "./fakeUp.ts";
 import { startFakeGitHub } from "./fakeGitHub.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
+import { RUNNER_SCENARIOS, writeRunnerScenario } from "./runnerScenarios.ts";
 
 
-const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false }, codex: { type: "boolean", default: false }, updates: { type: "string" } } });
+const { values, positionals } = parseArgs({ allowPositionals: true, options: { port: { type: "string", default: "4517" }, "no-provider": { type: "boolean", default: false }, older: { type: "boolean", default: false }, codex: { type: "boolean", default: false }, updates: { type: "string" }, runners: { type: "string" } } });
 // What a server from before the composer work doesn't answer.
 const OLDER_SERVER_LACKS = [
   "server.methods",
@@ -51,6 +54,13 @@ if (!target) {
 }
 const stateDir = join(resolve(target), "runnerbox");
 await writeFixtures(stateDir, Date.now());
+const scenario = RUNNER_SCENARIOS.find((name) => name === values.runners);
+if (values.runners !== undefined && !scenario) {
+  console.error(`--runners is one of ${RUNNER_SCENARIOS.join(", ")}.`);
+  process.exit(2);
+}
+// Its state is rewritten like a running `up`'s, so it never reads as stale.
+if (scenario) setInterval((await writeRunnerScenario(stateDir, Date.now(), scenario)).heartbeat, 10_000);
 // Its queue poll asks a local stand-in for GitHub, with a made-up token in a file beside the
 // fixtures, and never reads a real report.env or reaches GitHub.
 const fakeGitHub = await startFakeGitHub(Date.now());

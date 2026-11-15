@@ -2,15 +2,17 @@ import * as Schema from "effect/Schema";
 import { Attachment } from "./attachments.ts";
 import { Days, RepoName } from "./history.ts";
 
-// What a thread is about: one inbox item, or one job attempt from the run list.
+// What a thread is about: one inbox item, one job attempt from the run list, or one install's
+// runners from the Runners page.
 export const InboxSubject = Schema.TaggedStruct("inbox", { itemId: Schema.String });
 export const RunSubject = Schema.TaggedStruct("run", { repo: RepoName, jobId: Schema.Number });
-export const ThreadSubject = Schema.Union([InboxSubject, RunSubject]);
+export const RunnersSubject = Schema.TaggedStruct("runners", { install: Schema.String });
+export const ThreadSubject = Schema.Union([InboxSubject, RunSubject, RunnersSubject]);
 export type ThreadSubject = typeof ThreadSubject.Type;
 
 // Two subjects are the same when their keys are, which is how a view finds its thread.
 export const subjectKey = (subject: ThreadSubject) =>
-  subject._tag === "inbox" ? `inbox:${subject.itemId}` : `run:${subject.repo}:${subject.jobId}`;
+  subject._tag === "inbox" ? `inbox:${subject.itemId}` : subject._tag === "run" ? `run:${subject.repo}:${subject.jobId}` : `runners:${subject.install}`;
 
 // A turn ends once, in one of these ways. `interrupted` covers the user stopping it and the server
 // stopping under it.

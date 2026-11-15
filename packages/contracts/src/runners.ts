@@ -73,6 +73,9 @@ export const ImageTool = Schema.Struct({
 });
 export type ImageTool = typeof ImageTool.Type;
 
+// The memory, in MiB, the host and the VM must each have available before a runner registers.
+export const MemoryFloor = Schema.Struct({ hostMiB: Schema.Number, vmMiB: Schema.Number });
+
 export const KindState = Schema.Struct({
   name: Schema.String,
   label: Schema.String,
@@ -86,6 +89,8 @@ export const KindState = Schema.Struct({
   tools: Schema.optionalKey(Schema.NullOr(Schema.Array(ImageTool))),
   // Where its jobs run. Only `container` jobs are sampled. Missing from an older `up`.
   runsIn: Schema.optionalKey(Schema.Literals(["container", "job_vm", "host"])),
+  // The kind's own memory floor, only when it sets one. Missing from an older `up`.
+  memoryFloor: Schema.optionalKey(MemoryFloor),
   slots: Schema.Array(SlotState),
 });
 
@@ -98,6 +103,8 @@ export const InstallState = Schema.Struct({
   updatedAt: Schema.String,
   stopping: Schema.Boolean,
   stale: Schema.Boolean,
+  // The floor every kind without its own waits for. Missing from an older `up`.
+  memoryFloor: Schema.optionalKey(MemoryFloor),
   kinds: Schema.Array(KindState),
 });
 export type InstallState = typeof InstallState.Type;

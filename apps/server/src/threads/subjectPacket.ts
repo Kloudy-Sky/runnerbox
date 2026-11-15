@@ -5,6 +5,7 @@ import { machineLookup } from "../history/machineLookup.ts";
 import * as StateLogs from "../history/StateLogs.ts";
 import * as Inbox from "../inbox/Inbox.ts";
 import { runEvidence } from "../inbox/rules.ts";
+import * as RunnersExplained from "../runners/RunnersExplained.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -24,6 +25,13 @@ export const subjectPacket = Effect.fn("subjectPacket")(function* (subject: Thre
     if (!item) return yield* missing;
     const { evidence, id: _id, ...rest } = item;
     return { title: item.title, packet: JSON.stringify({ subject: "inbox item", ...rest, ruleVerdict: item.verdict, evidence: compact(evidence) }) };
+  }
+  if (subject._tag === "runners") {
+    const explained = yield* (yield* RunnersExplained.RunnersExplained).explain(days).pipe(Effect.mapError(unreadable));
+    const install = explained.installs.find((candidate) => candidate.install === subject.install);
+    if (!install) return yield* missing;
+    // The same facts the Runners page shows, job names already cut to plain text.
+    return { title: `Runners on ${install.install}`, packet: JSON.stringify({ subject: "an install's runners", at: explained.at, ...install }) };
   }
   const logs = yield* StateLogs.StateLogs;
   const runners = yield* RunnerState.RunnerState;
