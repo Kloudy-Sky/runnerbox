@@ -21,6 +21,13 @@ export function formatAge(iso: string | null | undefined, now = Date.now()) {
 export const formatMiB = (value: number | null | undefined) =>
   value === null || value === undefined ? "-" : value >= 1024 ? `${(value / 1024).toFixed(1)} GB` : `${Math.round(value)} MB`;
 
+// A part and its whole in the whole's unit, so "X of Y" never mixes MB and GB: "0.6 GB" of
+// "16.0 GB". A part that would round to 0.0 GB is "under 0.1 GB". Mirrors `memoryOf` on the server.
+export const formatMiBOf = (part: number, whole: number) => ({
+  part: whole < 1024 ? formatMiB(part) : part < 0.05 * 1024 ? "under 0.1 GB" : `${(part / 1024).toFixed(1)} GB`,
+  whole: formatMiB(whole),
+});
+
 export const formatPercent = (part: number, whole: number) => (whole === 0 ? "-" : `${((part / whole) * 100).toFixed(1)}%`);
 
 export const jobName = (row: { workflow: string | null; job: string }) => (row.workflow ? `${row.workflow} / ${row.job}` : row.job);

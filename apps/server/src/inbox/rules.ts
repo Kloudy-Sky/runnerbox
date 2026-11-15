@@ -45,10 +45,10 @@ export function machineCauses(job: JobRecord, input: Pick<InboxInput, "machine" 
   if (machine) {
     const { vmLowMiB, vmTotalMiB, hostLowMiB, hostTotalMiB, vmSwapPeakMiB } = machine;
     if (present(vmLowMiB) && present(vmTotalMiB) && vmLowMiB < vmTotalMiB * LOW_MEMORY_SHARE) {
-      causes.push({ kind: "memory", source: "vm_memory", text: `the VM had only ${memoryOf(vmLowMiB, vmTotalMiB).part} of its ${memoryOf(vmLowMiB, vmTotalMiB).whole} free` });
+      causes.push({ kind: "memory", source: "vm_memory", text: `the VM had ${memoryOf(vmLowMiB, vmTotalMiB).part} of its ${memoryOf(vmLowMiB, vmTotalMiB).whole} free` });
     }
     if (present(hostLowMiB) && present(hostTotalMiB) && hostLowMiB < hostTotalMiB * LOW_MEMORY_SHARE) {
-      causes.push({ kind: "memory", source: "host_memory", text: `the host had only ${memoryOf(hostLowMiB, hostTotalMiB).part} of its ${memoryOf(hostLowMiB, hostTotalMiB).whole} free` });
+      causes.push({ kind: "memory", source: "host_memory", text: `the host had ${memoryOf(hostLowMiB, hostTotalMiB).part} of its ${memoryOf(hostLowMiB, hostTotalMiB).whole} free` });
     }
     if (present(vmSwapPeakMiB) && vmSwapPeakMiB >= SWAP_PRESSURE_MIB) causes.push({ kind: "memory", source: "swap", text: `the VM was swapping, with ${memory(vmSwapPeakMiB)} of swap in use` });
   }

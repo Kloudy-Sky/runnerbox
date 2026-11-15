@@ -29,9 +29,10 @@ export const plural = (count: number, one: string, many = `${one}s`) => `${count
 export const memory = (valueMiB: number) => (valueMiB >= 1024 ? `${(valueMiB / 1024).toFixed(1)} GB` : `${Math.round(valueMiB)} MB`);
 
 // A part and its whole in the whole's unit, so one sentence never mixes MB and GB: "0.6 GB of 16.0 GB".
-// A part that would round to 0.0 GB is "less than 0.1 GB", so a machine that ran dry never reads as empty.
+// A part that would round to 0.0 GB is "under 0.1 GB", so a machine that ran dry never reads as
+// empty. Mirrors `formatMiBOf` in apps/web/src/lib/format.ts.
 export const memoryOf = (partMiB: number, wholeMiB: number) => ({
-  part: wholeMiB < 1024 ? memory(partMiB) : partMiB < 0.05 * 1024 ? "less than 0.1 GB" : `${(partMiB / 1024).toFixed(1)} GB`,
+  part: wholeMiB < 1024 ? memory(partMiB) : partMiB < 0.05 * 1024 ? "under 0.1 GB" : `${(partMiB / 1024).toFixed(1)} GB`,
   whole: memory(wholeMiB),
 });
 
