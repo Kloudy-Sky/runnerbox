@@ -94,6 +94,8 @@ export async function writeFixtures(dir: string, now: number) {
     exitCode?: number | null;
     failStep?: string;
     profile?: Profile;
+    // How long the runner waited for this job, when it matters.
+    idleMs?: number;
   } = {}) => {
     const attempt = run.attempt ?? 1;
     const ms = outcome.ms ?? jitter(plan.ms);
@@ -123,7 +125,7 @@ export async function writeFixtures(dir: string, now: number) {
     jobs[repo]!.push(record);
     if (name?.startsWith(`${INSTALL}-`)) {
       // The runner waited for its job a little before it started.
-      const registered = started - jitter(20_000, 0.8);
+      const registered = started - (outcome.idleMs ?? jitter(20_000, 0.8));
       events.push({
         time: iso(started + ms),
         event: "runner",
@@ -177,7 +179,7 @@ export async function writeFixtures(dir: string, now: number) {
   const killedAt = now - 40 * MINUTE;
   pressure.push([killedAt, killedAt + 5 * MINUTE]);
   const killed = { runId: runId++, at: killedAt, branch: "fix/cache", headSha: shaFor(runId) };
-  add("owner/name", CI[1]!, killed, { conclusion: "failure", failStep: "Test", slot: 2, exitCode: 137, ms: 4 * MINUTE, profile: "climb" });
+  add("owner/name", CI[1]!, killed, { conclusion: "failure", failStep: "Test", slot: 2, exitCode: 137, ms: 4 * MINUTE, profile: "climb", idleMs: 10 * MINUTE });
   add("owner/name", CI[1]!, { ...killed, at: killedAt + 12 * MINUTE, attempt: 2 }, { slot: 1 });
 
   // No runner: two jobs waited and were cancelled while slots waited for memory.

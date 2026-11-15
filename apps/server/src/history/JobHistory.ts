@@ -108,7 +108,9 @@ const make = Effect.gen(function* () {
     if (!job) return yield* new JobNotFound({ jobId });
     // Readings from a minute before the job, so its first sample isn't cut off by the filter.
     const from = Date.parse(job.startedAt ?? job.createdAt) - 60_000;
-    const events = yield* logs.events(from);
+    // A runner's event starts when it registered, which can be hours before it took this job, so
+    // events are kept by when they ended. The log is read whole either way.
+    const events = (yield* logs.events(0)).filter((event) => Date.parse(event.startedAt) + event.durationMs >= from);
     const samples = yield* logs.samples(from);
     const verdict = verdictsByJobId(jobs, { machine: machineLookup(samples), events }).get(jobId) ?? null;
     return jobResources({ now, job, verdict, events, installs: yield* runnerState.current, samples, containerSamples: yield* logs.containerSamples(from) });

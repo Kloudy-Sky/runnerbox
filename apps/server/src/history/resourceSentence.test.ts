@@ -32,8 +32,9 @@ test("memory reaching the limit names the step it reached it in, and only when t
   assert.deepEqual(say({ points: high, steps: steps(false) }), { case: "memory_limit", text: "Memory reached this kind's 4 GiB limit while this job ran.", step: null });
 });
 
-test("a container stopped for memory comes first, with the step it was stopped in", () => {
+test("a container stopped for memory comes first, with the step it was stopped in, even with no readings of it", () => {
   assert.equal(say({ stoppedForMemory: { offsetMs: 50 * SECOND, step: "Test" } })?.text, "The container was stopped for using too much memory during Test, at its 4 GiB limit.");
+  assert.equal(say({ coverage: "no_samples", points: [], stoppedForMemory: { offsetMs: 38 * SECOND, step: "Test" } })?.case, "stopped_for_memory");
 });
 
 test("CPU at the limit for most of a long step names that step", () => {

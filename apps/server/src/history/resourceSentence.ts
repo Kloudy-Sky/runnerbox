@@ -47,18 +47,17 @@ const within = (points: readonly ResourcePoint[], step: PlacedStep) =>
 // between two is missed, and "the highest reading" says so.
 export function resourceSentence(input: SentenceInput): ResourceSentence | null {
   const say = (kind: ResourceSentence["case"], text: string, step: string | null = null): ResourceSentence => ({ case: kind, text, step });
-  const unsampled = NOT_SAMPLED[input.coverage];
-  if (input.coverage === "no_runner") return null;
-  if (unsampled) return say("not_sampled", unsampled);
   const { points, limits, steps } = input;
-  const peak = Math.max(...points.map((point) => point.memMiB));
-  const during = (step: string | null) => (step ? ` during ${step}` : " while this job ran");
-
+  if (input.coverage === "no_runner") return null;
+  // The runner's event says it was stopped, with or without readings of it.
   if (input.stoppedForMemory) {
     const { step } = input.stoppedForMemory;
     const limit = limits ? `, at its ${gib(limits.memoryMiB)} limit` : "";
-    return say("stopped_for_memory", `The container was stopped for using too much memory${during(step)}${limit}.`, step);
+    return say("stopped_for_memory", `The container was stopped for using too much memory${step ? ` during ${step}` : " while this job ran"}${limit}.`, step);
   }
+  const unsampled = NOT_SAMPLED[input.coverage];
+  if (unsampled) return say("not_sampled", unsampled);
+  const peak = Math.max(...points.map((point) => point.memMiB));
   if (limits) {
     const reached = points.find((point) => point.memMiB >= limits.memoryMiB * MEMORY_AT_LIMIT);
     if (reached) {
