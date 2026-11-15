@@ -7,17 +7,19 @@ export const trendKey = (trend: JobTrend) => `${trend.workflow}\0${trend.job}\0$
 const th = "py-1.5 pr-4 font-normal text-muted-foreground";
 
 // Jobs ranked by the time they spent on runners, as bars, with their typical time and what it was
-// before when a job has become slower. Picking one opens its panel.
+// before when a job has become slower. Picking one opens its panel. A job on GitHub's machines says
+// so, since the same job can have a row on each. In a narrow column the bars go and the times stay.
 export function TimeByJob({ trends, picked, onPick }: { readonly trends: readonly JobTrend[]; readonly picked: string | null; readonly onPick: (key: string) => void }) {
   if (trends.length === 0) return <p className="text-muted-foreground">No jobs ran in this repository in this time.</p>;
   const most = Math.max(...trends.map((trend) => trend.runnerMs), 1);
   return (
+    <div className="@container">
     <table className="w-full max-w-4xl border-collapse">
       <thead className="text-left">
         <tr>
           <th className={th}>Job</th>
           <th className={th}>Runs on</th>
-          <th className={`${th} w-1/3`}>Runner time</th>
+          <th className={`${th} @xl:w-1/3`}>Runner time</th>
           <th className={`${th} text-right`}>Typical</th>
           <th className={`${th} text-right`}>Ran</th>
         </tr>
@@ -26,10 +28,13 @@ export function TimeByJob({ trends, picked, onPick }: { readonly trends: readonl
         {trends.map((trend) => (
           <tr key={trendKey(trend)} onClick={() => onPick(trendKey(trend))} className={cn("cursor-default", picked === trendKey(trend) ? "bg-accent" : "hover:bg-surface")}>
             <td className="py-1 pr-4 whitespace-nowrap">{jobName(trend)}</td>
-            <td className="py-1 pr-4 whitespace-nowrap text-muted-foreground">{trend.runnerType}</td>
+            <td className="py-1 pr-4 text-muted-foreground @xl:whitespace-nowrap">
+              {trend.runnerType}
+              {trend.hosted ? ", GitHub's" : ""}
+            </td>
             <td className="py-1 pr-4">
               <div className="flex items-center gap-2">
-                <div className="h-2 rounded-xs bg-info" style={{ width: `${(trend.runnerMs / most) * 100}%`, minWidth: 2 }} />
+                <div className="hidden h-2 rounded-xs bg-info @xl:block" style={{ width: `${(trend.runnerMs / most) * 100}%`, minWidth: 2 }} />
                 <span className="shrink-0 tabular-nums text-muted-foreground">{formatDuration(trend.runnerMs)}</span>
               </div>
             </td>
@@ -42,5 +47,6 @@ export function TimeByJob({ trends, picked, onPick }: { readonly trends: readonl
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
