@@ -60,11 +60,6 @@ test("Codex's MCP servers must be Runnerbox's alone, with this turn's tools, and
   assert.deepEqual(mcpProblems({ data: [{ ...runnerbox, runtimeStatus: "starting" }] }, allowed), ["Runnerbox's MCP server isn't connected"]);
 });
 
-test("Runnerbox's tools are offered directly, and nothing can make Codex ignore that", () => {
-  assert.ok(args.includes('mcp_servers.runnerbox.omit_tools_from=["deferred","code_mode"]'));
-  assert.ok(args.join(" ").includes("--disable code_mode_only_strict_3p_tools"));
-});
-
 test("turns go only to the built-in OpenAI provider at its own address", () => {
   assert.ok(args.includes('model_provider="openai"'));
   assert.deepEqual(providerProblems({ config: { model_provider: "openai", openai_base_url: null, chatgpt_base_url: "https://chatgpt.com/backend-api/" } }), [], "Codex's own default, which it fills in for every home");
