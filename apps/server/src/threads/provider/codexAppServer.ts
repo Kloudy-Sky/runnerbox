@@ -1,5 +1,5 @@
 import { MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, PROPOSE_TOOL_NAME, READ_ONLY_TOOL_NAMES, REPRODUCE_TOOL_NAME, SERVER_NAME } from "./runnerboxTools.ts";
-import type { ThreadStarted } from "./codexProtocol.ts";
+import type { McpServers, ThreadStarted } from "./codexProtocol.ts";
 import type { TurnImage } from "./ProviderAdapter.ts";
 
 // How a thread's turn runs the environment's own `codex`: one `codex app-server` per turn, spoken
@@ -50,13 +50,26 @@ export const maxSteps = (turn: { readonly reproduce: boolean }) => (turn.reprodu
 
 const toml = (value: string) => JSON.stringify(value);
 
-// `codex app-server` with every setting given here, after `--ignore-user-config`'s equivalent: the
-// home is Runnerbox's own and holds no config.toml.
-export function appServerArgs(turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean }) {
+// The owner's own MCP servers, from their config.toml, turned off: one table first, which quotes
+// dotted names and replaces any earlier flag, then a flag for each plain name, as T3 Code's Codex
+// text generation does (MIT, see THIRD_PARTY_NOTICES.md). Empty for Runnerbox's own home.
+export const ownerServersOff = (names: ReadonlyArray<string>) =>
+  names.length === 0
+    ? []
+    : [`mcp_servers={${names.map((name) => `${toml(name)}={enabled=false}`).join(",")}}`, ...names.filter((name) => !/[.=]/.test(name)).map((name) => `mcp_servers.${name}.enabled=false`)];
+
+// `codex app-server` with every setting given here. In Runnerbox's own home there's no config.toml;
+// in the owner's, these come last and win over theirs (`-c` is Codex's highest layer). A profile
+// can't apply: Codex 0.167 reads one only from `--profile`, which this never passes.
+export function appServerArgs(turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> }) {
   return [
     "app-server",
     ...DISABLED_FEATURES.flatMap((feature) => ["--disable", feature]),
     ...[
+      ...ownerServersOff(turn.ownerServers),
+      // No notify command from the owner's config, and no developer instructions but Runnerbox's.
+      "notify=[]",
+      `developer_instructions=${toml("")}`,
       `web_search=${toml("disabled")}`,
       // No AGENTS.md, skills text or memory reaches the model.
       "project_doc_max_bytes=0",
@@ -119,8 +132,12 @@ const REQUIRED_FEATURES_OFF = [
   "shell_snapshot",
   "memories",
 ];
-const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean }) => [
+const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> }) => [
   ...REQUIRED_FEATURES_OFF.map((feature) => `--disable ${feature}`),
+  ...(turn.ownerServers.length === 0 ? [] : [`mcp_servers={${turn.ownerServers.map((name) => `${JSON.stringify(name)}={enabled=false}`).join(",")}}`]),
+  ...turn.ownerServers.filter((name) => !name.includes(".") && !name.includes("=")).map((name) => `mcp_servers.${name}.enabled=false`),
+  "notify=[]",
+  'developer_instructions=""',
   'web_search="disabled"',
   "project_doc_max_bytes=0",
   "skills.include_instructions=false",
@@ -131,7 +148,7 @@ const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boo
   "mcp_servers.runnerbox.required=true",
 ];
 export function launchProblems(
-  turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean },
+  turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> },
   args: ReadonlyArray<string>,
   params: Readonly<Record<string, unknown>>,
 ) {
@@ -151,6 +168,17 @@ export function appliedProblems(applied: Omit<ThreadStarted, "thread">) {
     ...(sandbox.type === "readOnly" && sandbox.networkAccess !== true ? [] : ["the sandbox isn't read-only without network"]),
     ...((applied.instructionSources ?? []).length === 0 ? [] : ["it loaded instruction files"]),
   ];
+}
+
+// What `mcpServerStatus/list` says, checked before the prompt is sent: Runnerbox's server offers only
+// this turn's tools, and every other one, such as the owner's own, is off and offers none.
+export function mcpProblems(servers: McpServers, allowed: ReadonlyArray<string>) {
+  if (servers.nextCursor) return ["it has more MCP servers than Runnerbox could check"];
+  return servers.data.flatMap((server) => {
+    const tools = Object.keys(server.tools);
+    if (server.name === SERVER_NAME) return tools.every((tool) => allowed.includes(tool)) ? [] : ["Runnerbox's MCP server offers tools this turn isn't given"];
+    return server.runtimeStatus === "disabled" && tools.length === 0 ? [] : [`the MCP server \`${server.name}\` is on`];
+  });
 }
 
 // The Codex releases this adapter was written and checked against. A newer one can add an item kind

@@ -10,6 +10,8 @@ import { StatusDot } from "./StatusDot.tsx";
 
 // No model: the turn runs on the harness's own default.
 const DEFAULT_MODEL = "";
+// Where an owner's own login usually lives, after T3 Code's Codex home setting.
+const DEFAULT_HOME = "~/.codex";
 
 export type AccountActions = {
   readonly save: (input: SaveProviderAccount) => Promise<unknown>;
@@ -35,6 +37,8 @@ export function ProviderAccountEditor({
   const [label, setLabel] = useState(account?.label ?? `${provider.label}, ${provider.acceptsKeys === false ? "sign-in" : "API"}`);
   const [model, setModel] = useState(account?.model ?? DEFAULT_MODEL);
   const [apiKey, setApiKey] = useState("");
+  // null: Runnerbox's own home for the CLI. A path: the owner's own login, which the CLI is pointed at.
+  const [home, setHome] = useState<string | null>(account?.home ?? null);
   const [busy, setBusy] = useState(false);
   // Saving or removing closes the editor; making the account the default keeps it open.
   const act = (work: () => Promise<unknown>, close = true) => {
@@ -57,6 +61,7 @@ export function ProviderAccountEditor({
         label: label.trim(),
         model: model.trim() === DEFAULT_MODEL ? null : model.trim(),
         ...(apiKey.trim() === "" ? {} : { apiKey: apiKey.trim() }),
+        ...(provider.ownerLogin ? { home: home === null ? null : home.trim() || DEFAULT_HOME } : {}),
       }),
     );
   return (
@@ -102,6 +107,34 @@ export function ProviderAccountEditor({
           }
         />
       )}
+      {provider.ownerLogin ? (
+        <SettingsRow
+          title="Sign-in"
+          description={
+            home === null
+              ? `Runnerbox's own ${provider.label} home, signed in with \`runnerbox codex-login\` on the runner machine.`
+              : `Your own ${provider.label} login, used by pointing ${provider.label} at your home. Your MCP servers, instructions and hooks there are turned off for these turns, and Runnerbox never reads or copies your credentials.`
+          }
+          control={
+            <Select value={home === null ? "own" : "mine"} onValueChange={(value) => setHome(value === "mine" ? (account?.home ?? DEFAULT_HOME) : null)}>
+              <SelectTrigger className="w-64" size="sm">
+                <SelectValue>{() => (home === null ? "Runnerbox's own home" : `My ${provider.label} login`)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="own">Runnerbox's own home</SelectItem>
+                <SelectItem value="mine">My {provider.label} login</SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+      ) : null}
+      {provider.ownerLogin && home !== null ? (
+        <SettingsRow
+          title={`${provider.label} home`}
+          description="Where your login lives on the runner machine."
+          control={<Input value={home} onValueChange={setHome} placeholder={DEFAULT_HOME} className="w-64" size="sm" font="mono" />}
+        />
+      ) : null}
       <SettingsRow
         title="Model"
         description="What this account's turns run on, unless the composer picks another."

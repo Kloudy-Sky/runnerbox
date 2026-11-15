@@ -9,7 +9,11 @@ import { ProviderStatus } from "./threads.ts";
 
 export const DriverId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,31}$/));
 
-export const ProviderAccount = Schema.Struct({ ...Account.fields, driver: DriverId });
+// Where the owner's own CLI login lives, as typed: `~/.codex` or an absolute path. Without it, an
+// account uses Runnerbox's own home for that CLI. The server only points the CLI at it.
+export const LoginHome = Schema.String.check(Schema.isPattern(/^(~|~\/[^\n\0]{1,500}|\/[^\n\0]{1,500})$/));
+
+export const ProviderAccount = Schema.Struct({ ...Account.fields, driver: DriverId, home: Schema.optionalKey(Schema.NullOr(LoginHome)) });
 export type ProviderAccount = typeof ProviderAccount.Type;
 
 export const Provider = Schema.Struct({
@@ -22,8 +26,10 @@ export const Provider = Schema.Struct({
   // Whether an account here may have an API key, or only use the machine's sign-in. Servers from
   // before it allow keys.
   acceptsKeys: Schema.optionalKey(Schema.Boolean),
+  // Whether an account here may use the owner's own CLI login by its home. Servers from before it don't offer that.
+  ownerLogin: Schema.optionalKey(Schema.Boolean),
 });
 export type Provider = typeof Provider.Type;
 
-export const SaveProviderAccount = Schema.Struct({ ...SaveAccount.fields, driver: DriverId });
+export const SaveProviderAccount = Schema.Struct({ ...SaveAccount.fields, driver: DriverId, home: Schema.optionalKey(Schema.NullOr(LoginHome)) });
 export type SaveProviderAccount = typeof SaveProviderAccount.Type;

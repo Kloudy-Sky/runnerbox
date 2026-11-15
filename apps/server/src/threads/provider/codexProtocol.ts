@@ -39,3 +39,10 @@ export const TurnCompleted = Schema.Struct({
   turn: Schema.Struct({ status: Schema.String, error: Schema.optionalKey(Schema.NullOr(Schema.Struct({ message: Schema.String }))) }),
 });
 export const ErrorNotification = Schema.Struct({ error: Schema.Struct({ message: Schema.String }), willRetry: Schema.Boolean });
+
+// What `mcpServerStatus/list` says of the thread's MCP servers, checked before the prompt is sent.
+export const McpServers = Schema.Struct({
+  data: Schema.Array(Schema.Struct({ name: Schema.String, runtimeStatus: Schema.optionalKey(Schema.NullOr(Schema.String)), tools: Schema.Record(Schema.String, Schema.Unknown) })),
+  nextCursor: Schema.optionalKey(Schema.NullOr(Schema.String)),
+});
+export type McpServers = typeof McpServers.Type;

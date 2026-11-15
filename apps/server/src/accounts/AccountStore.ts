@@ -11,6 +11,7 @@ import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import { Drivers } from "../threads/provider/Drivers.ts";
 import { type Driver, HARNESSES } from "../threads/provider/harnesses.ts";
+import { expandLoginHome } from "../threads/provider/loginHome.ts";
 import type { TurnAccount } from "../threads/provider/ProviderAdapter.ts";
 
 // The accounts agent turns can run as, owner-only under `.server`. Claude's are in `accounts.json`,
@@ -23,7 +24,8 @@ const OtherDriver = Schema.Literals(["codex"]);
 const stored = <D extends Schema.Top>(driver: D) =>
   Schema.Struct({ id: Schema.String, driver, label: Schema.String, model: Schema.NullOr(Schema.String), apiKey: Schema.NullOr(Schema.String) });
 const ClaudeAccount = stored(ProviderDriver);
-const OtherAccount = stored(OtherDriver);
+// `home`: the owner's own CLI home, as typed, when the account uses their login rather than Runnerbox's.
+const OtherAccount = Schema.Struct({ ...stored(OtherDriver).fields, home: Schema.optionalKey(Schema.NullOr(Schema.String)) });
 type StoredAccount = typeof ClaudeAccount.Type | typeof OtherAccount.Type;
 
 const AccountsFile = Schema.Struct({
@@ -47,8 +49,9 @@ const builtIn = (file: AccountsFile): typeof ClaudeAccount.Type => ({ id: BUILT_
 // The account a turn resolves to: the given ID, or the default, which falls back to the built-in
 // when the default was removed or its driver doesn't run here.
 export type ResolvedAccount = TurnAccount & { readonly id: string; readonly driver: Driver };
+const homeOf = (account: StoredAccount) => ("home" in account ? (account.home ?? null) : null);
 // Adds an account, or changes one when `id` is given, on any driver the store keeps.
-export type SaveInput = { readonly id?: string; readonly driver: Driver; readonly label: string; readonly model: string | null; readonly apiKey?: string };
+export type SaveInput = { readonly id?: string; readonly driver: Driver; readonly label: string; readonly model: string | null; readonly apiKey?: string; readonly home?: string | null };
 
 export class AccountStore extends Context.Service<
   AccountStore,
@@ -101,6 +104,11 @@ const make = Effect.gen(function* () {
   // A key on a driver that takes none, such as one saved before Codex refused keys, is never used,
   // listed or kept: the account reads as signed in on the machine, and saving it drops the key.
   const keyOf = (account: StoredAccount) => (HARNESSES[account.driver].acceptsKeys ? account.apiKey : null);
+  // The home the CLI runs from for this account: the owner's, made absolute, or null for Runnerbox's.
+  const loginHome = (account: StoredAccount) => {
+    const home = homeOf(account);
+    return home === null || !HARNESSES[account.driver].ownerLogin ? null : expandLoginHome(home);
+  };
   const claudeAccounts = (file: AccountsFile) => [builtIn(file), ...file.accounts];
   const all = (files: Files): ReadonlyArray<StoredAccount> => [...claudeAccounts(files.claude), ...files.others.accounts];
   // The default the owner set, unless it was removed or its driver doesn't run here: then the
@@ -119,7 +127,8 @@ const make = Effect.gen(function* () {
       keyLast4: keyOf(account)?.slice(-4) ?? null,
       isDefault: account.id === defaultOf(files).id,
       builtIn: account.id === BUILT_IN_ACCOUNT_ID,
-      status: yield* drivers.get(account.driver).status({ hasKey: keyOf(account) !== null }),
+      status: yield* drivers.get(account.driver).status({ hasKey: keyOf(account) !== null, home: loginHome(account) }),
+      ...(homeOf(account) === null ? {} : { home: homeOf(account) }),
     };
   });
 
@@ -150,7 +159,14 @@ const make = Effect.gen(function* () {
       }
       const existing = input.id === undefined ? undefined : files.others.accounts.find((account) => account.id === input.id && account.driver === input.driver);
       if (input.id !== undefined && !existing) return Effect.fail(new AccountError({ reason: "not_found" }));
-      const account = { id: existing?.id ?? newId(), driver: input.driver, label: input.label, model: input.model, apiKey: HARNESSES[input.driver].acceptsKeys ? (input.apiKey ?? existing?.apiKey ?? null) : null };
+      const account = {
+        id: existing?.id ?? newId(),
+        driver: input.driver,
+        label: input.label,
+        model: input.model,
+        apiKey: HARNESSES[input.driver].acceptsKeys ? (input.apiKey ?? existing?.apiKey ?? null) : null,
+        home: input.home === undefined ? (existing?.home ?? null) : input.home,
+      };
       const accounts = existing ? files.others.accounts.map((each) => (each.id === account.id ? account : each)) : [...files.others.accounts, account];
       return Effect.succeed([{ ...files, others: { ...files.others, accounts } }, account] as const);
     });
@@ -186,7 +202,7 @@ const make = Effect.gen(function* () {
     const accounts = all(files);
     const found = id === undefined ? defaultOf(files) : accounts.find((account) => account.id === id);
     if (!found) return yield* new AccountError({ reason: "not_found" });
-    return { id: found.id, driver: found.driver, label: found.label, model: found.model, apiKey: keyOf(found) } satisfies ResolvedAccount;
+    return { id: found.id, driver: found.driver, label: found.label, model: found.model, apiKey: keyOf(found), home: loginHome(found) } satisfies ResolvedAccount;
   });
 
   return AccountStore.of({ list, listAll, save, saveAny, remove, setDefault, resolve });

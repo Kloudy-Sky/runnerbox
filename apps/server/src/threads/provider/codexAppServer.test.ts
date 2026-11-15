@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { allowedTools, appliedProblems, appServerArgs, launchProblems, supportedVersion, threadStartParams, TOKEN_ENV } from "./codexAppServer.ts";
+import { allowedTools, appliedProblems, appServerArgs, launchProblems, mcpProblems, supportedVersion, threadStartParams, TOKEN_ENV } from "./codexAppServer.ts";
 
-const turn = { mcpUrl: "http://127.0.0.1:4517/mcp", propose: true, reproduce: false };
+const turn = { mcpUrl: "http://127.0.0.1:4517/mcp", propose: true, reproduce: false, ownerServers: ["docs", "team.tools"] };
 const args = appServerArgs(turn);
 const params = threadStartParams({ cwd: "/state/.server/agent/cwd", systemPrompt: "Example.", model: undefined });
 
@@ -45,4 +45,14 @@ test("only the Codex releases the adapter was checked against run", () => {
   assert.ok(!supportedVersion("codex-cli 0.167.1"));
   assert.ok(!supportedVersion("codex-cli 0.168.0"));
   assert.ok(!supportedVersion("not a version"));
+});
+
+test("Codex's MCP servers must be Runnerbox's alone, with this turn's tools, and every other one off", () => {
+  const allowed = allowedTools({ propose: false, reproduce: false });
+  const runnerbox = { name: "runnerbox", runtimeStatus: "ready", tools: { ci_overview: {} } };
+  assert.deepEqual(mcpProblems({ data: [runnerbox, { name: "docs", runtimeStatus: "disabled", tools: {} }] }, allowed), []);
+  assert.equal(mcpProblems({ data: [runnerbox, { name: "docs", runtimeStatus: "ready", tools: {} }] }, allowed).length, 1);
+  assert.equal(mcpProblems({ data: [runnerbox, { name: "docs", runtimeStatus: "disabled", tools: { search: {} } }] }, allowed).length, 1);
+  assert.equal(mcpProblems({ data: [{ ...runnerbox, tools: { propose_change: {} } }] }, allowed).length, 1, "a monitor's turn isn't given propose_change");
+  assert.equal(mcpProblems({ data: [runnerbox], nextCursor: "more" }, allowed).length, 1, "a list it can't see the end of isn't trusted");
 });

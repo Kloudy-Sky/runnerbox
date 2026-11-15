@@ -13,6 +13,7 @@ export const HARNESSES = {
   claude: {
     label: "Claude",
     acceptsKeys: true,
+    ownerLogin: false,
     models: [
       { id: "haiku", label: "Haiku" },
       { id: "sonnet", label: "Sonnet" },
@@ -24,6 +25,9 @@ export const HARNESSES = {
     // A key reaching `codex app-server` hasn't been checked in a real turn, so Codex accounts use
     // Runnerbox's own sign-in only, for now.
     acceptsKeys: false,
+    // Or the owner's own `codex login`, by pointing Codex at their home with their MCP servers,
+    // instructions and hooks turned off.
+    ownerLogin: true,
     models: [
       { id: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
       { id: "gpt-6.1-terra", label: "GPT-6.1 Terra" },
@@ -32,7 +36,7 @@ export const HARNESSES = {
       { id: "gpt-6-luna", label: "GPT-6 Luna" },
     ],
   },
-} as const satisfies Record<Driver, { readonly label: string; readonly acceptsKeys: boolean; readonly models: ReadonlyArray<{ readonly id: string; readonly label: string }> }>;
+} as const satisfies Record<Driver, { readonly label: string; readonly acceptsKeys: boolean; readonly ownerLogin: boolean; readonly models: ReadonlyArray<{ readonly id: string; readonly label: string }> }>;
 
 export const offersModel = (driver: Driver, model: string) => HARNESSES[driver].models.some((offered) => offered.id === model);
 
