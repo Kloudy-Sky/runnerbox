@@ -1,4 +1,4 @@
-import type { GroupBy, JobResources, JobRun, JobSummary, Overview, StepComparison, WeeklySummary } from "@runnerbox/contracts";
+import type { GroupBy, JobResources, JobRun, JobSummary, JobTrend, KindUsageReport, Overview, StepComparison, WeeklySummary } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -11,6 +11,8 @@ import { verdictsByJobId } from "../inbox/rules.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
 import { JobNotFound } from "./JobNotFound.ts";
 import { jobResources } from "./jobResources.ts";
+import { jobTrends } from "./jobTrends.ts";
+import { kindUsage } from "./kindUsage.ts";
 import { toJobRun } from "./jobRun.ts";
 import { machineLookup } from "./machineLookup.ts";
 import * as StateLogs from "./StateLogs.ts";
@@ -34,6 +36,8 @@ export class JobHistory extends Context.Service<
     readonly runs: (input: Window & { readonly limit: number }) => Effect.Effect<ReadonlyArray<JobRun>, StateLogs.LogReadError>;
     readonly weeklySummary: (input: Window & { readonly by: GroupBy }) => Effect.Effect<WeeklySummary, StateLogs.LogReadError>;
     readonly jobResources: (input: { readonly repo: string; readonly jobId: number }) => Effect.Effect<JobResources, StateLogs.LogReadError | JobNotFound>;
+    readonly kindUsage: (days: number) => Effect.Effect<KindUsageReport, StateLogs.LogReadError>;
+    readonly jobTrends: (input: Window) => Effect.Effect<ReadonlyArray<JobTrend>, StateLogs.LogReadError>;
   }
 >()("runnerbox/server/JobHistory") {}
 
@@ -116,7 +120,20 @@ const make = Effect.gen(function* () {
     return jobResources({ now, job, verdict, events, installs: yield* runnerState.current, samples, containerSamples: yield* logs.containerSamples(from) });
   });
 
-  return JobHistory.of({ repos: logs.repos, overview, jobSummaries, stepComparison, runs, weeklySummary, jobResources: resources });
+  const usage = Effect.fn("JobHistory.kindUsage")(function* (days: number) {
+    const now = yield* Clock.currentTimeMillis;
+    const start = now - days * DAY_MS;
+    const samples = yield* logs.samples(start);
+    return kindUsage({ now, jobs: yield* logs.allJobs(start), machine: machineLookup(samples), events: yield* logs.events(start), installs: yield* runnerState.current }, days);
+  });
+
+  // Twice the window, so each job's time can be set against the same length of time before it.
+  const trends = Effect.fn("JobHistory.jobTrends")(function* ({ repo, days }: Window) {
+    const now = yield* Clock.currentTimeMillis;
+    return jobTrends(yield* logs.jobs(repo, now - 2 * days * DAY_MS), now, days);
+  });
+
+  return JobHistory.of({ repos: logs.repos, overview, jobSummaries, stepComparison, runs, weeklySummary, jobResources: resources, kindUsage: usage, jobTrends: trends });
 });
 
 export const layer = Layer.effect(JobHistory, make);

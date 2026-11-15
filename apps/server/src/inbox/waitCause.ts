@@ -35,11 +35,15 @@ export type WaitCause = {
   cause: "memory" | "slots" | "unknown";
 };
 
-const kindKey = (install: string, name: string) => `${install}\0${name}`;
+export const kindKey = (install: string, name: string) => `${install}\0${name}`;
+
+// How long, inside `within`, all of a kind's `slots` ran jobs at once. The one definition of "all
+// slots busy", for the inbox's wait reason and the Speed and cost page alike.
+export const allSlotsBusyMs = (within: Span, running: readonly Span[], slots: number) => coveredMs(within, running, slots);
 
 // Each kind serving `label`, by install and name, with its slot count: live from `up`'s state, or
 // else the slots its runners were recorded on.
-function kindsServing(label: string, input: InboxInput) {
+export function kindsServing(label: string, input: InboxInput) {
   const slots = new Map<string, number>();
   for (const install of input.installs) {
     for (const kind of install.kinds) if (kind.label === label) slots.set(kindKey(install.install, kind.name), kind.slots.length);
@@ -95,7 +99,7 @@ export function waitCause(label: string, waiting: readonly JobRecord[], input: I
   const sum = (each: (window: Span) => number) => windows.reduce((total, window) => total + each(window), 0);
   const waitedMs = sum((window) => window.end - window.start);
   const memoryMs = sum((window) => coveredMs(window, waitSpans));
-  const busyMs = slots ? sum((window) => coveredMs(window, running, slots)) : 0;
+  const busyMs = slots ? sum((window) => allSlotsBusyMs(window, running, slots)) : 0;
   const share = (ms: number) => (waitedMs > 0 ? ms / waitedMs : 0);
   return {
     label,
