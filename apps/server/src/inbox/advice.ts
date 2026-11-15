@@ -2,7 +2,7 @@ import type { MachineCause } from "./rules.ts";
 
 // What the owner can do about each kind of machine trouble. One sentence each, plain words.
 export const ADVICE = {
-  memory: "Give the VM more memory, or run fewer jobs at once by lowering this kind's slots or raising its memory floor.",
+  memory: "Give the VM more memory, or run fewer jobs at once by running fewer of this kind's runners or raising its memory floor.",
   connection: "Check that the VM is running and that the host can reach it over SSH.",
   container: "Look in Runnerbox's log on the machine for why the container stopped, and run the kind's image by hand in the VM to see the error.",
 } as const;

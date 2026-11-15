@@ -192,14 +192,17 @@ test("a slot whose last three runners failed is reported, and a success ends the
   ];
   const items = deriveInbox(input({ events })).filter((item) => item.kind === "failing_slot");
   assert.deepEqual(items.map((item) => item.title), ["The linux runners keep failing before they take a job"]);
-  assert.equal(items[0]!.happened, "On slot 1, the last 3 runners stopped with exit 125.");
+  assert.equal(items[0]!.happened, "The linux kind's runner 1 has failed to start 3 times in a row (exit 125).");
+  // Killed for memory after starting: it didn't fail to start.
+  const killed = deriveInbox(input({ events: [1, 2, 3].map((minute) => ({ ...runnerEvent(1, minute, 137) })) })).find((item) => item.kind === "failing_slot");
+  assert.equal(killed?.happened, "The linux kind's runner 1 has stopped before taking a job 3 times in a row (exit 137).");
   assert.match(items[0]!.why, /Docker couldn't start the container/);
   // A second failing slot of the same kind is the same problem: one item, both slots in the breakdown.
   const both = deriveInbox(input({ events: [...events, ...[4, 5, 6].map((minute) => runnerEvent(2, minute, 125))] })).filter((item) => item.kind === "failing_slot");
   assert.equal(both.length, 1);
   assert.deepEqual(both[0]!.evidence.breakdown.map((part) => [part.label, part.count]), [
-    ["slot 1", 3],
-    ["slot 2", 3],
+    ["runner 1", 3],
+    ["runner 2", 3],
   ]);
 });
 
