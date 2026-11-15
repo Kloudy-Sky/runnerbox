@@ -54,7 +54,7 @@ export function slotItems(input: InboxInput): InboxItem[] {
       repo: null,
       install: last.install,
       title: `The ${kind} runners keep failing before they take a job`,
-      happened: `${which} last ${plural(runnersFailed, "runner")} stopped with ${codes.length === 1 ? "" : "codes "}${listed(codes.map((code) => (code === null ? "a lost connection" : `exit ${code}`)))}.${backingOff ? " up is waiting before it tries again." : ""}`,
+      happened: `${which} last ${plural(runnersFailed, "runner")} stopped with ${codes.length === 1 ? "" : "codes "}${listed(codes.map((code) => (code === null ? "a lost connection" : `exit ${code}`)))}.${backingOff ? " Runnerbox is waiting before it tries again." : ""}`,
       why: whyFor(codes[0] ?? null),
       action: actionFor(codes[0] ?? null),
       at: new Date(Date.parse(last.startedAt) + last.durationMs).toISOString(),

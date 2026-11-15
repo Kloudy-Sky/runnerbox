@@ -4,7 +4,7 @@ import type { MachineCause } from "./rules.ts";
 export const ADVICE = {
   memory: "Give the VM more memory, or run fewer jobs at once by lowering this kind's slots or raising its memory floor.",
   connection: "Check that the VM is running and that the host can reach it over SSH.",
-  container: "Look in up's log for why the container stopped, and run the kind's image by hand in the VM to see the error.",
+  container: "Look in Runnerbox's log on the machine for why the container stopped, and run the kind's image by hand in the VM to see the error.",
 } as const;
 
 // The advice for the most telling cause: memory first, since it's the most common and the others
