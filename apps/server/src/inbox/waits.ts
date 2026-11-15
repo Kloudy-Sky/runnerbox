@@ -16,6 +16,9 @@ function servedTypes(input: InboxInput) {
 }
 
 const minutes = STARVED_AFTER_MS / 60_000;
+// Memory waits covering this share of the wait are said to have lasted "the whole time", since a
+// few seconds' gap at either end isn't worth a figure.
+const WHOLE_TIME_SHARE = 0.95;
 
 const runnersOf = ({ kinds }: WaitCause) => `the ${listed(kinds)} runners`;
 const slotCount = (slots: number) => (slots === 1 ? "one slot" : `${slots} slots`);
@@ -25,7 +28,7 @@ const slotCount = (slots: number) => (slots === 1 ? "one slot" : `${slots} slots
 function whyFor(cause: WaitCause, slots: number) {
   const runners = runnersOf(cause);
   const { peak, typicalMs } = cause;
-  const memoryFor = cause.memoryMs >= cause.waitedMs * 0.95 ? "the whole time these jobs waited" : `${plainDuration(cause.memoryMs)} of the ${plainDuration(cause.waitedMs)} these jobs waited in all`;
+  const memoryFor = cause.memoryMs >= cause.waitedMs * WHOLE_TIME_SHARE ? "the whole time these jobs waited" : `${plainDuration(cause.memoryMs)} of the ${plainDuration(cause.waitedMs)} these jobs waited in all`;
   if (cause.cause === "memory") return `The machine was short of free memory for ${runners} for ${memoryFor}, so it couldn't start more of them.`;
   if (cause.cause === "slots") {
     const clearing = typicalMs === null ? "" : ` A typical job there takes ${plainDuration(typicalMs)}, so ${slotCount(slots)} need about ${plainDuration((peak * typicalMs) / slots)} to clear ${peak}.`;
