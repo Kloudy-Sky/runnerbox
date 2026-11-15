@@ -33,7 +33,7 @@ export function MachineRoom({ fits, samples, days, now }: { readonly fits: reado
                 edges={[day(start), "now"]}
               />
             ) : null}
-            <p className="text-foreground/90">{fit.sentence}</p>
+            {fit.sentence ? <p className="text-foreground/90">{fit.sentence}</p> : null}
           </section>
         );
       })}

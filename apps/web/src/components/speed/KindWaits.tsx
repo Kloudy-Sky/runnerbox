@@ -9,6 +9,8 @@ const th = "py-1.5 pr-4 font-normal text-muted-foreground";
 export function KindWaits({ kinds }: { readonly kinds: readonly KindUsage[] }) {
   if (kinds.length === 0) return <p className="text-muted-foreground">No runners of yours ran jobs in this time.</p>;
   const sentences = kinds.flatMap((kind) => (kind.bottleneck ? [kind.bottleneck.text] : []));
+  // Two machines can each have a kind of the same name, so the rows name the machine when there's more than one.
+  const machines = new Set(kinds.map((kind) => kind.install)).size;
   return (
     <div className="flex flex-col gap-2">
       <table className="w-full max-w-3xl border-collapse">
@@ -24,7 +26,7 @@ export function KindWaits({ kinds }: { readonly kinds: readonly KindUsage[] }) {
         <tbody>
           {kinds.map((kind) => (
             <tr key={`${kind.install}\0${kind.kind}`}>
-              <td className="py-1 pr-4 whitespace-nowrap">{kind.kind}</td>
+              <td className="py-1 pr-4 whitespace-nowrap">{machines > 1 ? `${kind.install} / ${kind.kind}` : kind.kind}</td>
               <td className="py-1 pr-4 text-right tabular-nums">{kind.slots ?? "-"}</td>
               <td className="py-1 pr-4">
                 {kind.allBusyShare === null ? (

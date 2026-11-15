@@ -62,6 +62,17 @@ export function SpeedPage() {
   const ready = settled(usage) && (trends !== undefined || trendsQuery.isError) && settled(samples) && settled(overview) && settled(inbox);
   const reloading = usage.isPlaceholderData || trendsQuery.isPlaceholderData || samples.isPlaceholderData || overview.isPlaceholderData;
   const pickedTrend = trends?.find((trend) => trendKey(trend) === picked);
+  // A server one release older answers without `machines`: each sampled machine still gets its
+  // graph, with no sentence, since the rules that write it live on the server.
+  const fits =
+    usage.data?.machines ??
+    [...Map.groupBy(samples.data ?? [], (sample) => sample.install)].map(([install, own]) => ({
+      install,
+      floorMiB: null,
+      lowestMiB: null,
+      totalMiB: Math.max(0, ...own.map((sample) => sample.vm?.totalMiB ?? 0)),
+      sentence: "",
+    }));
   const summary = inbox.data?.summary;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pb-6">
@@ -90,7 +101,7 @@ export function SpeedPage() {
             <KindWaits kinds={usage.data?.kinds ?? []} />
           </Question>
           <Question title="Is the machine big enough?">
-            <MachineRoom fits={usage.data?.machines ?? []} samples={samples.data ?? []} days={days} now={usage.data ? Date.parse(usage.data.until) : 0} />
+            <MachineRoom fits={fits} samples={samples.data ?? []} days={days} now={usage.data ? Date.parse(usage.data.until) : 0} />
           </Question>
           <details>
             <summary className="cursor-default text-sm font-medium">All numbers</summary>
