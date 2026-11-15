@@ -41,6 +41,7 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
   const draft = useComposerDraftStore((store) => store.drafts[thread.draftKey]?.value ?? "");
   const setDraft = useComposerDraftStore((store) => store.setDraft);
   const settleSent = useComposerDraftStore((store) => store.settleSent);
+  const restore = useComposerDraftStore((store) => store.restore);
   const [cursor, setCursor] = useState(() => draft.length);
   const [expandedCursor, setExpandedCursor] = useState(() => draft.length);
   const { view } = thread;
@@ -111,10 +112,19 @@ export function Composer({ thread, attachments, placeholder }: { thread: Thread;
     if (queueing ? !canQueue : !canSend) return;
     const sentIds = attachments.staged.map((file) => file.id);
     const options = { accountId, model: model ?? undefined, attachments: sentIds, references: sending.references };
-    const done = queueing
-      ? await thread.queue(sending.text, options, { markdown: draft, files: attachments.staged, sentText: sending.text })
-      : await thread.send(sending.text, options);
-    if (done) {
+    if (queueing) {
+      // Out of the draft before the server answers: it can hand the question back first, and that
+      // must land in an empty draft, not be cleared after.
+      const files = attachments.staged;
+      settleSent(thread.draftKey, sentIds);
+      attachments.settle();
+      setCursor(0);
+      setExpandedCursor(0);
+      const waiting = { markdown: draft, files, sentText: sending.text, afterSeq: view.items.at(-1)?.seq ?? 0, at: Date.now() };
+      if (!(await thread.queue(sending.text, options, waiting))) restore(thread.draftKey, draft, files);
+      return;
+    }
+    if (await thread.send(sending.text, options)) {
       settleSent(thread.draftKey, sentIds);
       attachments.settle();
       setCursor(0);

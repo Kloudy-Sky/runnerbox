@@ -2,8 +2,8 @@ import { type ReproduceNetwork, subjectKey, type ThreadReference, type ThreadSub
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Predicate from "effect/Predicate";
 import { useEffect, useState } from "react";
-import { draftKeyOf, useComposerDraftStore } from "../composerDraftStore.ts";
-import { type QueuedDraft, queueOutcome, queuedDrafts } from "../lib/queuedDrafts.ts";
+import { draftKeyOf, type QueuedDraft, useComposerDraftStore } from "../composerDraftStore.ts";
+import { queueOutcome } from "../lib/queuedDrafts.ts";
 import { EMPTY_VIEW, foldThread, isReproducing, type ThreadView } from "../lib/threadView.ts";
 import { runtime } from "../runtime.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
@@ -54,14 +54,15 @@ export function useThread(subject: ThreadSubject, days: number) {
     if (!enabled || threadId === null) return;
     return runtime.follow(environmentId, (client) => client["threads.subscribe"]({ id: threadId }), (event) => {
       setView((current) => ({ id: threadId, value: foldThread(current?.id === threadId ? current.value : EMPTY_VIEW, event) }));
-      // A question this window queued: forget it once sent, and give it back if it won't be.
-      const remembered = queuedDrafts.get(draftKey);
+      // A question this window queued: forget it once sent, and give it back if it won't be. Other
+      // windows on the thread show it waiting, but it comes back only where it was written.
+      const store = useComposerDraftStore.getState();
+      const remembered = store.waiting[draftKey];
       const outcome = queueOutcome(event, remembered);
-      if (outcome === "waiting") return;
-      queuedDrafts.forget(draftKey);
+      if (outcome === "waiting" || remembered === undefined) return;
+      store.forgetWaiting(draftKey);
       if (outcome === "returned") {
-        const back = remembered ?? (event._tag === "QueueCleared" ? { markdown: event.text, files: [], sentText: event.text } : undefined);
-        if (back) useComposerDraftStore.getState().restore(draftKey, back.markdown, back.files);
+        store.restore(draftKey, remembered.markdown, remembered.files);
         setError(event._tag === "QueueCleared" && event.reason === "failed" ? `The waiting question couldn't start: ${event.message ?? "the server refused it."} It's back in the composer.` : event._tag === "Snapshot" ? "The server restarted before your waiting question was sent. It's back in the composer." : null);
       }
     });
@@ -125,13 +126,14 @@ export function useThread(subject: ThreadSubject, days: number) {
     }
   };
   // While a turn runs, a question waits to go when it ends, one per thread. `draft` is what the
-  // composer held, so it comes back as it was if it isn't sent. Returns whether it's waiting or went.
+  // composer held, so it comes back as it was if it isn't sent. Returns whether it's waiting or went;
+  // when it's neither, the caller puts the draft back.
   const queue = async (text: string, options: SendOptions, draft: QueuedDraft) => {
     if (threadId === null) return false;
     setError(null);
     const target = threadId;
     try {
-      queuedDrafts.remember(draftKey, draft);
+      useComposerDraftStore.getState().rememberWaiting(draftKey, draft);
       const { turnId } = await runtime.run(environmentId, (client) =>
         client["threads.queueTurn"]({
           id: target,
@@ -143,10 +145,10 @@ export function useThread(subject: ThreadSubject, days: number) {
         }),
       );
       // Nothing was running by the time it arrived, so it went at once.
-      if (turnId !== null) queuedDrafts.forget(draftKey);
+      if (turnId !== null) useComposerDraftStore.getState().forgetWaiting(draftKey);
       return true;
     } catch (cause) {
-      queuedDrafts.forget(draftKey);
+      useComposerDraftStore.getState().forgetWaiting(draftKey);
       setError(errorText(cause));
       return false;
     }
