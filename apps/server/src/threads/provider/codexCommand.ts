@@ -7,12 +7,6 @@ import { passedEnv } from "./agentEnv.ts";
 export const codexHome = (serverDir: string) => join(serverDir, "agent", "codex-home");
 
 // Only the shared allow-list reaches `codex`: an `OPENAI_API_KEY`, `CODEX_API_KEY`, `CODEX_HOME` or
-// base URL in the server's environment never does. `apiKey` is the turn's account's own key, the only
-// credential Runnerbox hands it.
-export function codexEnv(from: Record<string, string | undefined>, home: string, apiKey: string | null = null) {
-  return {
-    ...passedEnv(from),
-    CODEX_HOME: home,
-    ...(apiKey === null ? {} : { CODEX_API_KEY: apiKey }),
-  };
-}
+// base URL in the server's environment never does, and Runnerbox hands it no key: it runs on the
+// sign-in in Runnerbox's own home.
+export const codexEnv = (from: Record<string, string | undefined>, home: string) => ({ ...passedEnv(from), CODEX_HOME: home });

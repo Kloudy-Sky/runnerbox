@@ -10,7 +10,7 @@ import * as Semaphore from "effect/Semaphore";
 import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import { Drivers } from "../threads/provider/Drivers.ts";
-import type { Driver } from "../threads/provider/harnesses.ts";
+import { type Driver, HARNESSES } from "../threads/provider/harnesses.ts";
 import type { TurnAccount } from "../threads/provider/ProviderAdapter.ts";
 
 // The accounts agent turns can run as, owner-only under `.server`. Claude's are in `accounts.json`,
@@ -98,6 +98,9 @@ const make = Effect.gen(function* () {
       }),
     );
 
+  // A key on a driver that takes none, such as one saved before Codex refused keys, is never used,
+  // listed or kept: the account reads as signed in on the machine, and saving it drops the key.
+  const keyOf = (account: StoredAccount) => (HARNESSES[account.driver].acceptsKeys ? account.apiKey : null);
   const claudeAccounts = (file: AccountsFile) => [builtIn(file), ...file.accounts];
   const all = (files: Files): ReadonlyArray<StoredAccount> => [...claudeAccounts(files.claude), ...files.others.accounts];
   // The default the owner set, unless it was removed or its driver doesn't run here: then the
@@ -112,11 +115,11 @@ const make = Effect.gen(function* () {
       driver: account.driver,
       label: account.label,
       model: account.model,
-      billing: account.apiKey === null ? ("subscription" as const) : ("api_key" as const),
-      keyLast4: account.apiKey === null ? null : account.apiKey.slice(-4),
+      billing: keyOf(account) === null ? ("subscription" as const) : ("api_key" as const),
+      keyLast4: keyOf(account)?.slice(-4) ?? null,
       isDefault: account.id === defaultOf(files).id,
       builtIn: account.id === BUILT_IN_ACCOUNT_ID,
-      status: yield* drivers.get(account.driver).status({ hasKey: account.apiKey !== null }),
+      status: yield* drivers.get(account.driver).status({ hasKey: keyOf(account) !== null }),
     };
   });
 
@@ -147,7 +150,7 @@ const make = Effect.gen(function* () {
       }
       const existing = input.id === undefined ? undefined : files.others.accounts.find((account) => account.id === input.id && account.driver === input.driver);
       if (input.id !== undefined && !existing) return Effect.fail(new AccountError({ reason: "not_found" }));
-      const account = { id: existing?.id ?? newId(), driver: input.driver, label: input.label, model: input.model, apiKey: input.apiKey ?? existing?.apiKey ?? null };
+      const account = { id: existing?.id ?? newId(), driver: input.driver, label: input.label, model: input.model, apiKey: HARNESSES[input.driver].acceptsKeys ? (input.apiKey ?? existing?.apiKey ?? null) : null };
       const accounts = existing ? files.others.accounts.map((each) => (each.id === account.id ? account : each)) : [...files.others.accounts, account];
       return Effect.succeed([{ ...files, others: { ...files.others, accounts } }, account] as const);
     });
@@ -183,7 +186,7 @@ const make = Effect.gen(function* () {
     const accounts = all(files);
     const found = id === undefined ? defaultOf(files) : accounts.find((account) => account.id === id);
     if (!found) return yield* new AccountError({ reason: "not_found" });
-    return { id: found.id, driver: found.driver, label: found.label, model: found.model, apiKey: found.apiKey } satisfies ResolvedAccount;
+    return { id: found.id, driver: found.driver, label: found.label, model: found.model, apiKey: keyOf(found) } satisfies ResolvedAccount;
   });
 
   return AccountStore.of({ list, listAll, save, saveAny, remove, setDefault, resolve });

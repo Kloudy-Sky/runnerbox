@@ -32,7 +32,7 @@ export function ProviderAccountEditor({
   onDone: () => void;
 }) {
   const builtIn = account?.id === BUILT_IN_ACCOUNT_ID;
-  const [label, setLabel] = useState(account?.label ?? `${provider.label}, API`);
+  const [label, setLabel] = useState(account?.label ?? `${provider.label}, ${provider.acceptsKeys === false ? "sign-in" : "API"}`);
   const [model, setModel] = useState(account?.model ?? DEFAULT_MODEL);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
@@ -84,7 +84,7 @@ export function ProviderAccountEditor({
         />
       ) : null}
       <SettingsRow title="Label" control={<Input value={label} onValueChange={setLabel} disabled={builtIn} className="w-64" size="sm" />} />
-      {builtIn ? null : (
+      {builtIn || provider.acceptsKeys === false ? null : (
         <SettingsRow
           title="API key"
           description={`Kept on the runner machine, owner-only, and never shown again: only its last four characters. ${account?.keyLast4 ? "Leave empty to keep the key it has." : `Leave empty to use the ${provider.label} login on the runner machine.`} A key in the server's own environment is never used.`}

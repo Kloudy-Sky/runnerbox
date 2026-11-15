@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -28,7 +28,8 @@ const settle = async (pids: ReadonlyArray<number>) => {
   return pids.filter(alive);
 };
 
-// One turn against the fake `codex`, playing `scenario`, as an API account.
+// One turn against the fake `codex`, playing `scenario`, as an account that still holds a key from
+// before Codex refused them, which must not reach Codex.
 async function turn(scenario: string, options: { readonly version?: string } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "runnerbox-codex-test-"));
   const logPath = join(dir, "fake-codex.log");
@@ -55,12 +56,11 @@ async function turn(scenario: string, options: { readonly version?: string } = {
   const pids = (log.find((entry) => entry.pids)?.pids as number[] | undefined) ?? [];
   // Read once Codex and its children are gone, so a home it wrote into on the way out shows.
   const left = await settle(pids);
-  const turnHomes = await readdir(join(dir, ".server", "agent", "codex-turns")).catch(() => []);
-  return { exit, log, left, turnHomes, cleanup: () => rm(dir, { recursive: true, force: true }) };
+  return { exit, log, left, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 const stoppedWith = (exit: Exit.Exit<unknown, { readonly message: string }>) => (Exit.isFailure(exit) ? String(exit.cause) : "");
 
-test("a turn on Runnerbox's tools streams its text, and its token and key reach codex only in its environment", async () => {
+test("a turn on Runnerbox's tools streams its text, its token reaches codex only in its environment, and no key does", async () => {
   const run = await turn("answer");
   try {
     assert.ok(Exit.isSuccess(run.exit), stoppedWith(run.exit));
@@ -68,9 +68,8 @@ test("a turn on Runnerbox's tools streams its text, and its token and key reach 
     assert.deepEqual(events.map((event) => event._tag), ["ToolCall", "TextDelta", "Text", "Done"]);
     const env = run.log.find((entry) => entry.env)?.env as { token: string; key: string; home: string };
     assert.equal(env.token, TOKEN);
-    assert.equal(env.key, KEY);
-    assert.match(env.home, /codex-turns\/turn-/);
-    assert.deepEqual(run.turnHomes, [], "the key account's turn home is removed with the turn");
+    assert.equal(env.key, null, "Codex runs on Runnerbox's sign-in, never a key");
+    assert.match(env.home, /\.server\/agent\/codex-home$/);
     assert.deepEqual(run.left, [], "codex and what it started are gone");
   } finally {
     await run.cleanup();

@@ -19,6 +19,9 @@ export const Provider = Schema.Struct({
   status: ProviderStatus,
   models: Schema.Array(HarnessModel),
   accounts: Schema.Array(ProviderAccount),
+  // Whether an account here may have an API key, or only use the machine's sign-in. Servers from
+  // before it allow keys.
+  acceptsKeys: Schema.optionalKey(Schema.Boolean),
 });
 export type Provider = typeof Provider.Type;
 

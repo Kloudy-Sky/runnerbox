@@ -1,6 +1,6 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
@@ -94,9 +94,6 @@ export const makeWith = (find: () => string | null) =>
     const { serverDir } = yield* ServerPaths.ServerPaths;
     const home = codexHome(serverDir);
     const cwd = join(serverDir, "agent", "cwd");
-    // A key account's turns each get a home of their own, made and removed with the turn, so its key
-    // never meets the login in Runnerbox's shared one.
-    const turnHomes = join(serverDir, "agent", "codex-turns");
 
     // Whether Codex is installed, and a release this adapter was checked against.
     const installedProbe = Effect.gen(function* () {
@@ -116,8 +113,8 @@ export const makeWith = (find: () => string | null) =>
       return { provider: PROVIDER, available: ok, fix: ok ? null : SIGN_IN_FIX } satisfies ProviderStatus;
     });
     const loginStatus = yield* Effect.cachedWithTTL(loginProbe, "1 minute");
-    // An API account needs only the CLI; a login account also needs Runnerbox's home signed in.
-    const status = (account: { readonly hasKey: boolean }) => (account.hasKey ? installed : loginStatus);
+    // Every Codex account runs on Runnerbox's own sign-in, so needs that home signed in.
+    const status = () => loginStatus;
 
     const listed = Effect.gen(function* () {
       const executable = find();
@@ -144,26 +141,13 @@ export const makeWith = (find: () => string | null) =>
           const problems = launchProblems(turn, args, thread);
           if (problems.length > 0) return yield* failed(`Runnerbox didn't start Codex: it would have run without ${problems.join(", ")}.`);
           yield* Effect.tryPromise({ try: () => mkdir(cwd, { recursive: true, mode: 0o700 }), catch: () => failed("Couldn't make the turn's working directory on the server.") });
-          const turnHome =
-            input.account.apiKey === null
-              ? home
-              : yield* Effect.acquireRelease(
-                  Effect.tryPromise({
-                    try: async () => {
-                      await mkdir(turnHomes, { recursive: true, mode: 0o700 });
-                      return mkdtemp(join(turnHomes, "turn-"));
-                    },
-                    catch: () => failed("Couldn't make the turn's Codex home on the server."),
-                  }),
-                  // Codex has closed by now (its release runs first), so nothing writes here after.
-                  (path) => Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(Effect.ignore),
-                );
           // Its own process group, so ending the turn ends everything Codex started.
           const child = yield* Effect.acquireRelease(
             Effect.sync(() =>
               spawn(executable, args, {
                 cwd,
-                env: { ...codexEnv(process.env, turnHome, input.account.apiKey), [TOKEN_ENV]: input.mcp.token },
+                // No key, whatever the account holds: Codex runs on Runnerbox's own sign-in only, for now.
+                env: { ...codexEnv(process.env, home), [TOKEN_ENV]: input.mcp.token },
                 stdio: ["pipe", "pipe", "pipe"],
                 detached: true,
               }),

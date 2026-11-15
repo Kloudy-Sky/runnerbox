@@ -54,7 +54,7 @@ export const SaveAccount = Schema.Struct({
 export type SaveAccount = typeof SaveAccount.Type;
 
 export class AccountError extends Schema.TaggedError<AccountError>()("AccountError", {
-  reason: Schema.Literals(["not_found", "built_in", "unreadable", "unknown_driver"]),
+  reason: Schema.Literals(["not_found", "built_in", "unreadable", "unknown_driver", "login_only"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -66,6 +66,8 @@ export class AccountError extends Schema.TaggedError<AccountError>()("AccountErr
         return "Couldn't read or write the accounts file on the server.";
       case "unknown_driver":
         return "This server can't run that provider.";
+      case "login_only":
+        return "Codex runs on a ChatGPT sign-in for now, so it takes no API key.";
     }
   }
 }
