@@ -41,7 +41,8 @@ export const NoMemoryReading = Schema.TaggedStruct("none", { why: Schema.String 
 export const MemoryPicture = Schema.Union([MemoryReading, NoMemoryReading]);
 export type MemoryPicture = typeof MemoryPicture.Type;
 
-export const LaneState = Schema.Literals(["job", "stepped_aside", "ready"]);
+// `failed_start` is a runner that stopped before it took a job, drawn as a mark where it started.
+export const LaneState = Schema.Literals(["job", "stepped_aside", "ready", "failed_start"]);
 export type LaneState = typeof LaneState.Type;
 // One runner's last hour as spans. Time the records can't place is left out.
 export const RunnerLane = Schema.Struct({

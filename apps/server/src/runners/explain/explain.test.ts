@@ -140,6 +140,8 @@ test("a kind whose runners keep failing says so up top, and its episode gives th
   assert.equal(tile?.why, "Its last runner stopped within a minute of starting.");
   assert.equal(result.episodes[0]?.sentence, "docker runners stopped 4 times before taking a job. Runnerbox waits before each try. Docker couldn't start the container. That usually means the image, or the runtime it needs, is missing or broken.");
   assert.ok(!result.episodes[0]?.sentence.includes("125"), "exit codes stay in the raw rows");
+  const lane = result.lanes.find((each) => each.kind === "docker");
+  assert.equal(lane?.spans.filter((span) => span.state === "failed_start").length, 4, "each failed start is marked on its strip");
 });
 
 test("the pause after every runner reads as starting, not as trouble", () => {
