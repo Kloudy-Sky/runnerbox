@@ -5,6 +5,8 @@
 # `node` must be on the user service manager's PATH, which a version manager's shell setup doesn't reach.
 # It listens on 127.0.0.1:4517 only; reach it from another machine over SSH or Runnerbox Connect.
 # `serve` runs the server as its own child, under a small supervisor; stopping the unit stops both.
+# An update from the app downloads beside runnerbox.js, in .runnerbox-update, and keeps the file it
+# replaced as runnerbox.js.previous. If a new runnerbox.js ever won't start, move that one back.
 # It prints no pairing code, so none lands in the journal: run `node ~/runnerbox/runnerbox.js pair` for one.
 [Unit]
 Description=runnerbox server for the desktop app

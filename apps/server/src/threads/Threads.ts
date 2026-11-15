@@ -91,6 +91,8 @@ export class Threads extends Context.Service<
     // in that turn with the end of its output.
     readonly reproduceExec: (sessionId: string, command: string, timeoutSec: number) => Effect.Effect<Executed, ReproduceError>;
     // The agent's `propose_change`, for the thread its turn token is bound to. It only records.
+    // What a server restart would cut short now: an owner's turn, a monitor's look, or a reproduce.
+    readonly busy: Effect.Effect<{ readonly turn: "owner" | "monitor" | null; readonly reproduce: boolean }>;
     readonly proposeChange: (sessionId: string, input: { readonly install: string; readonly changes: ProposeInput["changes"]; readonly reason: string }) => Effect.Effect<Proposal, ProposalError>;
   }
 >()("runnerbox/server/threads/Threads") {}
@@ -112,7 +114,7 @@ type Waiting = { readonly message: QueuedMessage; readonly options: TurnOptions 
 // `yieldsToQueue` is set when a monitor stops its look, so the question waiting behind it still
 // goes; a stop by the server leaves it to be lost with the restart.
 type Running = {
-  yieldsToQueue?: boolean; readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
+  yieldsToQueue?: boolean; readonly monitor: boolean; readonly turnId: string; nextSeq: number; partial: string; costUsd: number | null; fiber?: Fiber.Fiber<void, unknown> };
 
 const MAX_TOOL_INPUT = 300;
 // A turn's MCP token is revoked when the turn ends. This only bounds one a crash left behind.
@@ -318,7 +320,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         if (running.has(id) || (fromQueue === null ? queued.has(id) : queued.get(id) !== fromQueue)) return yield* new ThreadError({ reason: "turn_running" });
         const file = yield* loadUnlocked(id);
-        const turn: Running = { turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
+        const turn: Running = { monitor: monitor !== undefined, turnId: newId(), nextSeq: (file.items.at(-1)?.seq ?? 0) + 1, partial: "", costUsd: null };
         const taken = attaching === undefined ? [] : yield* attachments.take(attaching.sessionId, attaching.ids);
         const attached = taken.map((each) => each.attachment);
         const contents = taken.map((each) => ({ ...each.attachment, bytes: each.bytes }));
@@ -533,7 +535,15 @@ const make = Effect.gen(function* () {
     return proposal;
   });
 
-  return Threads.of({ provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, stopTurn, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
+  const busy = Effect.sync(() => {
+    const turns = [...running.values()];
+    return {
+      turn: turns.some((turn) => !turn.monitor) ? ("owner" as const) : turns.length > 0 ? ("monitor" as const) : null,
+      reproduce: reproduces.anyRunning() || reproduceStarting.size > 0,
+    };
+  });
+
+  return Threads.of({ busy, provider, harnesses, list, read, create, startTurn, queueTurn, cancelQueued, remove, interrupt, stopTurn, subscribe, checkReproduce, startReproduce, stopReproduce, reproduceExec, proposeChange });
 });
 
 export const layer = Layer.effect(Threads, make);

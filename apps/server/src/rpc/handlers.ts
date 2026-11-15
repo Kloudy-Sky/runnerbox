@@ -16,6 +16,7 @@ import * as AccountStore from "../accounts/AccountStore.ts";
 import * as Providers from "../accounts/Providers.ts";
 import * as Attachments from "../attachments/Attachments.ts";
 import * as EnvironmentIdentity from "../environment/EnvironmentIdentity.ts";
+import * as ServerUpdate from "../update/ServerUpdate.ts";
 
 const toWire = Effect.mapError((error: LogReadError) => new StateReadError({ what: error.what }));
 
@@ -42,6 +43,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const providers = yield* Providers.Providers;
       const attachments = yield* Attachments.Attachments;
       const identity = yield* EnvironmentIdentity.EnvironmentIdentity;
+      const serverUpdate = yield* ServerUpdate.ServerUpdate;
       // A turn's files are the ones this session staged, and its tools follow this session's scopes.
       const turnOptions = ({ attachments: ids, ...rest }: Omit<TurnRequest, "id" | "text">): Threads.TurnOptions => ({
         ...rest,
@@ -103,6 +105,8 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "providers.save": (input) => providers.save(input),
         "server.methods": () => Effect.succeed(answered),
         "server.about": () => Effect.succeed({ label: identity.descriptor.label, serverVersion: identity.descriptor.serverVersion, protocolVersion: identity.descriptor.protocolVersion }),
+        "server.updateStatus": () => serverUpdate.status,
+        "server.update": ({ version }) => serverUpdate.update(version),
       };
     }),
   );

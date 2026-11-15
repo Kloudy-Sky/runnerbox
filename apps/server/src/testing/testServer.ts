@@ -13,7 +13,7 @@ import * as CloudLink from "../cloud/CloudLink.ts";
 import * as ListeningPorts from "../config/ListeningPorts.ts";
 import * as Monitors from "../monitors/Monitors.ts";
 import * as QueueConfig from "../runners/QueueConfig.ts";
-import { layerApp } from "../server.ts";
+import { layerApp, type UpdateWiring } from "../server.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
 import { writeFixtures } from "./fixtures.ts";
 
@@ -23,7 +23,8 @@ const makeFakeProviderUnavailable = () => makeFakeProvider({ turns: [], availabl
 // A real server on random loopback ports over freshly written fixture logs, in a temporary
 // directory that `close` removes. Pass `stateDir` to start again over an earlier server's files,
 // and `close(false)` to keep them. Threads use `provider`, or one that's never available, and run
-// Codex only when given `codex`.
+// Codex only when given `codex`. Updates use `updates`, or a build from a checkout that isn't
+// supervised.
 // Test servers never read a real report.env or reach GitHub unless a test says where.
 const NO_QUEUE = { apiBase: "http://127.0.0.1:9", reportEnvPath: "/nonexistent/report.env", timing: { pollMs: 50, slowMs: 200, maxBackoffMs: 400, idleMs: 200, checkMs: 20 } };
 
@@ -35,6 +36,7 @@ export async function startTestServer(
     codex?: ReturnType<typeof makeFakeProvider>;
     withoutMethods?: ReadonlyArray<RpcMethod>;
     queue?: QueueConfig.QueueConfig["Service"];
+    updates?: UpdateWiring;
   } = {},
 ) {
   const stateDir = options.stateDir ?? (await mkdtemp(join(tmpdir(), "runnerbox-server-test-")));
@@ -44,7 +46,7 @@ export async function startTestServer(
   const scope = Effect.runSync(Scope.make());
   // Two loopback listeners, the one apps use and the tunnel-facing one, each on a port the system
   // picks as it binds, so no other test can take it in between. Their ports are read back once up.
-  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port: 0, tunnelPort: 0, stateDir, provider: provider.layer, ...(options.codex ? { codex: options.codex.codexLayer } : {}), withoutMethods: options.withoutMethods ?? [], queue: QueueConfig.layerTest(options.queue ?? NO_QUEUE) }), scope));
+  const context = await Effect.runPromise(Layer.buildWithScope(layerApp({ host: "127.0.0.1", port: 0, tunnelPort: 0, stateDir, provider: provider.layer, ...(options.codex ? { codex: options.codex.codexLayer } : {}), withoutMethods: options.withoutMethods ?? [], queue: QueueConfig.layerTest(options.queue ?? NO_QUEUE), ...(options.updates ? { updates: options.updates } : {}) }), scope));
   const listening = Context.get(context, ListeningPorts.ListeningPorts);
   const [port, tunnelPort] = await Effect.runPromise(Effect.all([Deferred.await(listening.local), Deferred.await(listening.tunnel)]));
   const auth = Context.get(context, AuthStore.AuthStore);
