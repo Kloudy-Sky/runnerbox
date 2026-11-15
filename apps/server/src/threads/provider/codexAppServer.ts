@@ -37,6 +37,8 @@ export const DISABLED_FEATURES = [
   "tool_call_mcp_elicitation",
   "shell_snapshot",
   "memories",
+  // An owner's config could turn this on, and it would make Codex ignore `omit_tools_from` below.
+  "code_mode_only_strict_3p_tools",
 ] as const;
 
 // The tools a turn may call, by Codex's bare name on Runnerbox's server: the read-only ones, plus
@@ -85,6 +87,9 @@ export function appServerArgs(turn: { readonly mcpUrl: string; readonly propose:
       `mcp_servers.${SERVER_NAME}.bearer_token_env_var=${toml(TOKEN_ENV)}`,
       `mcp_servers.${SERVER_NAME}.enabled_tools=[${allowedTools(turn).map(toml).join(",")}]`,
       `mcp_servers.${SERVER_NAME}.required=true`,
+      // In the model's own tool list, called directly: not deferred behind tool search, which is
+      // off, and not only inside code mode's `exec`. As T3 Code exposes its direct tools.
+      `mcp_servers.${SERVER_NAME}.omit_tools_from=[${toml("deferred")},${toml("code_mode")}]`,
     ].flatMap((setting) => ["-c", setting]),
   ];
 }
@@ -134,6 +139,8 @@ const REQUIRED_FEATURES_OFF = [
   "tool_call_mcp_elicitation",
   "shell_snapshot",
   "memories",
+  // An owner's config could turn this on, and it would make Codex ignore `omit_tools_from` below.
+  "code_mode_only_strict_3p_tools",
 ];
 const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> }) => [
   ...REQUIRED_FEATURES_OFF.map((feature) => `--disable ${feature}`),
@@ -150,6 +157,7 @@ const requiredSettings = (turn: { readonly mcpUrl: string; readonly propose: boo
   'mcp_servers.runnerbox.bearer_token_env_var="RUNNERBOX_MCP_TOKEN"',
   `mcp_servers.runnerbox.enabled_tools=[${allowedTools(turn).map((tool) => JSON.stringify(tool)).join(",")}]`,
   "mcp_servers.runnerbox.required=true",
+  'mcp_servers.runnerbox.omit_tools_from=["deferred","code_mode"]',
 ];
 export function launchProblems(
   turn: { readonly mcpUrl: string; readonly propose: boolean; readonly reproduce: boolean; readonly ownerServers: ReadonlyArray<string> },
@@ -198,15 +206,17 @@ export function providerProblems({ config }: ProviderConfig) {
   ];
 }
 
-// What `mcpServerStatus/list` says, checked before the prompt is sent: Runnerbox's server offers only
-// this turn's tools, and every other one, such as the owner's own, is off and offers none.
+// What `mcpServerStatus/list` says, checked before the prompt is sent: Runnerbox's server is connected
+// and offers only this turn's tools, and every other one, such as the owner's own, is off and offers none.
 export function mcpProblems(servers: McpServers, allowed: ReadonlyArray<string>) {
   if (servers.nextCursor) return ["it has more MCP servers than Runnerbox could check"];
-  return servers.data.flatMap((server) => {
+  const runnerbox = servers.data.find((server) => server.name === SERVER_NAME);
+  const connected = runnerbox?.runtimeStatus === "connected" ? [] : ["Runnerbox's MCP server isn't connected"];
+  return [...connected, ...servers.data.flatMap((server) => {
     const tools = Object.keys(server.tools);
     if (server.name === SERVER_NAME) return tools.every((tool) => allowed.includes(tool)) ? [] : ["Runnerbox's MCP server offers tools this turn isn't given"];
     return server.runtimeStatus === "disabled" && tools.length === 0 ? [] : [`the MCP server \`${server.name}\` is on`];
-  });
+  })];
 }
 
 // The Codex releases this adapter was written and checked against. A newer one can add an item kind

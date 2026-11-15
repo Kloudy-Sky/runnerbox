@@ -50,12 +50,14 @@ test("only the Codex releases the adapter was checked against run", () => {
 
 test("Codex's MCP servers must be Runnerbox's alone, with this turn's tools, and every other one off", () => {
   const allowed = allowedTools({ propose: false, reproduce: false });
-  const runnerbox = { name: "runnerbox", runtimeStatus: "ready", tools: { ci_overview: {} } };
+  const runnerbox = { name: "runnerbox", runtimeStatus: "connected", tools: { ci_overview: {} } };
   assert.deepEqual(mcpProblems({ data: [runnerbox, { name: "docs", runtimeStatus: "disabled", tools: {} }] }, allowed), []);
   assert.equal(mcpProblems({ data: [runnerbox, { name: "docs", runtimeStatus: "ready", tools: {} }] }, allowed).length, 1);
   assert.equal(mcpProblems({ data: [runnerbox, { name: "docs", runtimeStatus: "disabled", tools: { search: {} } }] }, allowed).length, 1);
   assert.equal(mcpProblems({ data: [{ ...runnerbox, tools: { propose_change: {} } }] }, allowed).length, 1, "a monitor's turn isn't given propose_change");
   assert.equal(mcpProblems({ data: [runnerbox], nextCursor: "more" }, allowed).length, 1, "a list it can't see the end of isn't trusted");
+  assert.deepEqual(mcpProblems({ data: [] }, allowed), ["Runnerbox's MCP server isn't connected"]);
+  assert.deepEqual(mcpProblems({ data: [{ ...runnerbox, runtimeStatus: "starting" }] }, allowed), ["Runnerbox's MCP server isn't connected"]);
 });
 
 test("turns go only to the built-in OpenAI provider at its own address", () => {

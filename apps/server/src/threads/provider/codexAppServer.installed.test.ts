@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -18,8 +18,8 @@ import { findCodex } from "./CodexAdapter.ts";
 const codex = findCodex();
 const version = codex === null ? "" : execFileSync(codex, ["--version"], { encoding: "utf8" });
 
-// A loopback MCP server with no tools, standing in for Runnerbox's, that notes who called it.
-async function startMcp() {
+// A loopback MCP server standing in for Runnerbox's, with the given tools, that notes who called it.
+async function startMcp(toolNames: ReadonlyArray<string> = []) {
   const seen: Array<{ readonly authorization: string | undefined; readonly method: string }> = [];
   const mcp = createServer((request, response) => {
     let body = "";
@@ -28,7 +28,8 @@ async function startMcp() {
       const message = body === "" ? {} : JSON.parse(body);
       seen.push({ authorization: request.headers.authorization, method: message.method ?? request.method });
       if (message.id === undefined) return response.writeHead(request.method === "POST" ? 202 : 405).end();
-      const result = message.method === "initialize" ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "test", version: "0" } } : { tools: [] };
+      const tools = toolNames.map((name) => ({ name, description: name, inputSchema: { type: "object", properties: {} } }));
+      const result = message.method === "initialize" ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "test", version: "0" } } : { tools };
       response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
     });
   });
@@ -126,6 +127,33 @@ test("against the installed Codex, an owner's MCP servers are off, and only thei
     assert.deepEqual(appliedProblems(applied!, [join(home, "AGENTS.md"), join(realpathSync(home), "AGENTS.md")]), [], "an owner's home may load its global AGENTS.md");
   } finally {
     process.kill(-child.pid!, "SIGKILL");
+    mcp.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// What the model would be offered, rendered by `codex debug prompt-input` without a model call, on a
+// model whose catalog asks for code mode, as every current one does. Runnerbox's tools must be in its
+// own tool list, called directly, with nothing deferred and no tool search.
+test("against the installed Codex, Runnerbox's tools are in the model's own tool list, not deferred", { skip: codex === null || !supportedVersion(version) ? "no supported codex installed" : false }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "runnerbox-codex-tools-"));
+  const home = join(dir, "home");
+  const cwd = join(dir, "cwd");
+  await mkdir(home, { mode: 0o700 });
+  await mkdir(cwd);
+  const { mcp, url } = await startMcp(["ci_overview", "runner_state"]);
+  const turn = { mcpUrl: url, propose: false, reproduce: false, ownerServers: [] };
+  try {
+    const rendered = await new Promise<string>((resolve, reject) =>
+      execFile(codex!, ["debug", "prompt-input", ...appServerArgs(turn).slice(1), "-c", 'model="gpt-6-luna"', "hi"], { cwd, env: { ...codexEnv(process.env, home), [TOKEN_ENV]: "turn-token-example" }, maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => (error ? reject(error) : resolve(stdout))),
+    );
+    const input: ReadonlyArray<{ type?: string; tools?: ReadonlyArray<{ type?: string; name?: string; tools?: ReadonlyArray<{ name?: string }> }> }> = JSON.parse(rendered);
+    const offered = input.filter((item) => item.type === "additional_tools").flatMap((item) => item.tools ?? []);
+    const names = offered.flatMap((tool) => (tool.type === "namespace" ? (tool.tools ?? []).map((nested) => `${tool.name}.${nested.name}`) : [String(tool.name)]));
+    assert.ok(names.includes("mcp__runnerbox.ci_overview") && names.includes("mcp__runnerbox.runner_state"), names.join(", "));
+    assert.ok(!rendered.includes("Deferred tool namespaces"), "nothing is deferred");
+    assert.ok(!names.some((name) => /tool_search/.test(name)), "no tool search");
+  } finally {
     mcp.close();
     await rm(dir, { recursive: true, force: true });
   }
