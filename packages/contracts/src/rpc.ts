@@ -6,6 +6,7 @@ import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, Pairi
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { Inbox } from "./inbox.ts";
 import { JobResources } from "./resources.ts";
+import { JobTrend, KindUsageReport } from "./usage.ts";
 import { InstallState, LauncherEvent, MachineSample } from "./runners.ts";
 import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, ChunkReceived, StageAttachment } from "./attachments.ts";
 import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
@@ -62,6 +63,8 @@ export const RPC_METHODS = {
   historyRuns: "history.runs",
   historyWeeklySummary: "history.weeklySummary",
   historyJobResources: "history.jobResources",
+  historyKindUsage: "history.kindUsage",
+  historyJobTrends: "history.jobTrends",
   inboxList: "inbox.list",
   runnersEvents: "runners.events",
   runnersSamples: "runners.samples",
@@ -130,6 +133,11 @@ export const RunnerboxRpcGroup = RpcGroup.make(
     success: JobResources,
     error: ReadError,
   }),
+  // Each runner kind over the window, across every repo: slots, how busy, waits, why jobs waited,
+  // and a hosted-price estimate.
+  Rpc.make(RPC_METHODS.historyKindUsage, { payload: { days: Days }, success: KindUsageReport, error: ReadError }),
+  // Each job of one repo: typical time per day, and whether it has become slower.
+  Rpc.make(RPC_METHODS.historyJobTrends, { payload: Window, success: Schema.Array(JobTrend), error: ReadError }),
   Rpc.make(RPC_METHODS.historyRuns, {
     payload: { ...Window, limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5000 })) },
     success: Schema.Array(JobRun),
@@ -252,6 +260,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.historyWeeklySummary]: HISTORY,
   // It reads the job's container readings and its runner's events alongside the job.
   [RPC_METHODS.historyJobResources]: ["history:read", "runners:read"],
+  [RPC_METHODS.historyKindUsage]: ["history:read", "runners:read"],
+  [RPC_METHODS.historyJobTrends]: HISTORY,
   // The inbox reads launcher events and samples alongside jobs.
   [RPC_METHODS.inboxList]: ["history:read", "runners:read"],
   [RPC_METHODS.runnersEvents]: RUNNERS,
