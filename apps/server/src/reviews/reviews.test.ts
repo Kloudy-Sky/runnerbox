@@ -31,7 +31,8 @@ const signedByApp = (authorization: string | undefined) => {
 async function fakeGitHub() {
   const minted: unknown[] = [];
   // `installationsDown` answers 502 where the App's installations are listed, and `listed` counts those requests.
-  const script = { installationsDown: false, listed: 0 };
+  // `pullsAsked` counts the requests for owner/name's open pull requests.
+  const script = { installationsDown: false, listed: 0, pullsAsked: 0 };
   const pull = { number: 7, title: "Fix the\u0007 widget\nagain", draft: false, user: { login: "someone" }, head: { ref: "fix/widget", sha: "a".repeat(40) }, base: { ref: "main" }, created_at: "2026-11-14T10:00:00Z", updated_at: "2026-11-15T10:00:00Z" };
   const server = createServer((request, response) => {
     const path = request.url ?? "";
@@ -55,7 +56,10 @@ async function fakeGitHub() {
     }
     if (!asInstallation) return json(401, {});
     if (path.startsWith("/installation/repositories?")) return json(200, { total_count: 2, repositories: [{ full_name: "owner/name" }, { full_name: "owner/other" }] });
-    if (path.startsWith("/repos/owner/name/pulls?")) return json(200, [pull]);
+    if (path.startsWith("/repos/owner/name/pulls?")) {
+      script.pullsAsked += 1;
+      return json(200, [pull]);
+    }
     return json(404, {});
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -88,6 +92,11 @@ test("the owner connects an App, turns a repository on and sees its open pull re
     const on = await session(ALL_SCOPES, (client) => client["reviews.setRepo"]({ repo: "owner/name", review: true }));
     assert.ok(Exit.isSuccess(on));
     assert.deepEqual(on.value.pulls, [{ repo: "owner/name", number: 7, title: "Fix the widget again", author: "someone", branch: "fix/widget", base: "main", headSha: "a".repeat(40), draft: false, openedAt: "2026-11-14T10:00:00Z", updatedAt: "2026-11-15T10:00:00Z" }]);
+
+    // However often clients ask, GitHub is asked for a repository's list once in 20 seconds.
+    const again = await session(["history:read"], (client) => client["reviews.status"]());
+    assert.ok(Exit.isSuccess(again) && again.value.pulls.length === 1);
+    assert.equal(github.script.pullsAsked, 1);
 
     // The token the server works with can only read pull requests, whatever the App was granted.
     assert.deepEqual(github.minted, [{ permissions: { pull_requests: "read" } }]);

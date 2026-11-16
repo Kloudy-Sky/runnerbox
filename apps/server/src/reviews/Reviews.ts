@@ -18,7 +18,8 @@ import { DEFAULT_REVIEW_MODEL, offersReviewModel, REVIEW_MODELS } from "./review
 import * as ReviewStore from "./ReviewStore.ts";
 
 // Which repositories the owner turned reviews on for and the model that reviews, in
-// `.server/reviews.json`, and the open pull requests on them, each with its newest review. GitHub is asked when a client asks, with the last ETag for each repository, so
+// `.server/reviews.json`, and the open pull requests on them, each with its newest review. GitHub
+// is asked when a client asks, at most every 20 seconds, with the last ETag for each repository, so
 // a list that hasn't changed costs nothing against the App's budget.
 
 const SettingsFile = Schema.Struct({ v: Schema.Literal(1), repos: Schema.Array(Schema.String), model: Schema.optionalKey(Schema.String) });
@@ -26,6 +27,10 @@ type SettingsFile = typeof SettingsFile.Type;
 const decodeFile = Schema.decodeUnknownEffect(Schema.fromJsonString(SettingsFile));
 const NONE: SettingsFile = { v: 1, repos: [] };
 const PULLS_PER_REPO = 50;
+// GitHub is asked for the lists at most this often, however often clients ask: an app polls faster
+// while a review runs, and nothing stops a client asking in a loop.
+const PULLS_FRESH_MS = 20_000;
+type Looked = { readonly at: number; readonly repos: string; readonly pulls: ReadonlyArray<PullRequest>; readonly problem: string | null };
 
 export type May = { readonly configure: boolean; readonly review: boolean };
 
@@ -81,6 +86,28 @@ const make = Effect.gen(function* () {
   });
   const withReview = (pull: PullRequest) => store.list(pull.repo, pull.number).pipe(Effect.map(([newest]) => (newest === undefined ? pull : { ...pull, review: summary(newest) })));
 
+  let looked: Looked | null = null;
+  const forget = Effect.sync(() => void (looked = null));
+
+  // The open pull requests on the repositories with reviews on, from the last look when it's fresh
+  // and was of the same repositories.
+  const look = Effect.fn("Reviews.look")(function* (reviewed: ReadonlyArray<GitHubApp.InstalledRepo>) {
+    const now = yield* Clock.currentTimeMillis;
+    const repos = reviewed.map(({ repo }) => repo).join(" ");
+    if (looked !== null && looked.repos === repos && now - looked.at < PULLS_FRESH_MS) return looked;
+    const pulls: PullRequest[] = [];
+    let problem: string | null = null;
+    for (const { repo, token } of reviewed) {
+      const reply = yield* Effect.promise(() => github.get(`repos/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=${PULLS_PER_REPO}`, token));
+      const found = reply.kind === "ok" ? pullsOf(repo, reply.body) : null;
+      if (found === null) problem ??= `Couldn't read the pull requests on ${repo}.`;
+      else pulls.push(...found);
+    }
+    github.prune();
+    looked = { at: now, repos, pulls: pulls.toSorted((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), problem };
+    return looked;
+  });
+
   const status = Effect.fn("Reviews.status")(function* (may: May) {
     const described = yield* app.describe;
     const file = yield* read;
@@ -88,28 +115,20 @@ const make = Effect.gen(function* () {
     if (described === null) return { app: null, repos: [], pulls: [], problem: null, checkedAt: null, ...shared };
     const on = new Set(file.repos);
     const installed = yield* app.installed;
-    const pulls: PullRequest[] = [];
-    let problem = installed.problem;
-    for (const { repo, token } of installed.repos) {
-      if (!on.has(repo)) continue;
-      const reply = yield* Effect.promise(() => github.get(`repos/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=${PULLS_PER_REPO}`, token));
-      const found = reply.kind === "ok" ? pullsOf(repo, reply.body) : null;
-      if (found === null) problem ??= `Couldn't read the pull requests on ${repo}.`;
-      else pulls.push(...found);
-    }
-    github.prune();
+    const { pulls, problem, at } = yield* look(installed.repos.filter(({ repo }) => on.has(repo)));
     return {
       app: described,
       repos: installed.repos.map(({ repo }) => ({ repo, review: on.has(repo) })),
-      pulls: yield* Effect.forEach(pulls.toSorted((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), withReview),
-      problem,
-      checkedAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
+      // Each pull request's review is read now, so a running review shows as it changes between looks at GitHub.
+      pulls: yield* Effect.forEach(pulls, withReview),
+      problem: installed.problem ?? problem,
+      checkedAt: new Date(at).toISOString(),
       ...shared,
     };
   });
 
-  const connect = (appId: string, privateKey: string, may: May) => app.connect(appId, privateKey).pipe(Effect.andThen(status(may)));
-  const disconnect = (may: May) => app.disconnect.pipe(Effect.andThen(status(may)));
+  const connect = (appId: string, privateKey: string, may: May) => app.connect(appId, privateKey).pipe(Effect.andThen(forget), Effect.andThen(status(may)));
+  const disconnect = (may: May) => app.disconnect.pipe(Effect.andThen(forget), Effect.andThen(status(may)));
 
   const setRepo = Effect.fn("Reviews.setRepo")(function* (repo: string, review: boolean, may: May) {
     if ((yield* app.describe) === null) return yield* new ReviewError({ reason: "not_connected" });
