@@ -13,7 +13,7 @@ after(() => server.close());
 
 const mcpSession = (token: string) => mcpClient(`${server.baseUrl}/mcp`, token);
 
-test("an agent's token sees read-only tools, can't use the reproduce shell or propose, and reads the same inbox the app does", async () => {
+test("an agent's token sees read-only tools, can't use the reproduce shell, propose or hand in a review, and reads the same inbox the app does", async () => {
   const { init, request } = await mcpSession(await server.mintMcpToken());
   assert.equal(init.status, 200);
   const { body: listed } = await request("tools/list");
@@ -21,7 +21,7 @@ test("an agent's token sees read-only tools, can't use the reproduce shell or pr
   assert.ok(tools.length >= 10);
   assert.deepEqual(
     tools.filter((tool) => tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint !== false).map((tool) => tool.name),
-    ["repro_exec", "propose_change"],
+    ["repro_exec", "propose_change", "submit_review"],
   );
   const { body: proposed } = await request("tools/call", { name: "propose_change", arguments: { install: "example", changes: [{ path: "runners.linux.slots", to: 2 }], reason: "More jobs at once." } });
   assert.equal(proposed.result.isError, true);

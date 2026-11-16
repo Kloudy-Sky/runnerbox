@@ -4,7 +4,8 @@ export type AppReply =
   | { readonly kind: "ok"; readonly body: unknown }
   // GitHub didn't take the token: a wrong App ID or key, or an App that was deleted.
   | { readonly kind: "refused" }
-  | { readonly kind: "error"; readonly message: string };
+  // `status` is GitHub's, or null when no answer came.
+  | { readonly kind: "error"; readonly message: string; readonly status: number | null };
 
 const TIMEOUT_MS = 15_000;
 
@@ -21,8 +22,8 @@ export async function appRequest(apiBase: string, method: "GET" | "POST", path: 
     });
     if (response.ok) return { kind: "ok", body: await response.json().catch(() => null) };
     if (response.status === 401 || response.status === 404) return { kind: "refused" };
-    return { kind: "error", message: `GitHub answered ${response.status}` };
+    return { kind: "error", message: `GitHub answered ${response.status}`, status: response.status };
   } catch (error) {
-    return { kind: "error", message: error instanceof Error ? error.name : "the request failed" };
+    return { kind: "error", message: error instanceof Error ? error.name : "the request failed", status: null };
   }
 }

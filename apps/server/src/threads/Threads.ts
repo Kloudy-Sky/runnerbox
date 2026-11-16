@@ -387,6 +387,7 @@ const make = Effect.gen(function* () {
               mcp: { url: `${yield* endpoint.baseUrl}/mcp`, token: grant.token },
               reproduce: reproducing,
               propose: !monitor,
+              review: false,
               account: { label: account.label, model: monitor?.model ?? model ?? account.model, apiKey: account.apiKey, home: account.home },
             })
             .pipe(Stream.runForEach(onEvent(id, turn)));

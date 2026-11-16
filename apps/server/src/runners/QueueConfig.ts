@@ -16,7 +16,8 @@ export type QueueTiming = {
 
 // Where the queue poll reads its token and sends its requests, and its pace. `serve` always uses
 // GitHub's API host and the report timer's file. Only tests build it any other way.
-export class QueueConfig extends Context.Service<QueueConfig, { readonly apiBase: string; readonly reportEnvPath: string; readonly timing: QueueTiming }>()(
+// `gitBase` is where a review fetches code from. Only tests set it; `serve` uses GitHub's.
+export class QueueConfig extends Context.Service<QueueConfig, { readonly apiBase: string; readonly reportEnvPath: string; readonly timing: QueueTiming; readonly gitBase?: string }>()(
   "runnerbox/server/QueueConfig",
 ) {}
 

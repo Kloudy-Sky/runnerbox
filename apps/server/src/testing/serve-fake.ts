@@ -32,6 +32,7 @@ import { fakeUpdates } from "./fakeUpdates.ts";
 import { startFakeUp } from "./fakeUp.ts";
 import { startFakeGitHub } from "./fakeGitHub.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
+import { makeReviewFixture, REVIEW_SCRIPT } from "./reviewFixture.ts";
 import { RUNNER_SCENARIOS, writeRunnerScenario } from "./runnerScenarios.ts";
 
 
@@ -64,7 +65,10 @@ if (values.runners !== undefined && !scenario) {
 if (scenario) setInterval((await writeRunnerScenario(stateDir, Date.now(), scenario)).heartbeat, 10_000);
 // Its queue poll asks a local stand-in for GitHub, with a made-up token in a file beside the
 // fixtures, and never reads a real report.env or reaches GitHub.
-const fakeGitHub = await startFakeGitHub(Date.now());
+// Its first pull request is a real branch of a small repository made beside the fixtures, so a
+// review really fetches and reads it.
+const reviewed = makeReviewFixture(join(resolve(target), "git"));
+const fakeGitHub = await startFakeGitHub(Date.now(), reviewed);
 const fakeReportEnv = join(resolve(target), "report.env");
 await writeFile(fakeReportEnv, "GITHUB_TOKEN=not-a-real-token\n", { mode: 0o600 });
 // Reviews start connected to the stand-in's App with owner/name turned on, behind a key made for
@@ -74,11 +78,12 @@ await mkdir(serverDir, { recursive: true, mode: 0o700 });
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
 await writeFile(join(serverDir, "github-app.json"), JSON.stringify({ v: 1, appId: "1", privateKey, slug: "example-reviewer", name: "Example Reviewer" }), { mode: 0o600 });
 await writeFile(join(serverDir, "reviews.json"), JSON.stringify({ v: 1, repos: ["owner/name"] }), { mode: 0o600 });
-const FAKE_GITHUB = { apiBase: fakeGitHub.apiBase, reportEnvPath: fakeReportEnv, timing: { pollMs: 20_000, slowMs: 120_000, maxBackoffMs: 300_000, idleMs: 60_000, checkMs: 1_000 } };
+const FAKE_GITHUB = { apiBase: fakeGitHub.apiBase, gitBase: reviewed.gitBase, reportEnvPath: fakeReportEnv, timing: { pollMs: 20_000, slowMs: 120_000, maxBackoffMs: 300_000, idleMs: 60_000, checkMs: 1_000 } };
 
 const fake = makeFakeProvider({
   available: !values["no-provider"],
   delayMs: 120,
+  review: [{ text: "Reading the change and what calls it." }, ...REVIEW_SCRIPT],
   monitor: {
     costUsd: 0.006,
     steps: [

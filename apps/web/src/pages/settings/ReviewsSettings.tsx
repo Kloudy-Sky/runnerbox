@@ -3,6 +3,7 @@ import { SettingsIntro } from "../../components/settings/SettingsIntro.tsx";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "../../components/settings/settingsLayout.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../../components/ui/select.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
 import { Textarea } from "../../components/ui/textarea.tsx";
 import { useReviews } from "../../hooks/useReviews.ts";
@@ -53,7 +54,7 @@ function ConnectApp({ connect }: { connect: (appId: string, privateKey: string) 
 
 // Reviews: which repositories are read, and the GitHub App they're read through.
 export function ReviewsSettings() {
-  const { view, available, connect, disconnect, setRepo } = useReviews();
+  const { view, available, connect, disconnect, setRepo, setModel } = useReviews();
   const [error, setError] = useState<string | null>(null);
   if (!available) return <SettingsPageContainer><SettingsIntro>This server is older than reviews. Update it under About.</SettingsIntro></SettingsPageContainer>;
   if (view === null) return null;
@@ -64,7 +65,7 @@ export function ReviewsSettings() {
   const { app, canConfigure } = view;
   return (
     <SettingsPageContainer>
-      <SettingsIntro>Runnerbox reads the open pull requests on the repositories you turn on, through a GitHub App you make. They show under Reviews.</SettingsIntro>
+      <SettingsIntro>Runnerbox reads the open pull requests on the repositories you turn on, through a GitHub App you make, and reviews the ones you ask it to. They show under Reviews.</SettingsIntro>
       {app === null ? (
         canConfigure ? <ConnectApp connect={connect} /> : <SettingsIntro>No GitHub App is connected, and this device can't connect one.</SettingsIntro>
       ) : (
@@ -76,6 +77,28 @@ export function ReviewsSettings() {
             {view.repos.length === 0 ? <SettingsRow title="The App isn't installed on a repository yet" description={view.problem ?? undefined} /> : null}
             {error ? <p className="px-3 py-3 text-destructive text-xs sm:px-4">{error}</p> : null}
           </SettingsSection>
+          {view.models !== undefined && view.model !== undefined ? (
+            <SettingsSection title="Reviewer">
+              <SettingsRow
+                title="Model"
+                description="Reviews run on your Claude account, one at a time, when you press Review. Findings are held here and posted nowhere."
+                control={
+                  <Select value={view.model} disabled={!canConfigure} onValueChange={(value) => value && act(setModel(value))}>
+                    <SelectTrigger className="w-32" aria-label="Review model">
+                      <SelectValue>{() => view.models?.find((each) => each.id === view.model)?.label ?? view.model}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      {view.models.map((each) => (
+                        <SelectItem key={each.id} value={each.id}>
+                          {each.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                }
+              />
+            </SettingsSection>
+          ) : null}
           <SettingsSection title="GitHub">
             <SettingsRow
               title={`Connected as ${app.name}`}

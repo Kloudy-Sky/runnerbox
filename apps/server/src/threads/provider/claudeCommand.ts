@@ -1,7 +1,7 @@
 import { MAX_COMMAND_SECONDS } from "runnerbox/src/reproduce/protocol.ts";
 import { passedEnv } from "./agentEnv.ts";
 import type { TurnImage } from "./ProviderAdapter.ts";
-import { MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, PROPOSE_TOOL_NAME, READ_ONLY_TOOL_NAMES, REPRODUCE_TOOL_NAME, SERVER_NAME } from "./runnerboxTools.ts";
+import { MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, MAX_REVIEW_STEPS, PROPOSE_TOOL_NAME, READ_ONLY_TOOL_NAMES, REPRODUCE_TOOL_NAME, REVIEW_TOOL_NAMES, SERVER_NAME } from "./runnerboxTools.ts";
 
 // How a thread's turn runs the environment's own `claude`: headless, streaming JSON in and out,
 // with runnerbox's `/mcp` endpoint as its only tools. Every flag that bounds what the agent can
@@ -13,8 +13,9 @@ export const toolName = (name: string) => `mcp__${SERVER_NAME}__${name}`;
 export const READ_ONLY_TOOLS = READ_ONLY_TOOL_NAMES.map(toolName);
 export const REPRODUCE_TOOL = toolName(REPRODUCE_TOOL_NAME);
 export const PROPOSE_TOOL = toolName(PROPOSE_TOOL_NAME);
+export const REVIEW_TOOLS = REVIEW_TOOL_NAMES.map(toolName);
 
-export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly systemPrompt: string; readonly model: string | undefined; readonly reproduce: boolean; readonly propose: boolean }) {
+export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly systemPrompt: string; readonly model: string | undefined; readonly reproduce: boolean; readonly propose: boolean; readonly review?: boolean }) {
   return [
     "--print",
     "--input-format=stream-json",
@@ -31,8 +32,9 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
     "--strict-mcp-config",
     // Its tools run without asking. Anything else is refused, and nothing ever prompts. A turn the
     // owner asked may also record a proposed change, and with a reproduce running, use its shell
-    // tool; a monitor's turn only reads.
-    `--allowedTools=${[...READ_ONLY_TOOLS, ...(turn.propose ? [PROPOSE_TOOL] : []), ...(turn.reproduce ? [REPRODUCE_TOOL] : [])].join(",")}`,
+    // tool; a monitor's turn only reads. A review's turn reads untrusted code, so it gets the
+    // review's own tools and none that read this machine's CI history.
+    `--allowedTools=${(turn.review ? REVIEW_TOOLS : [...READ_ONLY_TOOLS, ...(turn.propose ? [PROPOSE_TOOL] : []), ...(turn.reproduce ? [REPRODUCE_TOOL] : [])]).join(",")}`,
     "--permission-mode=dontAsk",
     "--permission-prompts=none",
     // No user, project or local settings, so no hooks, permission rules, plugins or CLAUDE.md.
@@ -43,7 +45,8 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
     "--no-session-persistence",
     // Replaces Claude Code's own prompt, which describes tools this agent doesn't have.
     `--system-prompt=${turn.systemPrompt}`,
-    `--max-turns=${turn.reproduce ? MAX_REPRODUCE_STEPS : MAX_AGENT_STEPS}`,
+    `--max-turns=${turn.review ? MAX_REVIEW_STEPS : turn.reproduce ? MAX_REPRODUCE_STEPS : MAX_AGENT_STEPS}`,
+    ...(turn.review ? ["--effort=high"] : []),
     ...(turn.model === undefined ? [] : [`--model=${turn.model}`]),
   ];
 }

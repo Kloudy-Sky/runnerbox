@@ -6,6 +6,7 @@ import { ItemPage } from "./pages/ItemPage.tsx";
 import { NowPage } from "./pages/NowPage.tsx";
 import { RunnersPage } from "./pages/RunnersPage.tsx";
 import { RunPage } from "./pages/RunPage.tsx";
+import { ReviewPage } from "./pages/ReviewPage.tsx";
 import { ReviewsPage } from "./pages/ReviewsPage.tsx";
 import { RunsPage } from "./pages/RunsPage.tsx";
 import { SettingsPage } from "./pages/SettingsPage.tsx";
@@ -41,6 +42,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", component: RunsPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$jobId", component: RunPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/reviews", component: ReviewsPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/reviews/$owner/$name/$number", component: ReviewPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/speed", component: SpeedPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runners", component: RunnersPage }),
   settingsRoute.addChildren([

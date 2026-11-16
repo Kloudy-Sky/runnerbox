@@ -26,6 +26,9 @@ export type TurnInput = {
   readonly reproduce: boolean;
   // Whether the turn may record a proposed change: one the owner asked, not a monitor's.
   readonly propose: boolean;
+  // A review's turn: its only tools read the pull request's code and hand the review in, and it
+  // gets the steps and effort reading a codebase takes.
+  readonly review: boolean;
   // The account the turn runs as. Its key, if any, is the only credential that reaches the provider.
   readonly account: TurnAccount;
 };
