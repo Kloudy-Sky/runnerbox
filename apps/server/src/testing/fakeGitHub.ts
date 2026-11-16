@@ -17,8 +17,8 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     created_at: ago(minutes),
     html_url: `https://github.com/owner/name/actions/runs/${run}/job/${(jobs += 1)}`,
   });
-  const pull = (number: number, title: string, branch: string, opened: number, changed: number, draft = false) => ({ number, title, draft, user: { login: "someone" }, head: { ref: branch, sha: String(number % 10).repeat(40) }, base: { ref: "main" }, created_at: ago(opened), updated_at: ago(changed) });
-  const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha } } : {}) };
+  const pull = (number: number, title: string, branch: string, opened: number, changed: number, draft = false) => ({ number, title, draft, user: { login: "someone" }, head: { ref: branch, sha: String(number % 10).repeat(40), repo: { full_name: "owner/name" } }, base: { ref: "main" }, created_at: ago(opened), updated_at: ago(changed) });
+  const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha, repo: { full_name: "owner/name" } } } : {}) };
   const replies: Record<string, unknown> = {
     "/app": { slug: "example-reviewer", name: "Example Reviewer" },
     "/app/installations?per_page=100": [{ id: 1 }],

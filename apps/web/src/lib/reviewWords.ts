@@ -21,6 +21,9 @@ export function reviewState(review: ReviewSummary, headSha: string) {
   }
 }
 
+// Why a pull request is never reviewed unasked.
+export const skippedWords = { draft: "Skipped, a draft", bot: "Skipped, a bot's", fork: "Skipped, from a fork" } as const;
+
 export const impactWords = { low: "Low", medium: "Medium", high: "High", critical: "Critical" } as const;
 
 export const lineRange = (finding: { readonly path: string; readonly startLine: number; readonly endLine: number }) =>

@@ -106,6 +106,8 @@ export const PullRequest = Schema.Struct({
   updatedAt: Schema.String,
   // Its newest review, when it has one. A server that can't review leaves it out.
   review: Schema.optionalKey(ReviewSummary),
+  // Why it's never reviewed unasked: a draft, a bot's, or from a fork. Pressing Review still works.
+  skipped: Schema.optionalKey(Schema.Literals(["draft", "bot", "fork"])),
 });
 export type PullRequest = typeof PullRequest.Type;
 
@@ -125,6 +127,8 @@ export const ReviewsView = Schema.Struct({
   // The model reviews run on, and the ones to pick from.
   model: Schema.optionalKey(Schema.String),
   models: Schema.optionalKey(Schema.Array(ReviewModel)),
+  // True once as many reviews as a day allows have started unasked. Pressing Review still works.
+  autoPaused: Schema.optionalKey(Schema.Boolean),
 });
 export type ReviewsView = typeof ReviewsView.Type;
 
