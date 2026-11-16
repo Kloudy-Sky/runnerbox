@@ -30,9 +30,12 @@ const baseEnv = () => ({
 });
 
 type Ran = { readonly code: number | "timeout" | "missing" | "too_big"; readonly stdout: string; readonly stderr: string };
-const git = (cwd: string, args: ReadonlyArray<string>, options: { readonly env?: Record<string, string>; readonly timeoutMs?: number; readonly maxBytes?: number } = {}) =>
+// `signal` ends the process when the review it works for is stopped, so no git outlives its review
+// holding the repository's locks or the token.
+type GitOptions = { readonly signal?: AbortSignal | undefined; readonly env?: Record<string, string>; readonly timeoutMs?: number; readonly maxBytes?: number };
+const git = (cwd: string, args: ReadonlyArray<string>, options: GitOptions = {}) =>
   new Promise<Ran>((resolve) => {
-    execFile("git", args, { cwd, env: { ...baseEnv(), ...options.env }, timeout: options.timeoutMs ?? READ_TIMEOUT_MS, maxBuffer: options.maxBytes ?? MAX_FILE_BYTES, encoding: "utf8" }, (error, stdout, stderr) => {
+    execFile("git", args, { cwd, env: { ...baseEnv(), ...options.env }, timeout: options.timeoutMs ?? READ_TIMEOUT_MS, maxBuffer: options.maxBytes ?? MAX_FILE_BYTES, encoding: "utf8", ...(options.signal ? { signal: options.signal } : {}) }, (error, stdout, stderr) => {
       if (error === null) return resolve({ code: 0, stdout, stderr });
       if (error.code === "ENOENT") return resolve({ code: "missing", stdout, stderr });
       if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return resolve({ code: "too_big", stdout, stderr });
@@ -44,10 +47,10 @@ const git = (cwd: string, args: ReadonlyArray<string>, options: { readonly env?:
 // Brings one commit of each ID into the bare repository at `dir`, without history. The token goes to
 // git in its environment, as a header for that one host, so it is in no argument, file or URL, and a
 // redirect is never followed with it.
-export async function fetchCommits(dir: string, remote: string, token: string | null, commits: ReadonlyArray<string>): Promise<GitResult<void>> {
+export async function fetchCommits(dir: string, remote: string, token: string | null, commits: ReadonlyArray<string>, signal?: AbortSignal): Promise<GitResult<void>> {
   if (!commits.every((commit) => COMMIT_ID.test(commit))) return failed("GitHub gave a commit ID that isn't one.");
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const made = await git(dir, ["init", "--quiet", "--bare", "."]);
+  const made = await git(dir, ["init", "--quiet", "--bare", "."], { signal });
   if (made.code === "missing") return failed("git isn't installed on the server's machine.");
   if (made.code !== 0) return failed("Couldn't make a place for the code on the server.");
   // The token is only ever sent over HTTPS, to that one host.
@@ -62,7 +65,7 @@ export async function fetchCommits(dir: string, remote: string, token: string | 
           GIT_CONFIG_VALUE_1: "false",
         };
   // Each commit is kept under a ref of its own, so git's housekeeping never removes one a stored review points at.
-  const fetched = await git(dir, ["fetch", "--quiet", "--depth=1", "--no-tags", "--no-recurse-submodules", remote, ...commits.map((commit) => `+${commit}:refs/reviewed/${commit}`)], { env: auth, timeoutMs: FETCH_TIMEOUT_MS });
+  const fetched = await git(dir, ["fetch", "--quiet", "--depth=1", "--no-tags", "--no-recurse-submodules", remote, ...commits.map((commit) => `+${commit}:refs/reviewed/${commit}`)], { signal, env: auth, timeoutMs: FETCH_TIMEOUT_MS });
   if (fetched.code === "timeout") return failed("Fetching the code from GitHub took too long.");
   return fetched.code === 0 ? fine(undefined) : failed("Couldn't fetch the code from GitHub.");
 }
@@ -70,9 +73,9 @@ export async function fetchCommits(dir: string, remote: string, token: string | 
 export type FileLines = { readonly path: string; readonly from: number; readonly to: number; readonly total: number; readonly lines: ReadonlyArray<{ readonly line: number; readonly text: string }> };
 
 // Lines `from` to `to` of one file at one commit, at most MAX_READ_LINES of them.
-export async function readLines(dir: string, commit: string, path: string, from: number, to: number): Promise<GitResult<FileLines>> {
+export async function readLines(dir: string, commit: string, path: string, from: number, to: number, signal?: AbortSignal): Promise<GitResult<FileLines>> {
   if (!COMMIT_ID.test(commit) || path.includes("\0")) return failed("That isn't a path in the repository.");
-  const shown = await git(dir, ["cat-file", "blob", `${commit}:${path}`]);
+  const shown = await git(dir, ["cat-file", "blob", `${commit}:${path}`], { signal });
   if (shown.code === "too_big") return failed("That file is too big to read.");
   if (shown.code !== 0) return failed(`No file at ${path} in this commit. Use list_files to find it.`);
   if (shown.stdout.slice(0, 8000).includes("\0")) return failed("That file isn't text.");
@@ -87,9 +90,9 @@ export type Matches = { readonly matches: ReadonlyArray<{ readonly path: string;
 
 // Lines matching a POSIX extended regular expression at one commit, in text files, optionally only
 // in paths matching a glob.
-export async function searchLines(dir: string, commit: string, pattern: string, options: { readonly glob?: string | undefined; readonly ignoreCase?: boolean | undefined }): Promise<GitResult<Matches>> {
+export async function searchLines(dir: string, commit: string, pattern: string, options: { readonly glob?: string | undefined; readonly ignoreCase?: boolean | undefined }, signal?: AbortSignal): Promise<GitResult<Matches>> {
   if (!COMMIT_ID.test(commit) || pattern.includes("\0") || options.glob?.includes("\0")) return failed("That isn't a pattern git can search for.");
-  const found = await git(dir, ["grep", "--no-color", "-n", "-I", "-E", ...(options.ignoreCase ? ["-i"] : []), "-e", pattern, commit, "--", ...(options.glob === undefined ? [] : [`:(glob)${options.glob}`])], { maxBytes: MAX_LIST_BYTES });
+  const found = await git(dir, ["grep", "--no-color", "-n", "-I", "-E", ...(options.ignoreCase ? ["-i"] : []), "-e", pattern, commit, "--", ...(options.glob === undefined ? [] : [`:(glob)${options.glob}`])], { signal, maxBytes: MAX_LIST_BYTES });
   if (found.code === "timeout") return failed("That search took too long. Narrow it with a glob.");
   if (found.code === "too_big") return failed("That search matches too much. Narrow the pattern or add a glob.");
   // git grep exits 1 when nothing matches.
@@ -111,9 +114,9 @@ const globPattern = (glob: string) =>
 export type Listed = { readonly paths: ReadonlyArray<string>; readonly more: number };
 
 // The paths of every file at one commit, or only those matching a glob.
-export async function listPaths(dir: string, commit: string, glob: string | undefined): Promise<GitResult<Listed>> {
+export async function listPaths(dir: string, commit: string, glob: string | undefined, signal?: AbortSignal): Promise<GitResult<Listed>> {
   if (!COMMIT_ID.test(commit)) return failed("That isn't a commit.");
-  const listed = await git(dir, ["ls-tree", "-r", "-z", "--name-only", commit], { maxBytes: MAX_LIST_BYTES });
+  const listed = await git(dir, ["ls-tree", "-r", "-z", "--name-only", commit], { signal, maxBytes: MAX_LIST_BYTES });
   if (listed.code !== 0) return failed("Couldn't list the files in this commit.");
   const wanted = glob === undefined ? null : globPattern(glob);
   const paths = listed.stdout.split("\0").filter((path) => path !== "" && (wanted === null || wanted.test(path)));

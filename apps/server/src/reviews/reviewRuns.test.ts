@@ -160,6 +160,25 @@ test("a review that's stopped ends as stopped, and one that hands nothing in say
   }
 });
 
+test("a review that was handed in is kept when the turn fails after it, such as out of steps", async () => {
+  const { session, ended, close } = await start([...REVIEW_SCRIPT, { fail: "The agent used all its steps without finishing." }]);
+  try {
+    await session(ALL_SCOPES, (client) => client["reviews.start"]({ repo: "owner/name", number: 7 }));
+    const review = await ended();
+    assert.deepEqual([review.state, review.score, review.findings.length, review.problem], ["done", 3, 1, null]);
+  } finally {
+    await close();
+  }
+  const never = await start([{ fail: "The agent used all its steps without finishing." }]);
+  try {
+    await never.session(ALL_SCOPES, (client) => client["reviews.start"]({ repo: "owner/name", number: 7 }));
+    const review = await never.ended();
+    assert.deepEqual([review.state, review.problem], ["failed", "The agent used all its steps without finishing."]);
+  } finally {
+    await never.close();
+  }
+});
+
 test("a review doesn't start for a session that can't run turns, or a repository with reviews off", async () => {
   const { provider, session, close } = await start(REVIEW_SCRIPT);
   try {
@@ -184,6 +203,10 @@ test("the code is read by commit and path only: a commit ID that isn't one never
     const refused = await fetchCommits(dir, `${code.gitBase}/owner/name.git`, null, [`--upload-pack=touch ${join(root, "ran")}`]);
     assert.ok(!refused.ok && !existsSync(join(root, "ran")) && !existsSync(dir));
     assert.deepEqual(await fetchCommits(dir, `${code.gitBase}/owner/name.git`, null, [code.headSha]), { ok: true, value: undefined });
+
+    // A review that's stopped ends its git: one given a signal already aborted never fetches.
+    const stopped = await fetchCommits(join(root, "stopped"), `${code.gitBase}/owner/name.git`, null, [code.headSha], AbortSignal.abort());
+    assert.ok(!stopped.ok && !existsSync(join(root, "stopped", "HEAD")));
 
     const part = await readLines(dir, code.headSha, "src/queue.ts", 4, 5);
     assert.ok(part.ok);

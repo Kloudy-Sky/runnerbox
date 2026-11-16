@@ -110,7 +110,7 @@ const make = Effect.gen(function* () {
   // The lines a finding points at, as the owner will see them. A path or range the agent got wrong leaves it without.
   const excerpt = (reading: Reading, finding: SubmittedReview["findings"][number]) => {
     const [from, to] = finding.startLine <= finding.endLine ? [finding.startLine, finding.endLine] : [finding.endLine, finding.startLine];
-    return Effect.promise(() => readLines(reading.dir, reading.commit, finding.path, from, Math.min(to, from + EXCERPT_LINES - 1))).pipe(
+    return Effect.promise((signal) => readLines(reading.dir, reading.commit, finding.path, from, Math.min(to, from + EXCERPT_LINES - 1), signal)).pipe(
       Effect.map((read) => ({ ...finding, startLine: from, endLine: to, code: read.ok ? read.value.lines : [] })),
     );
   };
@@ -121,7 +121,8 @@ const make = Effect.gen(function* () {
       // Made now, not when the review was asked for: a review that waited its turn would find an older one expired.
       const token = yield* app.codeToken(pull.repo);
       const dir = codeDir(pull.repo);
-      yield* Effect.promise(() => fetchCommits(dir, `${gitBase}/${pull.repo}.git`, token, [pull.headSha])).pipe(Effect.flatMap(gitFailure));
+      // Stopping the review ends git too, so it never outlives the review holding the repository's locks or the token.
+      yield* Effect.promise((signal) => fetchCommits(dir, `${gitBase}/${pull.repo}.git`, token, [pull.headSha], signal)).pipe(Effect.flatMap(gitFailure));
       const diff = yield* Effect.promise(() => pullDiff(config.apiBase, pull.repo, pull.baseSha, pull.headSha, token));
       if (diff.kind === "too_large") return yield* new ReviewFailed({ why: TOO_LARGE });
       if (diff.kind === "error") return yield* new ReviewFailed({ why: `Couldn't get the diff from GitHub: ${diff.message}.` });
@@ -134,7 +135,7 @@ const make = Effect.gen(function* () {
         () => Effect.sync(() => readings.delete(grant.session.id)),
       );
       let costUsd: number | null = null;
-      yield* claude
+      const turn = yield* claude
         .runTurn({
           systemPrompt: REVIEW_SYSTEM_PROMPT,
           prompt: reviewPrompt(pull, shown.diff),
@@ -151,9 +152,12 @@ const make = Effect.gen(function* () {
               if (event._tag === "Done") costUsd = event.costUsd;
             }),
           ),
+          Effect.exit,
         );
+      // A review that was handed in is kept however the turn ended after it, such as out of steps on
+      // its last call. Only a turn that handed nothing in fails, with its own reason when it has one.
       const submitted = reading.submitted;
-      if (submitted === null) return yield* new ReviewFailed({ why: "The reviewer ended without handing in a review." });
+      if (submitted === null) return yield* Exit.isFailure(turn) ? Effect.failCause(turn.cause) : new ReviewFailed({ why: "The reviewer ended without handing in a review." });
       const findings = yield* Effect.forEach(submitted.findings, (finding) => excerpt(reading, finding));
       yield* keep(run, { state: "done", finishedAt: yield* nowIso, costUsd, filesRead: reading.opened.size, score: submitted.score, impact: submitted.impact, reach: submitted.reach, verdict: submitted.verdict, findings });
     }).pipe(Effect.scoped, Effect.timeoutOrElse({ duration: REVIEW_LIMIT, orElse: () => Effect.fail(new ReviewFailed({ why: "The review took longer than 20 minutes and was stopped." })) }));
@@ -242,16 +246,16 @@ const make = Effect.gen(function* () {
   const readFile = (sessionId: string, path: string, from: number | undefined, to: number | undefined) =>
     reading(sessionId).pipe(
       Effect.flatMap((found) =>
-        Effect.promise(() => readLines(found.dir, found.commit, path, from ?? 1, to ?? (from ?? 1) + MAX_READ_LINES - 1)).pipe(
+        Effect.promise((signal) => readLines(found.dir, found.commit, path, from ?? 1, to ?? (from ?? 1) + MAX_READ_LINES - 1, signal)).pipe(
           Effect.flatMap(answer),
           Effect.tap(() => Effect.sync(() => found.opened.add(path))),
         ),
       ),
     );
   const search = (sessionId: string, pattern: string, options: { readonly glob?: string | undefined; readonly ignoreCase?: boolean | undefined }) =>
-    reading(sessionId).pipe(Effect.flatMap((found) => Effect.promise(() => searchLines(found.dir, found.commit, pattern, options))), Effect.flatMap(answer));
+    reading(sessionId).pipe(Effect.flatMap((found) => Effect.promise((signal) => searchLines(found.dir, found.commit, pattern, options, signal))), Effect.flatMap(answer));
   const listFiles = (sessionId: string, glob: string | undefined) =>
-    reading(sessionId).pipe(Effect.flatMap((found) => Effect.promise(() => listPaths(found.dir, found.commit, glob))), Effect.flatMap(answer));
+    reading(sessionId).pipe(Effect.flatMap((found) => Effect.promise((signal) => listPaths(found.dir, found.commit, glob, signal))), Effect.flatMap(answer));
   const submit = (sessionId: string, review: SubmittedReview) => reading(sessionId).pipe(Effect.map((found) => void (found.submitted = review)));
 
   return ReviewRuns.of({ read, start, stop, readFile, search, listFiles, submit });
