@@ -7,7 +7,7 @@ import { Button } from "../components/ui/button.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useReviews } from "../hooks/useReviews.ts";
 import { formatAge } from "../lib/format.ts";
-import { going, impactWords, reviewState } from "../lib/reviewWords.ts";
+import { going, impactWords, reviewState, skippedWords } from "../lib/reviewWords.ts";
 import type { RootSearch } from "../lib/search.ts";
 
 const th = "py-1.5 pr-4 text-left font-normal text-muted-foreground";
@@ -57,6 +57,7 @@ export function ReviewsPage() {
       </PageHeader.Root>
       {view.problem ? <p className="px-6 pb-2 text-warning">{view.problem}</p> : null}
       {error ? <p className="px-6 pb-2 text-destructive">{error}</p> : null}
+      {view.autoPaused ? <p className="px-6 pb-2 text-warning">40 reviews have started on their own in the last day, so new pushes wait. Review still works on any pull request.</p> : null}
       {blocked !== null ? (
         <p className="px-6 text-muted-foreground">
           {blocked}{" "}
@@ -115,7 +116,11 @@ export function ReviewsPage() {
                     <td className="py-1 pr-4 whitespace-nowrap text-muted-foreground">{pull.review ? `${formatAge(pull.review.finishedAt ?? pull.review.startedAt)} ago` : "-"}</td>
                     <td className="py-1 pr-6 whitespace-nowrap">
                       <span className="inline-flex items-center gap-2">
-                        {pull.review ? <span className={pull.review.state === "failed" ? "text-destructive" : undefined}>{reviewState(pull.review, pull.headSha)}</span> : null}
+                        {pull.review ? (
+                          <span className={pull.review.state === "failed" ? "text-destructive" : undefined}>{reviewState(pull.review, pull.headSha)}</span>
+                        ) : pull.skipped ? (
+                          <span className="text-muted-foreground">{skippedWords[pull.skipped]}</span>
+                        ) : null}
                         {!view.canReview ? null : going(pull.review) ? (
                           <Button size="xs" variant="outline" onClick={() => act(stop(pull.repo, pull.number))}>
                             Stop

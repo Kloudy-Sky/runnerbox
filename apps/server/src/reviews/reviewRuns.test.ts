@@ -15,6 +15,7 @@ import { type FakeStep, makeFakeProvider } from "../testing/FakeProvider.ts";
 import { mcpSession } from "../testing/mcpClient.ts";
 import { makeReviewFixture, REVIEW_SCRIPT } from "../testing/reviewFixture.ts";
 import { startTestServer } from "../testing/testServer.ts";
+import { autoBudget, type ListedPull, MAX_AUTO_PER_DAY, wantsReview } from "./autoReview.ts";
 import { fetchCommits, listPaths, readLines, searchLines } from "./gitObjects.ts";
 import { reviewableDiff } from "./reviewableDiff.ts";
 import { reviewPrompt } from "./reviewPrompt.ts";
@@ -23,12 +24,14 @@ const KEY = generateKeyPairSync("rsa", { modulusLength: 2048, publicKeyEncoding:
 const TIMING = { pollMs: 50, slowMs: 300, maxBackoffMs: 400, idleMs: 200, checkMs: 20 };
 
 // A stand-in for GitHub's API: an App installed on owner/name, with pull request 7 open on the
-// fixture's branch. That the App's own requests are signed by its key is reviews.test.ts's to check.
+// fixture's branch. `script` changes the pull request between requests: its head commit, when it
+// was opened, and whether it's a draft. That the App's own requests are signed by its key is reviews.test.ts's to check.
 async function fakeGitHub(code: ReturnType<typeof makeReviewFixture>) {
   const minted: unknown[] = [];
-  const pull = { number: 7, title: "A job whose runner is gone waits again", state: "open", body: "It stayed assigned.", draft: false, user: { login: "someone" }, head: { ref: "fix/queue-gone-runner", sha: code.headSha }, base: { ref: "main", sha: code.baseSha }, additions: 7, deletions: 3, changed_files: 1, created_at: "2026-11-14T10:00:00Z", updated_at: "2026-11-15T10:00:00Z" };
+  const script = { head: code.headSha, openedAt: "2020-01-01T10:00:00Z", draft: false };
   const server = createServer((request, response) => {
     const path = request.url ?? "";
+    const pull = { number: 7, title: "A job whose runner is gone waits again", state: "open", body: "It stayed assigned.", draft: script.draft, user: { login: "someone" }, head: { ref: "fix/queue-gone-runner", sha: script.head }, base: { ref: "main", sha: code.baseSha }, additions: 7, deletions: 3, changed_files: 1, created_at: script.openedAt, updated_at: "2020-01-02T10:00:00Z" };
     const json = (status: number, body: unknown) => void response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
     if (path === "/app") return json(200, { slug: "example-reviewer", name: "Example Reviewer" });
     if (path.startsWith("/app/installations?")) return json(200, [{ id: 11 }]);
@@ -44,12 +47,12 @@ async function fakeGitHub(code: ReturnType<typeof makeReviewFixture>) {
     if (path.startsWith("/installation/repositories?")) return json(200, { total_count: 1, repositories: [{ full_name: "owner/name" }] });
     if (path.startsWith("/repos/owner/name/pulls?")) return json(200, [pull]);
     if (path === "/repos/owner/name/pulls/7") return json(200, pull);
-    if (path === `/repos/owner/name/compare/${code.baseSha}...${code.headSha}` && request.headers.accept === "application/vnd.github.diff") return void response.writeHead(200).end(code.diff);
+    if (path === `/repos/owner/name/compare/${code.baseSha}...${script.head}` && request.headers.accept === "application/vnd.github.diff") return void response.writeHead(200).end(code.diff);
     return json(404, {});
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, minted, close: () => new Promise((resolve) => server.close(resolve)) };
+  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, minted, script, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 async function start(steps: ReadonlyArray<FakeStep>) {
@@ -121,6 +124,66 @@ test("a review reads the pull request's commit through its own tools, and what i
   } finally {
     await close();
   }
+});
+
+test("a pull request open before reviews were turned on is left alone until it's reviewed once, and then every push is", async () => {
+  const { code, github, provider, server, session, ended, close } = await start(REVIEW_SCRIPT);
+  const kept = async () => {
+    const read = await session(["history:read"], (client) => client["reviews.read"]({ repo: "owner/name", number: 7 }));
+    return Exit.isSuccess(read) ? read.value.reviews.map((review) => review.headSha) : [];
+  };
+  try {
+    await server.checkReviews();
+    assert.deepEqual(await kept(), []);
+
+    await session(ALL_SCOPES, (client) => client["reviews.start"]({ repo: "owner/name", number: 7 }));
+    await ended();
+    // A push: the pull request's head is now another commit.
+    github.script.head = code.baseSha;
+    await server.checkReviews();
+    assert.equal((await ended()).headSha, code.baseSha);
+    // A commit that has a review isn't reviewed again.
+    await server.checkReviews();
+    assert.deepEqual(await kept(), [code.baseSha, code.headSha]);
+    assert.equal(provider.inputs.length, 2);
+  } finally {
+    await close();
+  }
+});
+
+test("a pull request opened after reviews were turned on is reviewed unasked, unless it's a draft", async () => {
+  const { code, github, session, server, ended, close } = await start(REVIEW_SCRIPT);
+  try {
+    github.script.openedAt = new Date(Date.now() + 3_600_000).toISOString();
+    github.script.draft = true;
+    await server.checkReviews();
+    const listed = await session(["history:read"], (client) => client["reviews.status"]());
+    assert.ok(Exit.isSuccess(listed));
+    assert.deepEqual([listed.value.pulls[0]?.skipped, listed.value.pulls[0]?.review, listed.value.autoPaused], ["draft", undefined, false]);
+
+    github.script.draft = false;
+    await server.checkReviews();
+    assert.deepEqual([(await ended()).headSha, (await ended()).state], [code.headSha, "done"]);
+  } finally {
+    await close();
+  }
+});
+
+test("a bot's pull request, one from a fork, and one still being pushed to aren't reviewed unasked, and a day holds 40", () => {
+  const now = Date.parse("2026-11-15T12:00:00Z");
+  const pull: ListedPull = { repo: "owner/name", number: 7, title: "A change", author: "someone", branch: "b", base: "main", headSha: "a".repeat(40), draft: false, openedAt: "2026-11-15T11:00:00Z", updatedAt: "2026-11-15T11:30:00Z", bot: false, fork: false };
+  const known = { since: "2026-11-15T10:00:00Z", reviews: [], now };
+  assert.equal(wantsReview(pull, known), true);
+  assert.equal(wantsReview({ ...pull, bot: true }, known), false);
+  assert.equal(wantsReview({ ...pull, fork: true }, known), false);
+  assert.equal(wantsReview({ ...pull, updatedAt: "2026-11-15T11:59:30Z" }, known), false);
+  assert.equal(wantsReview(pull, { ...known, since: "2026-11-15T11:30:00Z" }), false);
+
+  const hourly = Array.from({ length: MAX_AUTO_PER_DAY }, (_, index) => new Date(now - index * 60_000).toISOString());
+  assert.equal(autoBudget(hourly, now).room, false);
+  assert.equal(autoBudget(hourly.slice(1), now).room, true);
+  // A start older than a day no longer counts.
+  assert.deepEqual(autoBudget(["2026-11-14T11:00:00Z", ...hourly.slice(1)], now).recent.length, MAX_AUTO_PER_DAY - 1);
 });
 
 test("the review's tools answer only a review's own turn", async () => {

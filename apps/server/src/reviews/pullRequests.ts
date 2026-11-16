@@ -1,4 +1,5 @@
 import type { PullRequest } from "@runnerbox/contracts";
+import type { ListedPull } from "./autoReview.ts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { COMMIT_ID } from "./gitObjects.ts";
@@ -12,8 +13,9 @@ const Pulls = Schema.Array(
     number: Schema.Int,
     title: Schema.String,
     draft: Schema.optionalKey(Schema.Boolean),
-    user: Schema.NullOr(Schema.Struct({ login: Schema.String })),
-    head: Schema.Struct({ ref: Schema.String, sha: Schema.String }),
+    user: Schema.NullOr(Schema.Struct({ login: Schema.String, type: Schema.optionalKey(Schema.String) })),
+    // `repo` is null once a fork was deleted.
+    head: Schema.Struct({ ref: Schema.String, sha: Schema.String, repo: Schema.optionalKey(Schema.NullOr(Schema.Struct({ full_name: Schema.String }))) }),
     base: Schema.Struct({ ref: Schema.String }),
     created_at: Schema.String,
     updated_at: Schema.String,
@@ -48,7 +50,7 @@ const line = (text: string, max: number) => {
 };
 
 // The open pull requests in one repository's reply, or null when the reply isn't a list of them.
-export function pullsOf(repo: string, body: unknown): ReadonlyArray<PullRequest> | null {
+export function pullsOf(repo: string, body: unknown): ReadonlyArray<ListedPull> | null {
   return Option.match(Schema.decodeUnknownOption(Pulls)(body), {
     onNone: () => null,
     onSome: (pulls) =>
@@ -63,6 +65,9 @@ export function pullsOf(repo: string, body: unknown): ReadonlyArray<PullRequest>
         draft: pull.draft ?? false,
         openedAt: pull.created_at,
         updatedAt: pull.updated_at,
+        bot: pull.user?.type === "Bot" || (pull.user?.login.endsWith("[bot]") ?? false),
+        // A head whose repository GitHub doesn't name is treated as a fork's.
+        fork: "repo" in pull.head && pull.head.repo?.full_name !== repo,
       })),
   });
 }

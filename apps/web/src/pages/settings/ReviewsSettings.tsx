@@ -65,7 +65,9 @@ export function ReviewsSettings() {
   const { app, canConfigure } = view;
   return (
     <SettingsPageContainer>
-      <SettingsIntro>Runnerbox reads the open pull requests on the repositories you turn on, through a GitHub App you make, and reviews the ones you ask it to. They show under Reviews.</SettingsIntro>
+      <SettingsIntro>
+        Runnerbox reads the open pull requests on the repositories you turn on, through a GitHub App you make. A pull request opened after that is reviewed on its own, and again on every push once it's quiet for a minute. Drafts, bots' and forks' are left for you to ask. Findings show under Reviews and are posted nowhere.
+      </SettingsIntro>
       {app === null ? (
         canConfigure ? <ConnectApp connect={connect} /> : <SettingsIntro>No GitHub App is connected, and this device can't connect one.</SettingsIntro>
       ) : (
@@ -81,7 +83,7 @@ export function ReviewsSettings() {
             <SettingsSection title="Reviewer">
               <SettingsRow
                 title="Model"
-                description="Reviews run on your Claude account, one at a time, when you press Review. Findings are held here and posted nowhere."
+                description="Reviews run on your Claude account, one at a time, and at most 40 a day start on their own."
                 control={
                   <Select value={view.model} disabled={!canConfigure} onValueChange={(value) => value && act(setModel(value))}>
                     <SelectTrigger className="w-32" aria-label="Review model">

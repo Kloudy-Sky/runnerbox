@@ -14,6 +14,7 @@ import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
 import * as ReviewRuns from "../reviews/ReviewRuns.ts";
 import * as Reviews from "../reviews/Reviews.ts";
+import * as ReviewWatch from "../reviews/ReviewWatch.ts";
 import * as Threads from "../threads/Threads.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
 import * as Providers from "../accounts/Providers.ts";
@@ -44,6 +45,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
       const reviews = yield* Reviews.Reviews;
       const reviewRuns = yield* ReviewRuns.ReviewRuns;
+      const reviewWatch = yield* ReviewWatch.ReviewWatch;
       // The same scopes the server checks on reviews.setRepo and reviews.start, so a switch or a button is never offered when it would be refused.
       const mayReview = {
         configure: RPC_SCOPES[RPC_METHODS.reviewsSetRepo].every((scope) => session.scopes.includes(scope)),
@@ -111,7 +113,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "monitors.status": () => monitors.status(canConfigureMonitors),
         "monitors.save": (settings) => monitors.save(settings),
         "monitors.markRead": ({ itemId }) => monitors.markRead(itemId),
-        "reviews.status": () => reviews.status(mayReview),
+        "reviews.status": () => reviewWatch.status(mayReview),
         "reviews.connect": ({ appId, privateKey }) => reviews.connect(appId, privateKey, mayReview),
         "reviews.disconnect": () => reviews.disconnect(mayReview),
         "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review, mayReview),

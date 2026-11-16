@@ -12,6 +12,7 @@ import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import { createGitHubReader } from "../github/githubReader.ts";
 import { QueueConfig } from "../runners/QueueConfig.ts";
+import { type ListedPull, skipOf } from "./autoReview.ts";
 import * as GitHubApp from "./GitHubApp.ts";
 import { pullsOf } from "./pullRequests.ts";
 import { DEFAULT_REVIEW_MODEL, offersReviewModel, REVIEW_MODELS } from "./reviewModels.ts";
@@ -22,7 +23,8 @@ import * as ReviewStore from "./ReviewStore.ts";
 // is asked when a client asks, at most every 20 seconds, with the last ETag for each repository, so
 // a list that hasn't changed costs nothing against the App's budget.
 
-const SettingsFile = Schema.Struct({ v: Schema.Literal(1), repos: Schema.Array(Schema.String), model: Schema.optionalKey(Schema.String) });
+// `since` is when each repository's reviews were turned on, which decides the pull requests reviewed unasked.
+const SettingsFile = Schema.Struct({ v: Schema.Literal(1), repos: Schema.Array(Schema.String), model: Schema.optionalKey(Schema.String), since: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)) });
 type SettingsFile = typeof SettingsFile.Type;
 const decodeFile = Schema.decodeUnknownEffect(Schema.fromJsonString(SettingsFile));
 const NONE: SettingsFile = { v: 1, repos: [] };
@@ -30,7 +32,7 @@ const PULLS_PER_REPO = 50;
 // GitHub is asked for the lists at most this often, however often clients ask: an app polls faster
 // while a review runs, and nothing stops a client asking in a loop.
 const PULLS_FRESH_MS = 20_000;
-type Looked = { readonly at: number; readonly repos: string; readonly pulls: ReadonlyArray<PullRequest>; readonly problem: string | null };
+type Looked = { readonly at: number; readonly repos: string; readonly pulls: ReadonlyArray<ListedPull>; readonly problem: string | null };
 
 export type May = { readonly configure: boolean; readonly review: boolean };
 
@@ -46,6 +48,9 @@ export class Reviews extends Context.Service<
     readonly setModel: (model: string, may: May) => Effect.Effect<ReviewsView, ReviewError>;
     // What a review starts from: the repositories with reviews on, and the model.
     readonly settings: Effect.Effect<{ readonly repos: ReadonlyArray<string>; readonly model: string }, ReviewError>;
+    // The open pull requests on the repositories with reviews on, asked of GitHub now, and when each
+    // repository was turned on. Empty when no App is connected. For the pass that reviews unasked.
+    readonly open: Effect.Effect<{ readonly pulls: ReadonlyArray<ListedPull>; readonly since: Readonly<Record<string, string>> }, ReviewError>;
   }
 >()("runnerbox/server/reviews/Reviews") {}
 
@@ -84,18 +89,24 @@ const make = Effect.gen(function* () {
     p1: review.findings.filter((finding) => finding.priority === "P1").length,
     p2: review.findings.filter((finding) => finding.priority === "P2").length,
   });
-  const withReview = (pull: PullRequest) => store.list(pull.repo, pull.number).pipe(Effect.map(([newest]) => (newest === undefined ? pull : { ...pull, review: summary(newest) })));
+  // A pull request as clients get it: what decides a skip stays here, and only the reason goes out.
+  const shown = ({ bot: _bot, fork: _fork, ...pull }: ListedPull, skipped: ReturnType<typeof skipOf>): PullRequest => (skipped === null ? pull : { ...pull, skipped });
+  const withReview = (listed: ListedPull) => {
+    const pull = shown(listed, skipOf(listed));
+    return store.list(pull.repo, pull.number).pipe(Effect.map(([newest]) => (newest === undefined ? pull : { ...pull, review: summary(newest) })));
+  };
 
   let looked: Looked | null = null;
   const forget = Effect.sync(() => void (looked = null));
 
   // The open pull requests on the repositories with reviews on, from the last look when it's fresh
-  // and was of the same repositories.
-  const look = Effect.fn("Reviews.look")(function* (reviewed: ReadonlyArray<GitHubApp.InstalledRepo>) {
+  // and was of the same repositories. `fresh` asks GitHub whatever the last look's age: only the
+  // server's own pass does, once a minute.
+  const look = Effect.fn("Reviews.look")(function* (reviewed: ReadonlyArray<GitHubApp.InstalledRepo>, fresh = false) {
     const now = yield* Clock.currentTimeMillis;
     const repos = reviewed.map(({ repo }) => repo).join(" ");
-    if (looked !== null && looked.repos === repos && now - looked.at < PULLS_FRESH_MS) return looked;
-    const pulls: PullRequest[] = [];
+    if (!fresh && looked !== null && looked.repos === repos && now - looked.at < PULLS_FRESH_MS) return looked;
+    const pulls: ListedPull[] = [];
     let problem: string | null = null;
     for (const { repo, token } of reviewed) {
       const reply = yield* Effect.promise(() => github.get(`repos/${repo}/pulls?state=open&sort=updated&direction=desc&per_page=${PULLS_PER_REPO}`, token));
@@ -142,7 +153,10 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const file = yield* read;
         const others = file.repos.filter((each) => each !== repo);
-        yield* write({ ...file, repos: review ? [...others, repo].toSorted() : others });
+        // Turning it on again starts the clock again; a repository already on keeps its own.
+        const { [repo]: was, ...since } = file.since ?? {};
+        const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+        yield* write({ ...file, repos: review ? [...others, repo].toSorted() : others, since: review ? { ...since, [repo]: file.repos.includes(repo) && was !== undefined ? was : now } : since });
       }),
     );
     return yield* status(may);
@@ -154,7 +168,28 @@ const make = Effect.gen(function* () {
     return yield* status(may);
   });
 
-  return Reviews.of({ status, connect, disconnect, setRepo, setModel, settings });
+  const open = Effect.gen(function* () {
+    if ((yield* app.describe) === null) return { pulls: [], since: {} };
+    // A repository turned on before this was kept counts as turned on now, so nothing already open is reviewed unasked.
+    const file = yield* lock.withPermits(1)(
+      Effect.gen(function* () {
+        const kept = yield* read;
+        const missing = kept.repos.filter((repo) => kept.since?.[repo] === undefined);
+        if (missing.length === 0) return kept;
+        const now = new Date(yield* Clock.currentTimeMillis).toISOString();
+        const stamped = { ...kept, since: { ...kept.since, ...Object.fromEntries(missing.map((repo) => [repo, now])) } };
+        yield* write(stamped);
+        return stamped;
+      }),
+    );
+    // With no repository on, GitHub isn't asked anything.
+    if (file.repos.length === 0) return { pulls: [], since: {} };
+    const installed = yield* app.installed;
+    const { pulls } = yield* look(installed.repos.filter(({ repo }) => file.repos.includes(repo)), true);
+    return { pulls, since: file.since ?? {} };
+  });
+
+  return Reviews.of({ status, connect, disconnect, setRepo, setModel, settings, open });
 });
 
 export const layer = Layer.effect(Reviews, make);

@@ -39,6 +39,7 @@ import * as GitHubApp from "./reviews/GitHubApp.ts";
 import * as ReviewRuns from "./reviews/ReviewRuns.ts";
 import * as Reviews from "./reviews/Reviews.ts";
 import * as ReviewStore from "./reviews/ReviewStore.ts";
+import * as ReviewWatch from "./reviews/ReviewWatch.ts";
 import * as UpSocket from "./reproduce/UpSocket.ts";
 import * as Threads from "./threads/Threads.ts";
 import * as AccountStore from "./accounts/AccountStore.ts";
@@ -79,7 +80,7 @@ type ServicesInput = {
 
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
 // see the same instances.
-export const layerServices = (input: ServicesInput) => Monitors.layer.pipe(Layer.provideMerge(layerCore(input)));
+export const layerServices = (input: ServicesInput) => Layer.mergeAll(Monitors.layer, ReviewWatch.layer).pipe(Layer.provideMerge(layerCore(input)));
 
 // Everything but the monitor, which sits on top so a test can run it on a fake clock.
 export const layerCore = (input: ServicesInput) =>

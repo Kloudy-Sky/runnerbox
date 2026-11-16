@@ -12,6 +12,7 @@ import * as AuthStore from "../auth/AuthStore.ts";
 import * as CloudLink from "../cloud/CloudLink.ts";
 import * as ListeningPorts from "../config/ListeningPorts.ts";
 import * as Monitors from "../monitors/Monitors.ts";
+import * as ReviewWatch from "../reviews/ReviewWatch.ts";
 import * as QueueConfig from "../runners/QueueConfig.ts";
 import { layerApp, type UpdateWiring } from "../server.ts";
 import { makeFakeProvider } from "./FakeProvider.ts";
@@ -52,6 +53,7 @@ export async function startTestServer(
   const auth = Context.get(context, AuthStore.AuthStore);
   const cloudLink = Context.get(context, CloudLink.CloudLink);
   const monitors = Context.get(context, Monitors.Monitors);
+  const reviewWatch = Context.get(context, ReviewWatch.ReviewWatch);
   return {
     baseUrl: `http://127.0.0.1:${port}`,
     port,
@@ -61,6 +63,8 @@ export async function startTestServer(
     cloudLink,
     // Runs a monitor pass now, instead of waiting for the next 15 minutes.
     checkMonitors: () => Effect.runPromise(monitors.check),
+    // Runs the pass that reviews unasked now, instead of waiting for the next minute.
+    checkReviews: () => Effect.runPromise(reviewWatch.check),
     auth,
     stateDir,
     now,
