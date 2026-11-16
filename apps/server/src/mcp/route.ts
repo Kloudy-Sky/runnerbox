@@ -13,6 +13,8 @@ import * as ProposeHandler from "./proposeHandler.ts";
 import { ProposeToolkit } from "./proposeTool.ts";
 import * as ReproduceHandler from "./reproduceHandler.ts";
 import { ReproduceToolkit } from "./reproduceTool.ts";
+import * as ReviewHandler from "./reviewHandler.ts";
+import { ReviewToolkit } from "./reviewTool.ts";
 import { RunnerboxToolkit } from "./tools.ts";
 
 // `/mcp` takes only tokens from `runnerbox mcp-token`, never an app's session: a token kept
@@ -40,11 +42,12 @@ const layerTransport = McpServer.layerHttp({
   version: packageJson.version,
   path: "/mcp",
   protocols: [McpProtocol.v2025_06_18],
-  instructions: "Read-only CI history and runner state for one machine running runnerbox. Start with ci_inbox. repro_exec only works inside a runnerbox thread's reproduce, and propose_change only inside a thread's turn.",
+  instructions: "Read-only CI history and runner state for one machine running runnerbox. Start with ci_inbox. repro_exec only works inside a runnerbox thread's reproduce, and propose_change only inside a thread's turn. read_file, search_code, list_files and submit_review only work inside a runnerbox review.",
 }).pipe(Layer.provide(layerAuth));
 
 export const layer = Layer.mergeAll(
   McpServer.toolkit(RunnerboxToolkit).pipe(Layer.provide(Handlers.layer)),
   McpServer.toolkit(ReproduceToolkit).pipe(Layer.provide(ReproduceHandler.layer)),
   McpServer.toolkit(ProposeToolkit).pipe(Layer.provide(ProposeHandler.layer)),
+  McpServer.toolkit(ReviewToolkit).pipe(Layer.provide(ReviewHandler.layer)),
 ).pipe(Layer.provideMerge(layerTransport));

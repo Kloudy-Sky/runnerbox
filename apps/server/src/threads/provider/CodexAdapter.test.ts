@@ -61,6 +61,7 @@ async function turn(
     mcp: { url: "http://127.0.0.1:1/mcp", token: TOKEN },
     reproduce: false,
     propose: true,
+    review: false,
     account: { label: "Codex, API", model: "gpt-6-luna", apiKey: KEY, home: options.ownerHome ? ownerHome : null },
   };
   const exit = await Effect.runPromiseExit(

@@ -36,7 +36,9 @@ import * as Monitors from "./monitors/Monitors.ts";
 import * as Proposals from "./proposals/Proposals.ts";
 import * as Reproduces from "./reproduce/Reproduces.ts";
 import * as GitHubApp from "./reviews/GitHubApp.ts";
+import * as ReviewRuns from "./reviews/ReviewRuns.ts";
 import * as Reviews from "./reviews/Reviews.ts";
+import * as ReviewStore from "./reviews/ReviewStore.ts";
 import * as UpSocket from "./reproduce/UpSocket.ts";
 import * as Threads from "./threads/Threads.ts";
 import * as AccountStore from "./accounts/AccountStore.ts";
@@ -82,14 +84,14 @@ export const layerServices = (input: ServicesInput) => Monitors.layer.pipe(Layer
 // Everything but the monitor, which sits on top so a test can run it on a fake clock.
 export const layerCore = (input: ServicesInput) =>
   ServerUpdate.layer((input.updates ?? releaseUpdates).source, (input.updates ?? releaseUpdates).keys).pipe(
-    Layer.provideMerge(Layer.mergeAll(Threads.layer, Providers.layer, (input.updates ?? releaseUpdates).supervision)),
+    Layer.provideMerge(Layer.mergeAll(Threads.layer, Providers.layer, ReviewRuns.layer, (input.updates ?? releaseUpdates).supervision)),
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
     Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer, RunnerRestarts.layer).pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHubApp.layer)))),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHubApp.layer), Layer.provideMerge(ReviewStore.layer)))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
     Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),

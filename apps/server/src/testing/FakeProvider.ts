@@ -26,6 +26,7 @@ export type FakeStep =
   | { readonly hang: true };
 
 // `monitor`, when given, answers turns that may not propose (a monitor's), with its own cost.
+// `review` answers a review's turns.
 export function makeFakeProvider(options: {
   readonly turns: ReadonlyArray<ReadonlyArray<FakeStep>>;
   readonly available?: boolean;
@@ -33,6 +34,7 @@ export function makeFakeProvider(options: {
   // How long `status` takes, like a `claude auth status` that isn't cached.
   readonly statusDelayMs?: number;
   readonly monitor?: { readonly steps: ReadonlyArray<FakeStep>; readonly costUsd: number };
+  readonly review?: ReadonlyArray<FakeStep>;
   readonly models?: ReadonlyArray<{ readonly id: string; readonly label: string }>;
 }) {
   const inputs: TurnInput[] = [];
@@ -64,8 +66,8 @@ export function makeFakeProvider(options: {
     status: () => Effect.sleep(options.statusDelayMs ?? 0).pipe(Effect.as(options.available === false ? { provider: "Fake", available: false, fix: "Install Claude Code on this machine and run `claude` once to sign in." } : { provider: "Fake", available: true, fix: null })),
     runTurn: (input) =>
       Stream.suspend(() => {
-        const monitor = !input.propose ? options.monitor : undefined;
-        const script = monitor?.steps ?? options.turns[inputs.length % options.turns.length] ?? [];
+        const monitor = !input.propose && !input.review ? options.monitor : undefined;
+        const script = (input.review ? options.review : monitor?.steps) ?? options.turns[inputs.length % options.turns.length] ?? [];
         inputs.push(input);
         return Stream.fromIterable(script).pipe(
           Stream.flatMap((step) => play(step, input)),

@@ -27,9 +27,11 @@ export type Capabilities = {
   readonly restartRunners: boolean;
   // `reviews.status`: the Reviews page and its settings.
   readonly reviews: boolean;
+  // `reviews.start` and `reviews.read`: the server reviews a pull request and keeps what it found.
+  readonly reviewRuns: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, runnersExplained: false, checkRelease: false, restartRunners: false, reviews: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, runnersExplained: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -49,5 +51,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     checkRelease: has(RPC_METHODS.serverCheckRelease),
     restartRunners: has(RPC_METHODS.runnersRestartStatus) && has(RPC_METHODS.runnersRestartWhenIdle),
     reviews: has(RPC_METHODS.reviewsStatus),
+    reviewRuns: has(RPC_METHODS.reviewsStart) && has(RPC_METHODS.reviewsRead),
   };
 }

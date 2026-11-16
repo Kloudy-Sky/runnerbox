@@ -15,7 +15,7 @@ import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } fro
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
-import { GitHubAppId, GitHubAppKey, ReviewError, ReviewsView } from "./reviews.ts";
+import { GitHubAppId, GitHubAppKey, PullNumber, PullReviews, Review, ReviewError, ReviewsView } from "./reviews.ts";
 import { ReleaseCheck, ReleaseVersion, ServerUpdateError, UpdateProgress, UpdateStatus } from "./update.ts";
 import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
@@ -122,6 +122,10 @@ export const RPC_METHODS = {
   reviewsConnect: "reviews.connect",
   reviewsDisconnect: "reviews.disconnect",
   reviewsSetRepo: "reviews.setRepo",
+  reviewsSetModel: "reviews.setModel",
+  reviewsRead: "reviews.read",
+  reviewsStart: "reviews.start",
+  reviewsStop: "reviews.stop",
 } as const;
 
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
@@ -261,6 +265,12 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.reviewsConnect, { payload: { appId: GitHubAppId, privateKey: GitHubAppKey }, success: ReviewsView, error: ReviewFailure }),
   Rpc.make(RPC_METHODS.reviewsDisconnect, { success: ReviewsView, error: ReviewFailure }),
   Rpc.make(RPC_METHODS.reviewsSetRepo, { payload: { repo: RepoName, review: Schema.Boolean }, success: ReviewsView, error: ReviewFailure }),
+  Rpc.make(RPC_METHODS.reviewsSetModel, { payload: { model: Schema.String.check(Schema.isMaxLength(60)) }, success: ReviewsView, error: ReviewFailure }),
+  // A pull request's reviews as the server keeps them. Nothing here is posted to GitHub.
+  Rpc.make(RPC_METHODS.reviewsRead, { payload: { repo: RepoName, number: PullNumber }, success: PullReviews, error: ReviewFailure }),
+  // Starts a review of the pull request's newest commit and returns at once; the review fills in as it runs.
+  Rpc.make(RPC_METHODS.reviewsStart, { payload: { repo: RepoName, number: PullNumber }, success: Review, error: ReviewFailure }),
+  Rpc.make(RPC_METHODS.reviewsStop, { payload: { repo: RepoName, number: PullNumber }, success: Review, error: ReviewFailure }),
   // The methods this server answers, so a client offers only what will work. A server older than
   // this method refuses it as unknown, which tells the client as much.
   Rpc.make(RPC_METHODS.serverMethods, { success: Schema.Array(Schema.String), error: AuthorizationError }),
@@ -368,4 +378,9 @@ export const RPC_SCOPES = {
   [RPC_METHODS.reviewsConnect]: ACCESS,
   [RPC_METHODS.reviewsDisconnect]: ACCESS,
   [RPC_METHODS.reviewsSetRepo]: ACCESS,
+  [RPC_METHODS.reviewsSetModel]: ACCESS,
+  [RPC_METHODS.reviewsRead]: HISTORY,
+  // A review is an agent turn on the owner's account, so it takes what starting a thread's turn takes.
+  [RPC_METHODS.reviewsStart]: THREADS,
+  [RPC_METHODS.reviewsStop]: THREADS,
 } as const satisfies Record<RpcMethod, ReadonlyArray<AuthScope>>;

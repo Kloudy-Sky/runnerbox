@@ -3,7 +3,7 @@ import { test } from "node:test";
 import * as Context from "effect/Context";
 import { Tool } from "effect/ai";
 import { RunnerboxToolkit } from "../../mcp/tools.ts";
-import { claudeArgs, claudeEnv, MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, mcpConfig, PROPOSE_TOOL, promptLine, READ_ONLY_TOOLS, REPRODUCE_TOOL } from "./claudeCommand.ts";
+import { claudeArgs, claudeEnv, MAX_AGENT_STEPS, MAX_REPRODUCE_STEPS, mcpConfig, PROPOSE_TOOL, promptLine, READ_ONLY_TOOLS, REPRODUCE_TOOL, REVIEW_TOOLS } from "./claudeCommand.ts";
 
 // What a thread's agent can reach is decided entirely by the command that starts `claude`. Each
 // assertion is a boundary the threat model names.
@@ -53,6 +53,14 @@ test("only a turn with a reproduce running may use its shell tool, and nothing e
   assert.ok(!args.some((arg) => arg.includes(REPRODUCE_TOOL)));
   const changed = reproducing.filter((arg) => !args.includes(arg));
   assert.deepEqual(changed, [`--allowedTools=${[...READ_ONLY_TOOLS, PROPOSE_TOOL, REPRODUCE_TOOL].join(",")}`, `--max-turns=${MAX_REPRODUCE_STEPS}`]);
+});
+
+test("a review's turn reads untrusted code, so it gets the review's four tools and none that read this machine", () => {
+  const review = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: "opus", reproduce: false, propose: false, review: true });
+  assert.deepEqual(REVIEW_TOOLS, ["read_file", "search_code", "list_files", "submit_review"].map((name) => `mcp__runnerbox__${name}`));
+  const changed = review.filter((arg) => !args.includes(arg));
+  assert.deepEqual(changed, [`--allowedTools=${REVIEW_TOOLS.join(",")}`, "--max-turns=150", "--effort=high", "--model=opus"]);
+  assert.ok(review.includes("--tools="));
 });
 
 test("claude gets an allow-listed environment, so no API key, provider switch or other secret reaches it", () => {

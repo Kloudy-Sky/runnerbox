@@ -18,7 +18,8 @@ import { appRequest } from "./appRequest.ts";
 // The owner's own GitHub App: its ID and private key in `.server/github-app.json`, owner-only. The
 // key is read back only to sign the App's short-lived tokens, here. It's never returned over RPC,
 // logged, given to an agent or put in a thread. What leaves this service is a token for one
-// installation that can only read pull requests, and lasts an hour.
+// installation that can only read pull requests, and lasts an hour. A review gets one more, for its
+// one repository, that can also read the code.
 
 const AppFile = Schema.Struct({ v: Schema.Literal(1), appId: Schema.String, privateKey: Schema.String, slug: Schema.String, name: Schema.String });
 type AppFile = typeof AppFile.Type;
@@ -40,7 +41,7 @@ const TOKEN_MARGIN_MS = 5 * 60_000;
 const RETRY_AFTER_MS = 60_000;
 
 // A repository the App is installed on, and a token that reads its pull requests.
-export type InstalledRepo = { readonly repo: string; readonly token: string };
+export type InstalledRepo = { readonly repo: string; readonly token: string; readonly installation: number };
 type Installed = { readonly at: number; readonly expiresAt: number; readonly repos: ReadonlyArray<InstalledRepo> };
 
 export class GitHubApp extends Context.Service<
@@ -53,6 +54,8 @@ export class GitHubApp extends Context.Service<
     // Every repository the App is installed on. `problem` says why the list is the last one known,
     // or empty, when GitHub couldn't be asked.
     readonly installed: Effect.Effect<{ readonly repos: ReadonlyArray<InstalledRepo>; readonly problem: string | null }, ReviewError>;
+    // A new token for one repository alone, that reads its code and pull requests and writes nothing.
+    readonly codeToken: (repo: string) => Effect.Effect<string, ReviewError>;
   }
 >()("runnerbox/server/reviews/GitHubApp") {}
 
@@ -118,7 +121,7 @@ const make = Effect.gen(function* () {
         const body = reply.kind === "ok" ? decodeRepositories(reply.body) : Option.none();
         if (Option.isNone(body)) return { problem: "Couldn't list the repositories the App is installed on." } as const;
         // Only names that pass the core's pattern ever go into a request path.
-        repos.push(...body.value.repositories.filter(({ full_name }) => REPO_NAME.test(full_name)).map(({ full_name }) => ({ repo: full_name, token: access.value.token })));
+        repos.push(...body.value.repositories.filter(({ full_name }) => REPO_NAME.test(full_name)).map(({ full_name }) => ({ repo: full_name, token: access.value.token, installation: id })));
         if (page * REPOS_PER_PAGE >= body.value.total_count) break;
       }
     }
@@ -145,7 +148,23 @@ const make = Effect.gen(function* () {
     }),
   );
 
-  return GitHubApp.of({ describe, connect, disconnect, installed });
+  const codeToken = Effect.fn("GitHubApp.codeToken")(function* (repo: string) {
+    const file = yield* read;
+    if (file === null) return yield* new ReviewError({ reason: "not_connected" });
+    const listed = yield* installed;
+    const found = listed.repos.find((each) => each.repo === repo);
+    if (found === undefined) return yield* new ReviewError({ reason: listed.problem === null ? "unknown_repo" : "github_unreachable" });
+    const jwt = appJwt(file.appId, file.privateKey, yield* Clock.currentTimeMillis);
+    if (jwt === null) return yield* new ReviewError({ reason: "bad_key" });
+    const minted = yield* ask("POST", `app/installations/${found.installation}/access_tokens`, jwt, { repositories: [repo.slice(repo.indexOf("/") + 1)], permissions: { contents: "read", pull_requests: "read" } });
+    // GitHub answers 422 when the App was never given a permission the token asks for.
+    if (minted.kind === "error") return yield* new ReviewError({ reason: minted.status === 422 ? "no_code_access" : "github_unreachable" });
+    const access = minted.kind === "ok" ? decodeAccessToken(minted.body) : Option.none();
+    if (Option.isNone(access)) return yield* new ReviewError({ reason: "app_refused" });
+    return access.value.token;
+  });
+
+  return GitHubApp.of({ describe, connect, disconnect, installed, codeToken });
 });
 
 export const layer = Layer.effect(GitHubApp, make);

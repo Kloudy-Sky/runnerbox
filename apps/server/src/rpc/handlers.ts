@@ -12,6 +12,7 @@ import * as RunnersExplained from "../runners/RunnersExplained.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
 import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
+import * as ReviewRuns from "../reviews/ReviewRuns.ts";
 import * as Reviews from "../reviews/Reviews.ts";
 import * as Threads from "../threads/Threads.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
@@ -42,8 +43,12 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       // The same scopes the server checks on monitors.save, so the switch is never offered when saving would be refused.
       const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
       const reviews = yield* Reviews.Reviews;
-      // The same scopes the server checks on reviews.setRepo, so a switch is never offered when it would be refused.
-      const canConfigureReviews = RPC_SCOPES[RPC_METHODS.reviewsSetRepo].every((scope) => session.scopes.includes(scope));
+      const reviewRuns = yield* ReviewRuns.ReviewRuns;
+      // The same scopes the server checks on reviews.setRepo and reviews.start, so a switch or a button is never offered when it would be refused.
+      const mayReview = {
+        configure: RPC_SCOPES[RPC_METHODS.reviewsSetRepo].every((scope) => session.scopes.includes(scope)),
+        review: RPC_SCOPES[RPC_METHODS.reviewsStart].every((scope) => session.scopes.includes(scope)),
+      };
       // Who approved, as `up` logs it: the session, never its token.
       const approver = { id: session.id, label: session.label };
       const accounts = yield* AccountStore.AccountStore;
@@ -106,10 +111,14 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "monitors.status": () => monitors.status(canConfigureMonitors),
         "monitors.save": (settings) => monitors.save(settings),
         "monitors.markRead": ({ itemId }) => monitors.markRead(itemId),
-        "reviews.status": () => reviews.status(canConfigureReviews),
-        "reviews.connect": ({ appId, privateKey }) => reviews.connect(appId, privateKey),
-        "reviews.disconnect": () => reviews.disconnect,
-        "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review),
+        "reviews.status": () => reviews.status(mayReview),
+        "reviews.connect": ({ appId, privateKey }) => reviews.connect(appId, privateKey, mayReview),
+        "reviews.disconnect": () => reviews.disconnect(mayReview),
+        "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review, mayReview),
+        "reviews.setModel": ({ model }) => reviews.setModel(model, mayReview),
+        "reviews.read": ({ repo, number }) => reviewRuns.read(repo, number, mayReview.review),
+        "reviews.start": ({ repo, number }) => reviewRuns.start(repo, number),
+        "reviews.stop": ({ repo, number }) => reviewRuns.stop(repo, number),
         "accounts.list": () => accounts.list,
         "accounts.save": (input) => accounts.save(input),
         "accounts.remove": ({ id }) => accounts.remove(id),
