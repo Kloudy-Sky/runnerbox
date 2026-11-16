@@ -33,7 +33,7 @@ async function fakeGitHub() {
   // `installationsDown` answers 502 where the App's installations are listed, and `listed` counts those requests.
   // `pullsAsked` counts the requests for owner/name's open pull requests.
   const script = { installationsDown: false, listed: 0, pullsAsked: 0 };
-  const pull = { number: 7, title: "Fix the\u0007 widget\nagain", draft: false, user: { login: "someone" }, head: { ref: "fix/widget", sha: "a".repeat(40) }, base: { ref: "main" }, created_at: "2026-11-14T10:00:00Z", updated_at: "2026-11-15T10:00:00Z" };
+  const pull = { number: 7, title: "Fix the\u0007 widget\nagain", draft: false, user: { login: "someone" }, head: { ref: "fix/widget", sha: "a".repeat(40), repo: { full_name: "owner/name" } }, base: { ref: "main" }, created_at: "2026-11-14T10:00:00Z", updated_at: "2026-11-15T10:00:00Z" };
   const server = createServer((request, response) => {
     const path = request.url ?? "";
     const json = (status: number, body: unknown) => void response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));

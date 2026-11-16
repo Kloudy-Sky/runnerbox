@@ -17,6 +17,7 @@ import { makeReviewFixture, REVIEW_SCRIPT } from "../testing/reviewFixture.ts";
 import { startTestServer } from "../testing/testServer.ts";
 import { autoBudget, type ListedPull, MAX_AUTO_PER_DAY, wantsReview } from "./autoReview.ts";
 import { fetchCommits, listPaths, readLines, searchLines } from "./gitObjects.ts";
+import { pullsOf } from "./pullRequests.ts";
 import { reviewableDiff } from "./reviewableDiff.ts";
 import { reviewPrompt } from "./reviewPrompt.ts";
 
@@ -31,7 +32,7 @@ async function fakeGitHub(code: ReturnType<typeof makeReviewFixture>) {
   const script = { head: code.headSha, openedAt: "2020-01-01T10:00:00Z", draft: false };
   const server = createServer((request, response) => {
     const path = request.url ?? "";
-    const pull = { number: 7, title: "A job whose runner is gone waits again", state: "open", body: "It stayed assigned.", draft: script.draft, user: { login: "someone" }, head: { ref: "fix/queue-gone-runner", sha: script.head }, base: { ref: "main", sha: code.baseSha }, additions: 7, deletions: 3, changed_files: 1, created_at: script.openedAt, updated_at: "2020-01-02T10:00:00Z" };
+    const pull = { number: 7, title: "A job whose runner is gone waits again", state: "open", body: "It stayed assigned.", draft: script.draft, user: { login: "someone" }, head: { ref: "fix/queue-gone-runner", sha: script.head, repo: { full_name: "owner/name" } }, base: { ref: "main", sha: code.baseSha }, additions: 7, deletions: 3, changed_files: 1, created_at: script.openedAt, updated_at: "2020-01-02T10:00:00Z" };
     const json = (status: number, body: unknown) => void response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
     if (path === "/app") return json(200, { slug: "example-reviewer", name: "Example Reviewer" });
     if (path.startsWith("/app/installations?")) return json(200, [{ id: 11 }]);
@@ -178,6 +179,11 @@ test("a bot's pull request, one from a fork, and one still being pushed to aren'
   assert.equal(wantsReview({ ...pull, fork: true }, known), false);
   assert.equal(wantsReview({ ...pull, updatedAt: "2026-11-15T11:59:30Z" }, known), false);
   assert.equal(wantsReview(pull, { ...known, since: "2026-11-15T11:30:00Z" }), false);
+
+  // Only a head GitHub names as the repository's own isn't a fork's: one left out or null is.
+  const listed = (head: object) => pullsOf("owner/name", [{ number: 7, title: "A change", user: { login: "dependabot[bot]" }, head: { ref: "b", sha: "a".repeat(40), ...head }, base: { ref: "main" }, created_at: "2026-11-15T11:00:00Z", updated_at: "2026-11-15T11:30:00Z" }])?.[0];
+  assert.deepEqual([listed({})?.fork, listed({ repo: null })?.fork, listed({ repo: { full_name: "someone/name" } })?.fork, listed({ repo: { full_name: "owner/name" } })?.fork], [true, true, true, false]);
+  assert.equal(listed({})?.bot, true);
 
   const hourly = Array.from({ length: MAX_AUTO_PER_DAY }, (_, index) => new Date(now - index * 60_000).toISOString());
   assert.equal(autoBudget(hourly, now).room, false);

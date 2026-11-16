@@ -14,7 +14,6 @@ const Pulls = Schema.Array(
     title: Schema.String,
     draft: Schema.optionalKey(Schema.Boolean),
     user: Schema.NullOr(Schema.Struct({ login: Schema.String, type: Schema.optionalKey(Schema.String) })),
-    // `repo` is null once a fork was deleted.
     head: Schema.Struct({ ref: Schema.String, sha: Schema.String, repo: Schema.optionalKey(Schema.NullOr(Schema.Struct({ full_name: Schema.String }))) }),
     base: Schema.Struct({ ref: Schema.String }),
     created_at: Schema.String,
@@ -66,8 +65,9 @@ export function pullsOf(repo: string, body: unknown): ReadonlyArray<ListedPull> 
         openedAt: pull.created_at,
         updatedAt: pull.updated_at,
         bot: pull.user?.type === "Bot" || (pull.user?.login.endsWith("[bot]") ?? false),
-        // A head whose repository GitHub doesn't name is treated as a fork's.
-        fork: "repo" in pull.head && pull.head.repo?.full_name !== repo,
+        // Only a head GitHub names as this repository's own isn't a fork's. One it doesn't name, or
+        // names as null once a fork was deleted, is treated as a fork's.
+        fork: pull.head.repo?.full_name !== repo,
       })),
   });
 }
