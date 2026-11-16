@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Bell, Eye, Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Bell, Eye, GitPullRequest, Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { handleSettingsSectionKeyDown } from "../components/settings/settingsSectionNavigation.ts";
 import { SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar.tsx";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSeparator } from "../components/WorkspaceBreadcrumb.tsx";
@@ -11,6 +11,7 @@ const SECTIONS = [
   { to: "/settings/access", label: "Access", icon: ShieldCheck },
   { to: "/settings/changes", label: "Changes", icon: SlidersHorizontal },
   { to: "/settings/monitors", label: "Monitors", icon: Eye },
+  { to: "/settings/reviews", label: "Reviews", icon: GitPullRequest },
   { to: "/settings/notifications", label: "Notifications", icon: Bell },
   { to: "/settings/about", label: "About", icon: Info },
 ] as const;

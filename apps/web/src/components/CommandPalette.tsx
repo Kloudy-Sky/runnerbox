@@ -1,6 +1,6 @@
 import { inboxItems } from "@runnerbox/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { CircleDot, FileText, Gauge, House, ListTree, Server, Settings } from "lucide-react";
+import { CircleDot, FileText, Gauge, GitPullRequest, House, ListTree, Server, Settings } from "lucide-react";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
@@ -20,11 +20,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { repo } = useRepo();
   const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }));
   const keep = (previous: RootSearch) => previous;
-  const page = (id: string, label: string, to: "/" | "/runs" | "/speed" | "/runners" | "/settings", icon: typeof House): Entry => ({ id, label, detail: "", icon, go: () => void navigate({ to, search: keep }) });
+  const page = (id: string, label: string, to: "/" | "/runs" | "/reviews" | "/speed" | "/runners" | "/settings", icon: typeof House): Entry => ({ id, label, detail: "", icon, go: () => void navigate({ to, search: keep }) });
   const groups = [
     {
       value: "Pages",
-      items: [page("home", "Home", "/", House), page("runs", "All runs", "/runs", ListTree), page("speed", "Speed and cost", "/speed", Gauge), page("runners", "Runners", "/runners", Server), page("settings", "Settings", "/settings", Settings)],
+      items: [page("home", "Home", "/", House), page("runs", "All runs", "/runs", ListTree), page("reviews", "Reviews", "/reviews", GitPullRequest), page("speed", "Speed and cost", "/speed", Gauge), page("runners", "Runners", "/runners", Server), page("settings", "Settings", "/settings", Settings)],
     },
     {
       value: "Inbox",

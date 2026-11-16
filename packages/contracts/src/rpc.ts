@@ -15,6 +15,7 @@ import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } fro
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
+import { GitHubAppId, GitHubAppKey, ReviewError, ReviewsView } from "./reviews.ts";
 import { ReleaseCheck, ReleaseVersion, ServerUpdateError, UpdateProgress, UpdateStatus } from "./update.ts";
 import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
@@ -43,6 +44,7 @@ const TurnFailure = Schema.Union([AuthorizationError, ThreadError, AttachmentErr
 const AttachmentFailure = Schema.Union([AuthorizationError, AttachmentError]);
 const ReproduceFailure = Schema.Union([AuthorizationError, ThreadError, ReproduceError]);
 const ProposalFailure = Schema.Union([AuthorizationError, ProposalError]);
+const ReviewFailure = Schema.Union([AuthorizationError, ReviewError]);
 const ProposalId = { id: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)) };
 const ThreadId = { id: Schema.String };
 const TurnPayload = {
@@ -116,6 +118,10 @@ export const RPC_METHODS = {
   monitorsStatus: "monitors.status",
   monitorsSave: "monitors.save",
   monitorsMarkRead: "monitors.markRead",
+  reviewsStatus: "reviews.status",
+  reviewsConnect: "reviews.connect",
+  reviewsDisconnect: "reviews.disconnect",
+  reviewsSetRepo: "reviews.setRepo",
 } as const;
 
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
@@ -249,6 +255,12 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.monitorsSave, { payload: MonitorSettings, success: MonitorStatus, error: Schema.Union([AuthorizationError, MonitorError]) }),
   // The owner opened the item's thread, so its "Looked into" mark goes.
   Rpc.make(RPC_METHODS.monitorsMarkRead, { payload: { itemId: Schema.String }, error: Schema.Union([AuthorizationError, MonitorError]) }),
+  // The App the owner connected, the repositories it's installed on, and their open pull requests.
+  Rpc.make(RPC_METHODS.reviewsStatus, { success: ReviewsView, error: ReviewFailure }),
+  // The owner's own GitHub App. The key is checked against GitHub, kept on the server and never sent back.
+  Rpc.make(RPC_METHODS.reviewsConnect, { payload: { appId: GitHubAppId, privateKey: GitHubAppKey }, success: ReviewsView, error: ReviewFailure }),
+  Rpc.make(RPC_METHODS.reviewsDisconnect, { success: ReviewsView, error: ReviewFailure }),
+  Rpc.make(RPC_METHODS.reviewsSetRepo, { payload: { repo: RepoName, review: Schema.Boolean }, success: ReviewsView, error: ReviewFailure }),
   // The methods this server answers, so a client offers only what will work. A server older than
   // this method refuses it as unknown, which tells the client as much.
   Rpc.make(RPC_METHODS.serverMethods, { success: Schema.Array(Schema.String), error: AuthorizationError }),
@@ -350,4 +362,10 @@ export const RPC_SCOPES = {
   [RPC_METHODS.monitorsStatus]: THREADS,
   [RPC_METHODS.monitorsSave]: ["access:write", "threads:operate"],
   [RPC_METHODS.monitorsMarkRead]: THREADS,
+  // Pull request titles, authors and branches are history like a job's are.
+  [RPC_METHODS.reviewsStatus]: HISTORY,
+  // A key that can write to the owner's repositories, and which of them it's used on, manage access.
+  [RPC_METHODS.reviewsConnect]: ACCESS,
+  [RPC_METHODS.reviewsDisconnect]: ACCESS,
+  [RPC_METHODS.reviewsSetRepo]: ACCESS,
 } as const satisfies Record<RpcMethod, ReadonlyArray<AuthScope>>;

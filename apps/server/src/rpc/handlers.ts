@@ -12,6 +12,7 @@ import * as RunnersExplained from "../runners/RunnersExplained.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
 import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
+import * as Reviews from "../reviews/Reviews.ts";
 import * as Threads from "../threads/Threads.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
 import * as Providers from "../accounts/Providers.ts";
@@ -40,6 +41,9 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const monitors = yield* Monitors.Monitors;
       // The same scopes the server checks on monitors.save, so the switch is never offered when saving would be refused.
       const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
+      const reviews = yield* Reviews.Reviews;
+      // The same scopes the server checks on reviews.setRepo, so a switch is never offered when it would be refused.
+      const canConfigureReviews = RPC_SCOPES[RPC_METHODS.reviewsSetRepo].every((scope) => session.scopes.includes(scope));
       // Who approved, as `up` logs it: the session, never its token.
       const approver = { id: session.id, label: session.label };
       const accounts = yield* AccountStore.AccountStore;
@@ -102,6 +106,10 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "monitors.status": () => monitors.status(canConfigureMonitors),
         "monitors.save": (settings) => monitors.save(settings),
         "monitors.markRead": ({ itemId }) => monitors.markRead(itemId),
+        "reviews.status": () => reviews.status(canConfigureReviews),
+        "reviews.connect": ({ appId, privateKey }) => reviews.connect(appId, privateKey),
+        "reviews.disconnect": () => reviews.disconnect,
+        "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review),
         "accounts.list": () => accounts.list,
         "accounts.save": (input) => accounts.save(input),
         "accounts.remove": ({ id }) => accounts.remove(id),
