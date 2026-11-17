@@ -187,7 +187,14 @@ const make = Effect.gen(function* () {
           const login = viewer.kind === "ok" ? Option.getOrUndefined(decodeViewer(viewer.body))?.login : undefined;
           if (login === undefined || !LOGIN.test(login)) return "failed" as const;
           const now = yield* Clock.currentTimeMillis;
-          const kept = yield* lock.withPermits(1)(keep(granted({ ...grant, access_token: grant.access_token }, login, now)).pipe(Effect.tap(() => Effect.sync(() => void (epoch += 1))))).pipe(Effect.exit);
+          // The code is dropped in the same step the token is kept, so no status shows an account
+          // that's signed in with its code still waiting. A replaced sign-in's poll is interrupted
+          // before this, so the code dropped here is always this poll's own.
+          const signedIn = Effect.sync(() => {
+            epoch += 1;
+            pending = null;
+          });
+          const kept = yield* lock.withPermits(1)(keep(granted({ ...grant, access_token: grant.access_token }, login, now)).pipe(Effect.tap(() => signedIn))).pipe(Effect.exit);
           return kept._tag === "Success" ? null : ("failed" as const);
         }
         if (grant.error === "authorization_pending") continue;
