@@ -39,6 +39,7 @@ import type { CodexProviderAdapter, ProviderAdapter } from "./threads/provider/P
 import * as Monitors from "./monitors/Monitors.ts";
 import * as Proposals from "./proposals/Proposals.ts";
 import * as Reproduces from "./reproduce/Reproduces.ts";
+import * as PullChecks from "./reviews/PullChecks.ts";
 import * as ReviewRuns from "./reviews/ReviewRuns.ts";
 import * as Reviews from "./reviews/Reviews.ts";
 import * as ReviewStore from "./reviews/ReviewStore.ts";
@@ -95,7 +96,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provide(PullChecks.layer), Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer, ReviewStore.layer)),
     Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),

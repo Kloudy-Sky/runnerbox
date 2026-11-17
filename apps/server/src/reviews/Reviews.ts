@@ -14,6 +14,7 @@ import * as GitHub from "../github/GitHub.ts";
 import { createGitHubReader } from "../github/githubReader.ts";
 import { QueueConfig } from "../runners/QueueConfig.ts";
 import { type ListedPull, skipOf } from "./autoReview.ts";
+import * as PullChecks from "./PullChecks.ts";
 import { pullsOf } from "./pullRequests.ts";
 import { DEFAULT_REVIEW_MODEL, offersReviewModel, REVIEW_MODELS } from "./reviewModels.ts";
 import * as ReviewStore from "./ReviewStore.ts";
@@ -21,7 +22,8 @@ import * as ReviewStore from "./ReviewStore.ts";
 // Which repositories the owner turned reviews on for and the model that reviews, in
 // `.server/reviews.json`, and the open pull requests on them, each with its newest review. GitHub
 // is asked when a client asks, at most every 20 seconds, with the last ETag for each repository, so
-// a list that hasn't changed costs nothing against the owner's budget.
+// a list that hasn't changed costs nothing against the owner's budget. Each pull request carries its
+// head commit's checks (PullChecks.ts).
 
 // `since` is when each repository's reviews were turned on, which decides the pull requests reviewed unasked.
 const SettingsFile = Schema.Struct({ v: Schema.Literal(1), repos: Schema.Array(Schema.String), model: Schema.optionalKey(Schema.String), since: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)) });
@@ -61,6 +63,7 @@ const make = Effect.gen(function* () {
   const github = yield* GitHub.GitHub;
   const reach = github.reach.pipe(Effect.mapError(withoutGitHub));
   const store = yield* ReviewStore.ReviewStore;
+  const checks = yield* PullChecks.PullChecks;
   const reader = createGitHubReader(apiBase);
   const path = join(serverDir, "reviews.json");
   const unreadable = () => new ReviewError({ reason: "unreadable" });
@@ -126,11 +129,12 @@ const make = Effect.gen(function* () {
     if (reached === null) return { app: null, repos: [], pulls: [], problem: null, checkedAt: null, ...shared };
     const on = new Set(file.repos);
     const { pulls, problem, at } = yield* look(reached.repos.filter((repo) => on.has(repo)), reached.token);
+    const checksOf = yield* checks.of(pulls, reached.token, at);
     return {
       app: reached.app,
       repos: reached.repos.map((repo) => ({ repo, review: on.has(repo) })),
       // Each pull request's review is read now, so a running review shows as it changes between looks at GitHub.
-      pulls: yield* Effect.forEach(pulls, withReview),
+      pulls: yield* Effect.forEach(pulls, (listed) => withReview(listed).pipe(Effect.map((pull) => ({ ...pull, checks: checksOf(pull) })))),
       problem: reached.problem ?? problem,
       checkedAt: new Date(at).toISOString(),
       ...shared,
