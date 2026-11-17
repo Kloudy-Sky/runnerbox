@@ -1,10 +1,12 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Activity, Gauge, GitPullRequest, Inbox, ListTree, Server, Settings } from "lucide-react";
 import type * as React from "react";
-import { useInbox } from "../hooks/useInbox.ts";
-import { useRunnerState } from "../hooks/useRunnerState.ts";
+import { useRange } from "../hooks/useRange.ts";
+import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
+import { useRunnerStateEverywhere } from "../hooks/useRunnerStateEverywhere.ts";
 import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 import { useSidebarShortcut } from "../hooks/useSidebarShortcut.ts";
+import { needsYouEverywhere } from "../lib/needsYouEverywhere.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { cn } from "../lib/utils.ts";
 import { EnvironmentMenu } from "./EnvironmentMenu.tsx";
@@ -34,14 +36,16 @@ function PageRow({ page, path }: { page: Page; path: string }) {
   );
 }
 
+// The counts cover every connected machine, not only the one picked in the switcher.
 export function AppSidebar() {
   useSidebarShortcut();
-  const inbox = useInbox().data;
+  const { days } = useRange();
+  const inboxes = useRpcQueryEverywhere(["inbox", days], (client) => client["inbox.list"]({ days }));
   const path = useRouterState({ select: (state) => state.location.pathname });
-  const installs = useRunnerState();
-  const slots = installs?.filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots)) ?? [];
+  const machines = useRunnerStateEverywhere();
+  const slots = [...machines.values()].flat().filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots));
   const busy = slots.filter((slot) => slot.phase === "busy").length;
-  const waiting = inbox?.items.length ?? 0;
+  const waiting = needsYouEverywhere(inboxes.map((answer) => answer.data)).length;
   const { reviews } = useServerCapabilities();
 
   const pages: ReadonlyArray<Page> = [
