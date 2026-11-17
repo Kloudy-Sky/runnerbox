@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LauncherEvent } from "@runnerbox/contracts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
-import { ADVICE } from "./advice.ts";
 import { buildInbox, deriveInbox } from "./derive.ts";
 import type { InboxInput } from "./rules.ts";
 
@@ -75,12 +74,12 @@ test("a failure gets a verdict, and only the machine's failures need the runner 
     ["code", "own_code"],
     ["unconfirmed", "failed_once"],
   ]);
-  assert.equal(items[0]!.title, "ci / e2e fails on this machine, not in its code");
-  assert.equal(items[0]!.why, "The job's container was stopped for using too much memory. That points at the machine, not the code.");
-  assert.equal(items[0]!.happened, "ci / e2e failed once in 1 run, on example-linux. A retry on the same run passed.");
+  assert.equal(items[0]!.title, "The ci / e2e check failed because example ran out of memory");
+  assert.equal(items[0]!.happened, "The ci / e2e check failed once in 1 run. Memory ran out on example while it ran.");
+  assert.equal(items[0]!.why, "The code isn't at fault. The same code passed when it ran again. You run example, so only a change on example fixes it.");
+  assert.equal(items[0]!.action, "Run fewer jobs at once on example, so each one has the memory it needs.");
   // The exact figures stay in the evidence.
   assert.match(items[0]!.evidence.reasons[0]!, /exit code 137, which means it was killed for using too much memory/);
-  assert.equal(items[0]!.action, ADVICE.memory);
 });
 
 test("low memory during a failed job points at the machine", () => {
@@ -92,7 +91,7 @@ test("low memory during a failed job points at the machine", () => {
     }),
   );
   assert.deepEqual(failures(items), [["infra", "needs_you"]]);
-  assert.equal(items[0]!.why, "The VM ran out of memory while this job ran. That points at the machine, not the code.");
+  assert.equal(items[0]!.happened, "The ci / test check failed once in 1 run. Memory ran out on this machine while it ran.");
   assert.deepEqual(items[0]!.evidence.reasons, ["the VM had 0.3 GB of its 8.0 GB free"]);
   assert.equal(items[0]!.evidence.machine?.vmLowMiB, 300);
 });
@@ -102,7 +101,7 @@ test("a code failure a later run on its branch fixed is counted as fixed, not as
   const { quiet } = buildInbox(input({ jobs: [...broken, job({ job: "build", runId: 2, at: NOW - minutes(20) })] }), 7);
   assert.deepEqual(quiet.map((group) => group.title), ["1 problem already fixed"]);
   const [item] = quiet[0]!.items;
-  assert.equal(item!.title, "ci / build failed in its own code, and a later run passed");
+  assert.equal(item!.title, "The ci / build check failed in its own code, and a later run passed");
   assert.match(item!.happened, /A later run on this branch passed\.$/);
   assert.equal(item!.action, "Nothing to do now. If it fails this way again, it comes back here.");
   // Still broken: it stays a job failing in its own code.
@@ -162,15 +161,15 @@ test("jobs that waited too long merge into one item across repositories and labe
     ["resolved", 1],
   ]);
   const [waiting] = items;
-  assert.equal(waiting!.title, "Jobs are waiting too long for a runner");
-  assert.equal(waiting!.happened, "3 jobs waited more than 5 minutes for one of your runners and ended without getting one. Most were on example-linux.");
-  assert.match(waiting!.why, /^The machine was short of free memory for the linux runners for the whole time these jobs waited/);
+  assert.equal(waiting!.title, "Jobs wait too long for a runner on example");
+  assert.equal(waiting!.happened, "3 jobs waited more than 5 minutes for a runner and gave up.");
+  assert.match(waiting!.why, /^Free memory on example was too low to start another runner for the whole time these jobs waited/);
   assert.equal(waiting!.repo, null);
   assert.deepEqual(waiting!.evidence.breakdown.map((part) => [part.label, part.count]), [
     ["owner/name, example-linux", 2],
     ["owner/other, example-docker", 1],
   ]);
-  assert.match(items.find((item) => item.quiet === "other_runners")!.why, /another machine or to GitHub's machines/);
+  assert.match(items.find((item) => item.quiet === "other_runners")!.why, /another machine, or for one of GitHub's/);
 });
 
 test("a slot whose last three runners failed is reported, and a success ends the streak", () => {
@@ -191,12 +190,13 @@ test("a slot whose last three runners failed is reported, and a success ends the
     runnerEvent(2, 3, 0),
   ];
   const items = deriveInbox(input({ events })).filter((item) => item.kind === "failing_slot");
-  assert.deepEqual(items.map((item) => item.title), ["The linux runners keep failing before they take a job"]);
-  assert.equal(items[0]!.happened, "The linux kind's runner 1 has failed to start 3 times in a row (exit 125).");
+  assert.deepEqual(items.map((item) => item.title), ["Runners on example keep failing before they take a job"]);
+  assert.equal(items[0]!.happened, "One runner on example failed to start 3 times in a row, so no job reached it.");
+  assert.equal(items[0]!.evidence.reasons[0], "The linux kind's runner 1 has failed to start 3 times in a row (exit 125).");
   // Killed for memory after starting: it didn't fail to start.
   const killed = deriveInbox(input({ events: [1, 2, 3].map((minute) => ({ ...runnerEvent(1, minute, 137) })) })).find((item) => item.kind === "failing_slot");
-  assert.equal(killed?.happened, "The linux kind's runner 1 has stopped before taking a job 3 times in a row (exit 137).");
-  assert.match(items[0]!.why, /Docker couldn't start the container/);
+  assert.equal(killed?.happened, "One runner on example stopped before taking a job 3 times in a row, so no job reached it.");
+  assert.match(items[0]!.why, /^Docker on example couldn't start the runner/);
   // A second failing slot of the same kind is the same problem: one item, both slots in the breakdown.
   const both = deriveInbox(input({ events: [...events, ...[4, 5, 6].map((minute) => runnerEvent(2, minute, 125))] })).filter((item) => item.kind === "failing_slot");
   assert.equal(both.length, 1);
@@ -213,10 +213,10 @@ test("a slow run is noted, and three slow runs in a row need you", () => {
     );
   const once = deriveInbox(input({ jobs: history(8, 1) })).filter((item) => item.kind === "slow_job");
   assert.deepEqual(once.map((item) => item.quiet), ["slow"]);
-  assert.equal(once[0]!.happened, "Its latest run took 12 minutes, against a typical 5 minutes.");
+  assert.equal(once[0]!.happened, "Its latest run took 12 minutes, against a usual 5 minutes.");
   const regression = deriveInbox(input({ jobs: history(10, 3) })).filter((item) => item.kind === "slow_job");
   assert.deepEqual(regression.map((item) => item.group), ["needs_you"]);
-  assert.equal(regression[0]!.title, "ci / test has become slower on example-linux");
+  assert.equal(regression[0]!.title, "The ci / test check got slower on this machine");
 });
 
 test("a job whose runs fall in two clusters isn't slow when it lands in the upper one", () => {
@@ -239,7 +239,7 @@ test("the inbox leads with a headline, lists what needs the owner, and counts th
     job({ job: "check", runId: 4, labels: ["ubuntu-24.04"], runner: "GitHub Actions 2", ms: minutes(120), createdAt: iso(NOW - minutes(60) - 30_000) }),
   ];
   const { summary, items, quiet } = buildInbox(input({ jobs }), 7);
-  assert.equal(summary.headline, "Nothing needs you. CI looks healthy.");
+  assert.equal(summary.headline, "Nothing needs you right now.");
   assert.deepEqual(summary.facts, [
     "4 jobs ran in the last 7 days.",
     "50 in 100 passed.",
@@ -268,7 +268,7 @@ test("attempts on one commit are judged together across runs and runner types, a
       ],
     }),
   );
-  const byJob = Object.fromEntries(items.filter((item) => item.kind === "failure").map((item) => [item.title.split(" ")[2] ?? "", item] as const));
+  const byJob = Object.fromEntries(items.filter((item) => item.kind === "failure").map((item) => [item.title.split(" ")[3] ?? "", item] as const));
   assert.equal(byJob.lint?.verdict, "flaky");
   assert.match(byJob.lint!.evidence.reasons[0]!, /same commit/);
   assert.deepEqual(byJob.lint!.evidence.attempts.map((attempt) => [attempt.runId, attempt.runnerType, attempt.conclusion]), [
@@ -276,7 +276,7 @@ test("attempts on one commit are judged together across runs and runner types, a
     [2, "ubuntu-24.04", "success"],
   ]);
   assert.equal(byJob.build?.verdict, "code");
-  assert.match(byJob.build!.happened, /example-linux and ubuntu-24.04/);
+  assert.match(byJob.build!.evidence.reasons.at(-1)!, /example-linux and ubuntu-24.04/);
   assert.equal(byJob.docs?.verdict, "unconfirmed");
 });
 
@@ -297,20 +297,12 @@ test("when every runner fails and no job runs, the headline leads with what need
   assert.equal(summary.headline, "1 thing needs you.");
 });
 
-test("a wait names the label most jobs were on only when it has most of them, and old waits stay until a runner comes", () => {
-  const starved = (repo: string, label: string, at = NOW - minutes(30)) =>
+test("an old wait stays until a runner comes", () => {
+  const starved = (repo: string, label: string, at: number) =>
     job({ repo, runner: null, conclusion: "cancelled", labels: ["self-hosted", label], createdAt: iso(at), startedAt: iso(at), completedAt: iso(at + minutes(20)) });
-  const serves = [job({ labels: ["self-hosted", "example-linux"] }), job({ labels: ["self-hosted", "example-docker"], runner: "example-docker-1-1780000000" })];
   const events: LauncherEvent[] = [
     { install: "example", event: "runner", slot: 1, runner: "example-linux-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: 1 },
-    { install: "example", event: "runner", slot: 1, runner: "example-docker-1-1780000000", exitCode: 0, released: false, startedAt: iso(NOW - minutes(70)), durationMs: 1 },
   ];
-  const happened = (jobs: JobRecord[]) => deriveInbox(input({ jobs: [...serves, ...jobs], events })).find((item) => item.kind === "no_runner")!.happened;
-  // 3 on linux in one repository, 4 on docker across two: docker has most.
-  const mixed = [...[1, 2, 3].map(() => starved("owner/a", "example-linux")), ...[1, 2].flatMap(() => [starved("owner/b", "example-docker"), starved("owner/c", "example-docker")])];
-  assert.match(happened(mixed), /Most were on example-docker\.$/);
-  assert.match(happened([starved("owner/a", "example-linux"), starved("owner/b", "example-docker")]), /They were on example-linux and example-docker\.$/);
-
   // Three days old, with no job on its label getting a runner since: it still needs you.
   const old = starved("owner/a", "example-linux", NOW - 3 * 24 * minutes(60));
   const servedBefore = job({ labels: ["self-hosted", "example-linux"], at: NOW - 4 * 24 * minutes(60) });
@@ -328,21 +320,41 @@ test("a frequent flake a later run fixed is quiet, and says there's nothing to d
   assert.equal(item.action, "Nothing to do now. If it fails this way again, it comes back here.");
 });
 
-test("a machine failure's Why is one plain sentence, and its figures stay in the evidence", () => {
+test("a machine failure says what happened in plain words, and its figures stay in the evidence", () => {
   const runner = "example-linux-3-1780000000";
   const failed = job({ conclusion: "failure", runner });
   const events: LauncherEvent[] = [{ install: "example", event: "runner", slot: 3, runner, startedAt: iso(NOW), durationMs: 1, exitCode: 137, released: false }];
   const [item] = deriveInbox(input({ jobs: [failed], events, machine: (candidate) => (candidate === failed ? { samples: 4, vmLowMiB: 574, vmTotalMiB: 16384 } : undefined) }));
-  assert.equal(item!.why, "The VM ran out of memory while this job ran, and the job's container was stopped for it. That points at the machine, not the code.");
+  assert.equal(item!.happened, "The ci / test check failed once in 1 run. Memory ran out on example while it ran.");
   assert.deepEqual(item!.evidence.reasons, ["the VM had 0.6 GB of its 16.0 GB free", "its container stopped with exit code 137, which means it was killed for using too much memory"]);
 });
 
-test("Why names every machine that ran short, and says swapping as pressure, not as running out", () => {
+test("swapping alone reads as running short of memory, not as running out", () => {
   const failed = job({ conclusion: "failure" });
-  const why = (machine: { vmLowMiB?: number; vmTotalMiB?: number; hostLowMiB?: number; hostTotalMiB?: number; vmSwapPeakMiB?: number }) =>
-    deriveInbox(input({ jobs: [failed], machine: (candidate) => (candidate === failed ? { samples: 4, ...machine } : undefined) }))[0]!.why;
-  assert.equal(why({ vmLowMiB: 300, vmTotalMiB: 8192, hostLowMiB: 500, hostTotalMiB: 32768 }), "The VM and the host ran out of memory while this job ran. That points at the machine, not the code.");
-  assert.equal(why({ vmLowMiB: 5120, vmTotalMiB: 16384, vmSwapPeakMiB: 1536 }), "The VM was short of memory and swapping while this job ran. That points at the machine, not the code.");
+  const item = (machine: { vmLowMiB?: number; vmTotalMiB?: number; hostLowMiB?: number; hostTotalMiB?: number; vmSwapPeakMiB?: number }) =>
+    deriveInbox(input({ jobs: [failed], machine: (candidate) => (candidate === failed ? { samples: 4, ...machine } : undefined) }))[0]!;
+  assert.equal(item({ vmLowMiB: 300, vmTotalMiB: 8192, hostLowMiB: 500, hostTotalMiB: 32768 }).happened, "The ci / test check failed once in 1 run. Memory ran out on this machine while it ran.");
+  const swapping = item({ vmLowMiB: 5120, vmTotalMiB: 16384, vmSwapPeakMiB: 1536 });
+  assert.equal(swapping.title, "The ci / test check failed because this machine ran short of memory");
+  assert.equal(swapping.happened, "The ci / test check failed once in 1 run. Memory ran short on this machine while it ran.");
   const [dry] = deriveInbox(input({ jobs: [failed], machine: (candidate) => (candidate === failed ? { samples: 4, vmLowMiB: 4, vmTotalMiB: 8192 } : undefined) }));
   assert.deepEqual(dry!.evidence.reasons, ["the VM had under 0.1 GB of its 8.0 GB free"]);
+});
+
+test("a check failing on an open pull request's head commit says it blocks it", () => {
+  const sha = "c".repeat(40);
+  const runner = "example-linux-3-1780000000";
+  const events: LauncherEvent[] = [{ install: "example", event: "runner", slot: 3, runner, startedAt: iso(NOW), durationMs: 1, exitCode: 137, released: false }];
+  const failed = job({ conclusion: "failure", runner, headSha: sha });
+  const cost = (heads: string[]) => deriveInbox(input({ jobs: [failed], events, openPulls: new Map([["owner/name", heads]]) }))[0]!.cost;
+  assert.deepEqual(cost([sha, "d".repeat(40)]), { level: "blocking", text: "Blocking 1 pull request" });
+  assert.deepEqual(cost(["d".repeat(40)]), { level: "nothing_yet", text: "Nothing yet" });
+});
+
+test("a machine failure on two machines names both, since each needs the change", () => {
+  const events: LauncherEvent[] = ["a", "b"].map((install) => ({ install, event: "runner", slot: 1, runner: `${install}-1`, startedAt: iso(NOW), durationMs: 1, exitCode: 137, released: false }));
+  const jobs = [job({ runId: 1, conclusion: "failure", runner: "a-1" }), job({ runId: 2, conclusion: "failure", runner: "b-1", at: NOW - minutes(30) })];
+  const [item] = deriveInbox(input({ jobs, events }));
+  assert.equal(item!.title, "The ci / test check keeps failing because a and b run out of memory");
+  assert.equal(item!.action, "Run fewer jobs at once on a and b, so each one has the memory it needs.");
 });

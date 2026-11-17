@@ -1,13 +1,17 @@
 import type { MachineCause } from "./rules.ts";
 
-// What the owner can do about each kind of machine trouble. One sentence each, plain words.
-export const ADVICE = {
-  memory: "Give the VM more memory, or run fewer jobs at once by running fewer of this kind's runners or raising its memory floor.",
-  connection: "Check that the VM is running and that the host can reach it over SSH.",
-  container: "Look in Runnerbox's log on the machine for why the container stopped, and run the kind's image by hand in the VM to see the error.",
-} as const;
+// The one step that fixes each kind of machine trouble, on the machine that had it, in plain words.
+export const fixFor = (kind: MachineCause["kind"], machine: string) => {
+  switch (kind) {
+    case "memory":
+      return `Run fewer jobs at once on ${machine}, so each one has the memory it needs.`;
+    case "connection":
+      return `Restart Runnerbox on ${machine}.`;
+    case "container":
+      return `Ask the agent to find out why. It reads ${machine}'s logs, reports back here and changes nothing.`;
+  }
+};
 
-// The advice for the most telling cause: memory first, since it's the most common and the others
-// often follow from it.
-export const adviceFor = (causes: readonly MachineCause[]) =>
-  ADVICE[(["memory", "connection", "container"] as const).find((kind) => causes.some((cause) => cause.kind === kind)) ?? "container"];
+// The most telling cause: memory first, since it's the most common and the others often follow from it.
+export const mainCause = (causes: readonly MachineCause[]): MachineCause["kind"] =>
+  (["memory", "connection", "container"] as const).find((kind) => causes.some((cause) => cause.kind === kind)) ?? "container";

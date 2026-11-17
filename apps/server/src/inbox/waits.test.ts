@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { InstallState, LauncherEvent } from "@runnerbox/contracts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
-import { ADVICE } from "./advice.ts";
 import { deriveInbox } from "./derive.ts";
 import type { InboxInput } from "./rules.ts";
 
@@ -74,26 +73,27 @@ test("memory waits on another kind are not blamed, and a full kind is named as h
   const item = waitItem({ jobs: burst(), events });
   assert.equal(
     item.why,
-    "There are 2 linux runners, and both were busy the whole time these jobs waited. 10 jobs were waiting for a runner at the same time. A typical job there takes 10 minutes, so 2 runners need about 50 minutes to clear 10.",
+    "There are 2 runners for these jobs on example, and both were busy the whole time. 10 jobs were waiting at once. A typical job takes 10 minutes, so 2 runners need about 50 minutes to get through 10.",
   );
-  assert.equal(item.action, "Add more linux runners, or move short jobs to a lighter kind of runner so they don't wait behind long ones.");
+  assert.equal(item.action, "Add a runner on example.");
   assert.deepEqual(item.evidence.launcher, []);
 });
 
 test("more slots are said to need more memory only when the samples show it ran low", () => {
   const machine = (candidate: JobRecord) => (candidate.runner ? { samples: 10, vmLowMiB: 600, vmTotalMiB: 16_384 } : undefined);
   const item = waitItem({ jobs: burst(), machine });
-  assert.match(item.why, /^There are 2 linux runners/);
-  assert.match(item.action, /More runners need more memory, and the VM ran low while these jobs ran, so give it more memory too\.$/);
-  // Low on the host only: it names the host, not the VM.
+  assert.match(item.why, /^There are 2 runners for these jobs on example/);
+  assert.equal(item.action, "Give the runners on example more memory, then add a runner. They ran low on memory while these jobs ran.");
+  // Low on the host only: the runners' share can't grow, so the machine needs memory freed.
   const host = waitItem({ jobs: burst(), machine: (candidate) => (candidate.runner ? { samples: 10, hostLowMiB: 2_000, hostTotalMiB: 65_536 } : undefined) });
-  assert.match(host.action, /and the host ran low while these jobs ran/);
+  assert.match(host.action, /^Free up memory on example, then add a runner\./);
+  assert.ok(host.evidence.reasons.includes("the host ran low on memory while example-linux jobs ran"));
 });
 
 test("a memory wait from an up that tagged no kinds counts on an install that only ever had one kind", () => {
   const untagged: LauncherEvent = { install: "example", event: "memory_wait", slot: 1, startedAt: iso(BURST - 5 * MINUTE), durationMs: 30 * MINUTE };
   const one = { ...install(), kinds: install().kinds.filter((kind) => kind.name === "linux") };
-  assert.match(waitItem({ jobs: [starved(BURST, 25 * MINUTE)], events: [untagged], installs: [one] }).why, /^The machine was short of free memory for the linux runners/);
+  assert.match(waitItem({ jobs: [starved(BURST, 25 * MINUTE)], events: [untagged], installs: [one] }).why, /^Free memory on example was too low to start another runner/);
   // With three kinds there's no telling whose wait it was, so it isn't blamed.
   assert.match(waitItem({ jobs: [starved(BURST, 25 * MINUTE)], events: [untagged] }).why, /^The logs don't show why/);
 });
@@ -105,21 +105,21 @@ test("memory waits seconds long are not blamed for jobs that waited many minutes
   const item = waitItem({ jobs, events });
   assert.equal(
     item.why,
-    "The logs don't show why. There are 2 linux runners, and they were never all busy at once while these jobs waited. The machine was short of free memory for them for 14 seconds of the 25 minutes these jobs were waiting, too little to explain it.",
+    "The logs don't show why. There are 2 runners for these jobs on example, and they were never all busy at once. Free memory ran short for 14 seconds of the 25 minutes these jobs were waiting, too little to explain it.",
   );
-  assert.equal(item.action, "Check that Runnerbox is running on the machine and that its runners are listening for these labels.");
+  assert.equal(item.action, "Check that Runnerbox is running on example.");
   assert.equal(item.evidence.launcher.length, 2);
 });
 
 test("memory waits on the jobs' own kind that cover their wait are the reason", () => {
   const item = waitItem({ jobs: [starved(BURST, 25 * MINUTE)], events: [memoryWait("linux", BURST - 5 * MINUTE, 30 * MINUTE)] });
-  assert.equal(item.why, "The machine was short of free memory for the linux runners for the whole time these jobs waited, so it couldn't start more of them.");
-  assert.equal(item.action, ADVICE.memory);
+  assert.equal(item.why, "Free memory on example was too low to start another runner for the whole time these jobs waited.");
+  assert.equal(item.action, "Give the runners on example more memory, so more of them can start at once.");
 });
 
 test("with neither reason, it says what is known and guesses no cause", () => {
   const item = waitItem({ jobs: [starved(BURST, 25 * MINUTE)] });
-  assert.equal(item.why, "The logs don't show why. There are 2 linux runners, and they were never all busy at once while these jobs waited. The machine was never short of free memory for them.");
+  assert.equal(item.why, "The logs don't show why. There are 2 runners for these jobs on example, and they were never all busy at once. Free memory never ran short.");
   // No live state and no runner recorded for the label: which kinds serve it isn't known.
   const unserved = deriveInbox({
     now: NOW,
@@ -128,5 +128,5 @@ test("with neither reason, it says what is known and guesses no cause", () => {
     events: [{ install: "example", event: "runner", slot: 1, runner: `example-linux-1-${BURST - 120 * MINUTE}`, startedAt: iso(BURST - 120 * MINUTE), durationMs: MINUTE, exitCode: 0, released: false }],
     installs: [],
   }).find((each) => each.kind === "no_runner")!;
-  assert.equal(unserved.why, "The logs don't show which of your runners serve example-linux, so they don't say why these jobs waited.");
+  assert.equal(unserved.why, "The logs don't show which of your runners take these jobs, so they can't say why they waited.");
 });
