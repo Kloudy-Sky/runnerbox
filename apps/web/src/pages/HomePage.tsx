@@ -31,57 +31,60 @@ export function HomePage() {
     );
   }
   if (!inbox) return null;
+  // The shell gives pages a fixed height, so a long inbox scrolls here, as every other page does.
   return (
-    <Reading.Root className="gap-8">
-      <Reading.Header>
-        <Reading.Title className="text-2xl">{inbox.summary.headline}</Reading.Title>
-        <Reading.Meta>{inbox.summary.facts.join(" ")}</Reading.Meta>
-      </Reading.Header>
-      {inbox.items.length > 0 ? (
-        <div className="flex flex-col gap-6">
-          {inbox.items.map((item, index) => (
-            <section key={item.id} className="enter flex flex-col gap-1.5">
-              <h2 className="flex items-baseline gap-2 font-medium">
-                <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="hover:underline">
-                  {item.title}
-                </Link>
-                <span className="shrink-0 font-normal text-muted-foreground text-xs">
-                  {formatAge(item.at)}
-                  {unread.has(item.id) ? ", looked into" : null}
-                </span>
-              </h2>
-              <p className="text-foreground/90">{item.happened}</p>
-              <p className="text-muted-foreground">{item.action}</p>
-              <div>
-                {/* The first is the screen's one primary action; the rest stay quiet. */}
-                <Button size="sm" variant={index === 0 ? "default" : "link"} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
-                  Look into it
-                </Button>
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <Reading.Root className="gap-8">
+        <Reading.Header>
+          <Reading.Title className="text-2xl">{inbox.summary.headline}</Reading.Title>
+          <Reading.Meta>{inbox.summary.facts.join(" ")}</Reading.Meta>
+        </Reading.Header>
+        {inbox.items.length > 0 ? (
+          <div className="flex flex-col gap-6">
+            {inbox.items.map((item, index) => (
+              <section key={item.id} className="enter flex flex-col gap-1.5">
+                <h2 className="flex items-baseline gap-2 font-medium">
+                  <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="hover:underline">
+                    {item.title}
+                  </Link>
+                  <span className="shrink-0 font-normal text-muted-foreground text-xs">
+                    {formatAge(item.at)}
+                    {unread.has(item.id) ? ", looked into" : null}
+                  </span>
+                </h2>
+                <p className="text-foreground/90">{item.happened}</p>
+                <p className="text-muted-foreground">{item.action}</p>
+                <div>
+                  {/* The first is the screen's one primary action; the rest stay quiet. */}
+                  <Button size="sm" variant={index === 0 ? "default" : "link"} render={<Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} />}>
+                    Look into it
+                  </Button>
+                </div>
+              </section>
+            ))}
+          </div>
+        ) : null}
+        {inbox.quiet.length > 0 ? (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-muted-foreground">Watching</h2>
+            {inbox.quiet.map((group) => (
+              <div key={group.kind} className="flex flex-col gap-1">
+                <h3 className="font-medium">{group.title}</h3>
+                <ul className="flex flex-col gap-1">
+                  {group.items.map((item) => (
+                    <li key={item.id} className="flex items-baseline gap-2">
+                      <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="text-foreground/90 hover:underline">
+                        {item.title}
+                      </Link>
+                      <span className="shrink-0 text-muted-foreground text-xs">{formatAge(item.at)}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            </section>
-          ))}
-        </div>
-      ) : null}
-      {inbox.quiet.length > 0 ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-muted-foreground">Watching</h2>
-          {inbox.quiet.map((group) => (
-            <div key={group.kind} className="flex flex-col gap-1">
-              <h3 className="font-medium">{group.title}</h3>
-              <ul className="flex flex-col gap-1">
-                {group.items.map((item) => (
-                  <li key={item.id} className="flex items-baseline gap-2">
-                    <Link to="/item/$itemId" params={{ itemId: item.id }} search={keep} className="text-foreground/90 hover:underline">
-                      {item.title}
-                    </Link>
-                    <span className="shrink-0 text-muted-foreground text-xs">{formatAge(item.at)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </section>
-      ) : null}
-    </Reading.Root>
+            ))}
+          </section>
+        ) : null}
+      </Reading.Root>
+    </div>
   );
 }
