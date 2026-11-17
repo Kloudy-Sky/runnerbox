@@ -11,6 +11,7 @@ import * as LauncherLogs from "../runners/LauncherLogs.ts";
 import * as RunnerQueue from "../runners/RunnerQueue.ts";
 import * as RunnersExplained from "../runners/RunnersExplained.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
+import * as DailyHealth from "../runners/DailyHealth.ts";
 import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
 import * as GitHub from "../github/GitHub.ts";
@@ -39,6 +40,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const runnerState = yield* RunnerState.RunnerState;
       const queue = yield* RunnerQueue.RunnerQueue;
       const explained = yield* RunnersExplained.RunnersExplained;
+      const health = yield* DailyHealth.DailyHealth;
       const inbox = yield* Inbox.Inbox;
       const auth = yield* AuthStore.AuthStore;
       const threads = yield* Threads.Threads;
@@ -87,6 +89,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "runners.samples": ({ days, maxPoints }) => launcher.samples(days, maxPoints).pipe(toWire),
         "runners.state": () => runnerState.current.pipe(toWire),
         "runners.explain": ({ days }) => explained.explain(days).pipe(toWire),
+        "runners.health": ({ days }) => health.report(days).pipe(toWire),
         "runners.subscribeState": () => runnerState.changes.pipe(Stream.mapError((error) => new StateReadError({ what: error.what }))),
         "runners.subscribeQueue": () => queue.changes,
         "access.sessions": () => auth.list(session.id).pipe(Effect.orDie),

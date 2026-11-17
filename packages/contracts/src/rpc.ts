@@ -6,6 +6,7 @@ import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, Pairi
 import { DayTotals, Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { GitHubError, GitHubStatus } from "./github.ts";
 import { Inbox } from "./inbox.ts";
+import { MachineHealth } from "./health.ts";
 import { JobResources } from "./resources.ts";
 import { JobTrend, KindUsageReport } from "./usage.ts";
 import { InstallName, InstallState, LauncherEvent, MachineSample, RunnerRestart, RunnerRestartError } from "./runners.ts";
@@ -81,6 +82,7 @@ export const RPC_METHODS = {
   runnersSubscribeState: "runners.subscribeState",
   runnersSubscribeQueue: "runners.subscribeQueue",
   runnersExplain: "runners.explain",
+  runnersHealth: "runners.health",
   accessSessions: "access.sessions",
   accessCreatePairingCode: "access.createPairingCode",
   accessRevokeSession: "access.revokeSession",
@@ -197,6 +199,9 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.runnersSubscribeQueue, { success: QueueView, stream: true }),
   // Each install's runners in plain words: what they're doing now and what happened in `days`.
   Rpc.make(RPC_METHODS.runnersExplain, { payload: { days: Days }, success: RunnersExplained, error: ReadError }),
+  // Each install's health per day over the last `days`: whether it took jobs, telling off from
+  // down, its lowest free VM memory, and its jobs. Kept by day after minute samples are gone.
+  Rpc.make(RPC_METHODS.runnersHealth, { payload: { days: Days }, success: Schema.Array(MachineHealth), error: ReadError }),
   Rpc.make(RPC_METHODS.accessSessions, { success: Schema.Array(SessionSummary), error: AuthorizationError }),
   Rpc.make(RPC_METHODS.accessCreatePairingCode, {
     payload: { scopes: Schema.Array(AuthScopeSchema) },
@@ -338,6 +343,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.runnersSubscribeQueue]: ["history:read", "runners:read"],
   // Its episodes say which jobs passed, from the job log.
   [RPC_METHODS.runnersExplain]: ["history:read", "runners:read"],
+  // Jobs failed because of the machine are the job history's verdict.
+  [RPC_METHODS.runnersHealth]: ["history:read", "runners:read"],
   [RPC_METHODS.accessSessions]: ACCESS,
   [RPC_METHODS.accessCreatePairingCode]: ACCESS,
   [RPC_METHODS.accessRevokeSession]: ACCESS,
