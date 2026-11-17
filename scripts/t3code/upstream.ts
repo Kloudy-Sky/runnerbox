@@ -11,7 +11,8 @@ export function upstreamCheckout(dir: string) {
       succeeds("rev-parse", "--verify", "--quiet", `${ref}^{commit}`) ? git("rev-parse", `${ref}^{commit}`).toString().trim() : undefined,
     // Whether a file or directory exists at a commit.
     has: (commit: string, path: string) => succeeds("cat-file", "-e", `${commit}:${path}`),
-    read: (commit: string, path: string) => git("show", `${commit}:${path}`),
+    // The blob a file is at a commit, to compare with what `git hash-object` makes of a local file.
+    blob: (commit: string, path: string) => git("rev-parse", `${commit}:${path}`).toString().trim(),
     // How many commits between the two touched any of these paths.
     commitsTouching: (from: string, to: string, paths: ReadonlyArray<string>) =>
       Number(git("rev-list", "--count", `${from}..${to}`, "--", ...paths).toString().trim()),

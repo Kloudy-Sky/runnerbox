@@ -1,6 +1,6 @@
 // What `pnpm t3code-diff` checks: the map's own problems, copies that were edited, the entries whose
 // upstream files moved on since they were taken, and whether entries can be marked caught up.
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CUT_MARKER, STAND_IN_MARKER, type Entry } from "./map.ts";
@@ -74,18 +74,24 @@ export function upstreamProblems(upstream: UpstreamCheckout, entries: ReadonlyAr
   ];
 }
 
+// Whether a local copy is the upstream file at `commit`. Compared as blobs, which git makes after
+// its line-ending conversion, so a checkout with CRLF endings still matches.
+const matchesUpstream = (root: string, upstream: UpstreamCheckout, entry: Entry, commit: string) =>
+  execFileSync("git", ["-C", root, "hash-object", "--", entry.path], { encoding: "utf8" }).trim() ===
+  upstream.blob(commit, entry.upstream[0] ?? entry.path);
+
 // Copies that no longer match upstream at their commit. Adapted files are expected to differ.
 export const editedCopies = (root: string, upstream: UpstreamCheckout, entries: ReadonlyArray<Entry>) =>
-  entries.filter(
-    (entry) =>
-      entry.relation === "copied" && !readFileSync(join(root, entry.path)).equals(upstream.read(entry.commit, entry.upstream[0] ?? entry.path)),
-  );
+  entries.filter((entry) => entry.relation === "copied" && !matchesUpstream(root, upstream, entry, entry.commit));
 
-// Entries whose upstream changed between their commit and `to`, with how many commits touched it.
+// Entries whose upstream changed after their commit, up to `to`, with how many commits touched it.
+// Only commits `to` has and the entry's commit doesn't count, so a `to` older than an entry's
+// commit never lists it.
 export const changedUpstream = (upstream: UpstreamCheckout, entries: ReadonlyArray<Entry>, to: string) =>
   entries
-    .filter((entry) => entry.upstream.length > 0 && upstream.differs(entry.commit, to, entry.upstream))
-    .map((entry) => ({ entry, commits: upstream.commitsTouching(entry.commit, to, entry.upstream) }));
+    .filter((entry) => entry.upstream.length > 0)
+    .map((entry) => ({ entry, commits: upstream.commitsTouching(entry.commit, to, entry.upstream) }))
+    .filter(({ entry, commits }) => commits > 0 && upstream.differs(entry.commit, to, entry.upstream));
 
 // Why these entries can't be marked caught up with upstream at `to`: one isn't mapped, an upstream
 // path is gone there (find where it moved and map that), or a copy doesn't match it yet.
@@ -95,9 +101,8 @@ export function syncProblems(root: string, upstream: UpstreamCheckout, entries: 
     if (entry === undefined) return [`${path}: not in the map`];
     const gone = entry.upstream.filter((from) => !upstream.has(to, from));
     if (gone.length > 0) return gone.map((from) => `${path}: upstream ${from} doesn't exist at ${to.slice(0, 7)}`);
-    const [from = path] = entry.upstream;
-    return entry.relation === "copied" && !readFileSync(join(root, path)).equals(upstream.read(to, from))
-      ? [`${path}: doesn't match upstream at ${to.slice(0, 7)} yet; copy ${from} over first`]
+    return entry.relation === "copied" && !matchesUpstream(root, upstream, entry, to)
+      ? [`${path}: doesn't match upstream at ${to.slice(0, 7)} yet; copy ${entry.upstream[0] ?? path} over first`]
       : [];
   });
 }

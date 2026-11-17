@@ -35,10 +35,16 @@ test("the map matches this repository", () => {
   assert.deepEqual(localProblems(ROOT, loadMap(ROOT).entries), []);
 });
 
-test("an edited copy is caught, and an adapted one may differ", (t) => {
-  const upstream = repo(t, { "a.ts": "export const a = 1;\n", "b.ts": "export const b = 1;\n", "c.ts": "export const c = 1;\n" });
-  const local = repo(t, { "a.ts": "export const a = 1;\n", "b.ts": "export const b = 2;\n", "c.ts": "// runnerbox: cut\n" });
-  const entries = mapAt(upstream.first, { "a.ts": { relation: "copied" }, "b.ts": { relation: "copied" }, "c.ts": { relation: "adapted" } });
+test("an edited copy is caught, an adapted one may differ, and CRLF endings aren't an edit", (t) => {
+  const upstream = repo(t, { "a.ts": "export const a = 1;\n", "b.ts": "export const b = 1;\n", "c.ts": "export const c = 1;\n", "d.ts": "x\n" });
+  const local = repo(t, { "a.ts": "export const a = 1;\n", "b.ts": "export const b = 2;\n", "c.ts": "// runnerbox: cut\n", "d.ts": "x\r\n" });
+  execFileSync("git", ["-C", local.dir, "config", "core.autocrlf", "true"]);
+  const entries = mapAt(upstream.first, {
+    "a.ts": { relation: "copied" },
+    "b.ts": { relation: "copied" },
+    "c.ts": { relation: "adapted" },
+    "d.ts": { relation: "copied" },
+  });
 
   assert.deepEqual(
     editedCopies(local.dir, upstreamCheckout(upstream.dir), entries).map((entry) => entry.path),
@@ -55,10 +61,10 @@ test("only entries whose upstream moved since their own commit are listed", (t) 
     "c-after.ts": { relation: "follows", upstream: "c.ts", commit: second },
   });
 
-  assert.deepEqual(
-    changedUpstream(upstreamCheckout(upstream.dir), entries, second).map(({ entry, commits }) => [entry.path, commits]),
-    [["a.ts", 1]],
-  );
+  const changed = (to: string) => changedUpstream(upstreamCheckout(upstream.dir), entries, to).map(({ entry, commits }) => [entry.path, commits]);
+  assert.deepEqual(changed(second), [["a.ts", 1]]);
+  // A `to` older than an entry's commit isn't news about that entry.
+  assert.deepEqual(changed(upstream.first), []);
 });
 
 test("a stand-in must be both marked and mapped, and an adapted file must mark its cuts", (t) => {

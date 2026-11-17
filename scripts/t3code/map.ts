@@ -41,21 +41,12 @@ const T3codeMap = type({
 
 export type Relation = (typeof Copy.infer | typeof Derived.infer)["relation"];
 
-// One entry with its defaults filled in.
-export type Entry = {
-  path: string;
-  relation: Relation;
-  upstream: ReadonlyArray<string>;
-  commit: string;
-  note: string | undefined;
-};
-
 export const MAP_PATH = "docs/t3code-map.json";
 
 // Throws, naming the problem, when the map doesn't match its schema.
 export function parseMap(json: unknown) {
   const map = T3codeMap.assert(json);
-  const entries: Entry[] = Object.entries(map.files).map(([path, entry]) => ({
+  const entries = Object.entries(map.files).map(([path, entry]) => ({
     path,
     relation: entry.relation,
     upstream: entry.upstream === null ? [] : [entry.upstream ?? path].flat(),
@@ -68,6 +59,9 @@ export function parseMap(json: unknown) {
 const readMap = (root: string) => T3codeMap.assert(JSON.parse(readFileSync(join(root, MAP_PATH), "utf8")));
 
 export const loadMap = (root: string) => parseMap(readMap(root));
+
+// One entry with its defaults filled in.
+export type Entry = ReturnType<typeof parseMap>["entries"][number];
 
 // One entry per line, so the map reads as a list and a sync changes one line per file.
 const format = (map: typeof T3codeMap.infer) =>
