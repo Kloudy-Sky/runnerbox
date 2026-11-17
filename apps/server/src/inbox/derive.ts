@@ -1,4 +1,5 @@
 import type { Inbox, InboxItem, QuietGroup, QuietKind } from "@runnerbox/contracts";
+import { COST_ORDER } from "./cost.ts";
 import { failureItems } from "./failures.ts";
 import { plural } from "./jobs.ts";
 import type { InboxInput } from "./rules.ts";
@@ -7,10 +8,13 @@ import { slowItems } from "./slow.ts";
 import { summarize } from "./summary.ts";
 import { waitItems } from "./waits.ts";
 
-// Every item, those that need the owner first, newest first within each.
+// Only items that need the owner carry a cost.
+const costOrder = (item: InboxItem) => (item.cost ? COST_ORDER[item.cost.level] : 0);
+
+// Every item, those that need the owner first, the most costly first among those, then newest first.
 export function deriveInbox(input: InboxInput): InboxItem[] {
-  return [...failureItems(input), ...waitItems(input), ...slotItems(input), ...slowItems(input)].toSorted(
-    (a, b) => (a.group === b.group ? Date.parse(b.at) - Date.parse(a.at) : a.group === "needs_you" ? -1 : 1),
+  return [...failureItems(input), ...waitItems(input), ...slotItems(input), ...slowItems(input)].toSorted((a, b) =>
+    a.group !== b.group ? (a.group === "needs_you" ? -1 : 1) : costOrder(a) - costOrder(b) || Date.parse(b.at) - Date.parse(a.at),
   );
 }
 

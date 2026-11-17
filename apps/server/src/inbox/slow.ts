@@ -1,7 +1,9 @@
 import type { InboxItem } from "@runnerbox/contracts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import { runnerType } from "runnerbox/src/tracking/report.ts";
+import { SLOWER } from "./cost.ts";
 import { at, durationMs, jobKey, jobName, median, plainDuration, present } from "./jobs.ts";
+import { machineOf } from "./machines.ts";
 import { evidenceFor, type InboxInput } from "./rules.ts";
 
 // A run counts as slow when it took this much longer than the job's typical time, and at least a minute.
@@ -42,7 +44,8 @@ export function slowItems(input: InboxInput): InboxItem[] {
     const before = regression ? sorted.slice(0, -3) : sorted.slice(0, -1);
     const typical = median(before.map(durationMs).filter(present))!;
     const label = runnerType(latest);
-    const name = jobName(latest);
+    const check = `The ${jobName(latest)} check`;
+    const machine = machineOf(latest, input.events);
     const took = plainDuration(durationMs(latest)!);
     return [
       {
@@ -53,19 +56,20 @@ export function slowItems(input: InboxInput): InboxItem[] {
         verdict: null,
         repo: latest.repo,
         install: null,
-        title: regression ? `${name} has become slower on ${label}` : `${name} was slower than usual on ${label}`,
+        title: regression ? `${check} got slower on ${machine}` : `${check} was slower than usual on ${machine}`,
         happened: regression
-          ? `Its last 3 runs each took over ${plainDuration(typical * SLOW_FACTOR)}, against a typical ${plainDuration(typical)}. The latest took ${took}.`
-          : `Its latest run took ${took}, against a typical ${plainDuration(typical)}.`,
+          ? `Its last 3 runs each took over ${plainDuration(typical * SLOW_FACTOR)}, against a usual ${plainDuration(typical)}. The latest took ${took}.`
+          : `Its latest run took ${took}, against a usual ${plainDuration(typical)}.`,
         why: regression
-          ? "Three slow runs in a row point at a change in the job or on the machine, not chance."
-          : "One slow run is often chance: a busy machine or a slow download.",
+          ? "Three slow runs in a row point to a change in the check or on the machine, not chance."
+          : "One slow run is often chance, like a busy machine or a slow download.",
         action: regression ? "Compare each step with its usual time to see which one grew." : "Nothing to do unless it happens again.",
+        ...(regression ? { cost: SLOWER } : {}),
         at: at(latest),
         evidence: {
           ...evidenceFor(latest, [latest], input.jobs, input),
           durations: sorted.map((job) => ({ startedAt: job.startedAt!, ms: durationMs(job)! })),
-          reasons: [`it took ${Math.round((durationMs(latest)! / typical) * 10) / 10} times its typical time over ${sorted.length - 1} earlier runs`],
+          reasons: [`it took ${Math.round((durationMs(latest)! / typical) * 10) / 10} times its typical time over ${sorted.length - 1} earlier runs on ${label}`],
         },
       } satisfies InboxItem,
     ];

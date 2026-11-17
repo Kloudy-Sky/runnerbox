@@ -20,7 +20,7 @@ export function summarize(jobs: readonly JobRecord[], items: readonly InboxItem[
       ? `${needYou === 1 ? "1 thing needs" : `${needYou} things need`} you.${ran > 0 ? " The rest is fine." : ""}`
       : ran === 0
         ? `No jobs ran in ${window}.`
-        : "Nothing needs you. CI looks healthy.";
+        : "Nothing needs you right now.";
   const facts = [
     `${plural(ran, "job")} ran in ${window}.`,
     ...(passRate === null ? [] : [`${Math.round(passRate * 100)} in 100 passed.`]),

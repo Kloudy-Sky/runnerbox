@@ -1,10 +1,11 @@
 import type { InboxItem, QuietKind } from "@runnerbox/contracts";
 import { elapsedMs, type JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import { runnerType } from "runnerbox/src/tracking/report.ts";
-import { ADVICE } from "./advice.ts";
+import { SLOWER } from "./cost.ts";
 import { at, DAY_MS, listed, plainDuration, plural, STARVED_AFTER_MS, starved } from "./jobs.ts";
+import { UNKNOWN_MACHINE } from "./machines.ts";
 import type { InboxInput } from "./rules.ts";
-import { type WaitCause, waitCause } from "./waitCause.ts";
+import { kindsServing, type WaitCause, waitCause } from "./waitCause.ts";
 
 // The runner types this machine's launcher serves: any it has a live kind for, or whose jobs ran on
 // a runner it recorded. Other labels belong to GitHub's own runners or to another machine.
@@ -20,38 +21,47 @@ const minutes = STARVED_AFTER_MS / 60_000;
 // few seconds' gap at either end isn't worth a figure.
 const WHOLE_TIME_SHARE = 0.95;
 
-const runnersOf = ({ kinds }: WaitCause) => `the ${listed(kinds)} runners`;
-// "There is one linux runner", "There are 2 linux runners": the owner reads runners, not slots.
-const thereAre = ({ kinds }: WaitCause, slots: number) => (slots === 1 ? `There is one ${listed(kinds)} runner` : `There are ${slots} ${listed(kinds)} runners`);
+const memoryFor = (cause: WaitCause) =>
+  cause.memoryMs >= cause.waitedMs * WHOLE_TIME_SHARE ? "the whole time these jobs waited" : `${plainDuration(cause.memoryMs)} of the ${plainDuration(cause.waitedMs)} these jobs were waiting`;
+const clearing = ({ peak, typicalMs }: WaitCause, slots: number) =>
+  typicalMs === null ? "" : ` A typical job takes ${plainDuration(typicalMs)}, so ${slots === 1 ? "one runner needs" : `${slots} runners need`} about ${plainDuration((peak * typicalMs) / slots)} to get through ${peak}.`;
 
-// Why one label's jobs waited, in one or two plain sentences, for a label whose kinds and their
-// `slots` are known.
-function whyFor(cause: WaitCause, slots: number) {
-  const runners = runnersOf(cause);
-  const { peak, typicalMs } = cause;
-  const memoryFor = cause.memoryMs >= cause.waitedMs * WHOLE_TIME_SHARE ? "the whole time these jobs waited" : `${plainDuration(cause.memoryMs)} of the ${plainDuration(cause.waitedMs)} these jobs were waiting`;
-  if (cause.cause === "memory") return `The machine was short of free memory for ${runners} for ${memoryFor}, so it couldn't start more of them.`;
-  if (cause.cause === "slots") {
-    const clearing =
-      typicalMs === null ? "" : ` A typical job there takes ${plainDuration(typicalMs)}, so ${slots === 1 ? "one runner needs" : `${slots} runners need`} about ${plainDuration((peak * typicalMs) / slots)} to clear ${peak}.`;
-    return `${thereAre(cause, slots)}, and ${slots === 1 ? "it was" : slots === 2 ? "both were" : "all were"} busy the whole time these jobs waited. ${peak} jobs were waiting for a runner at the same time.${clearing}`;
-  }
-  const busy = cause.waitedMs > 0 ? Math.round((cause.busyMs / cause.waitedMs) * 100) : 0;
-  const all = slots === 1 ? "it was" : "they were all";
-  const full = busy === 0 ? `${slots === 1 ? "it was never busy" : "they were never all busy at once"} while these jobs waited` : `${all} busy for ${busy}% of the time these jobs waited`;
-  const memory = cause.memoryMs > 0 ? ` The machine was short of free memory for them for ${memoryFor}, too little to explain it.` : " The machine was never short of free memory for them.";
-  return `The logs don't show why. ${thereAre(cause, slots)}, and ${full}.${memory}`;
+// The machines whose runners take one label's jobs, for a label whose kinds are known.
+const machinesFor = (cause: WaitCause, input: InboxInput) => listed([...new Set([...kindsServing(cause.label, input).keys()].map((key) => key.split("\0")[0]!))].toSorted());
+const busyShare = (cause: WaitCause) => (cause.waitedMs > 0 ? Math.round((cause.busyMs / cause.waitedMs) * 100) : 0);
+
+// Why one label's jobs waited, for the evidence, in the launcher's terms: kinds and their `slots`.
+function reasonFor(cause: WaitCause, slots: number) {
+  const kind = `the ${listed(cause.kinds)} ${cause.kinds.length === 1 ? "kind" : "kinds"}`;
+  const memory = `memory waits on ${kind} covered ${memoryFor(cause)}`;
+  if (cause.cause === "memory") return memory;
+  if (cause.cause === "slots") return `all ${plural(slots, "slot")} of ${kind} were busy the whole time, with ${cause.peak} jobs on ${cause.label} queued at once`;
+  return `all ${plural(slots, "slot")} of ${kind} were busy for ${busyShare(cause)}% of the wait, and ${cause.memoryMs > 0 ? memory : `no memory wait on ${kind} overlapped it`}`;
 }
 
-// What the owner can do, matching the reason given. More runners only help if the machine has the
-// memory for them, so that's said when the samples show it ran low.
-function actionFor(cause: WaitCause) {
-  if (cause.cause === "memory") return ADVICE.memory;
+// Why they waited, in plain words for the owner: runners on a machine, without kinds or labels.
+function whyFor(cause: WaitCause, slots: number, machine: string) {
+  const runners = slots === 1 ? `There is one runner for these jobs on ${machine}` : `There are ${slots} runners for these jobs on ${machine}`;
+  if (cause.cause === "memory") return `Free memory on ${machine} was too low to start another runner for ${memoryFor(cause)}.`;
   if (cause.cause === "slots") {
-    const memory = cause.tight ? ` More runners need more memory, and the ${cause.tight} ran low while these jobs ran, so give it more memory too.` : "";
-    return `Add more ${listed(cause.kinds)} runners, or move short jobs to a lighter kind of runner so they don't wait behind long ones.${memory}`;
+    return `${runners}, and ${slots === 1 ? "it was" : slots === 2 ? "both were" : "all were"} busy the whole time. ${cause.peak} jobs were waiting at once.${clearing(cause, slots)}`;
   }
-  return "Check that Runnerbox is running on the machine and that its runners are listening for these labels.";
+  const busy = busyShare(cause);
+  const full = busy === 0 ? (slots === 1 ? "it was never busy" : "they were never all busy at once") : `${slots === 1 ? "it was" : "they were all"} busy for ${busy}% of the time`;
+  const memory = cause.memoryMs > 0 ? ` Free memory ran short for ${memoryFor(cause)}, too little to explain it.` : " Free memory never ran short.";
+  return `The logs don't show why. ${runners}, and ${full}.${memory}`;
+}
+
+// The one step that fixes it, matching the reason given. Another runner only helps if the machine
+// has the memory for it, so that comes first when the samples show it ran low.
+function actionFor(cause: WaitCause, machine: string) {
+  if (cause.cause === "memory") return `Give the runners on ${machine} more memory, so more of them can start at once.`;
+  if (cause.cause === "slots") {
+    if (cause.tight === "VM") return `Give the runners on ${machine} more memory, then add a runner. They ran low on memory while these jobs ran.`;
+    if (cause.tight === "host") return `Free up memory on ${machine}, then add a runner. It ran low on memory while these jobs ran.`;
+    return `Add a runner on ${machine}.`;
+  }
+  return `Check that Runnerbox is running on ${machine}.`;
 }
 
 // Jobs that waited long enough for a runner and never got one. One cause, one item: every
@@ -80,29 +90,35 @@ export function waitItems(input: InboxInput): InboxItem[] {
       const memory = quiet === "other_runners" ? 0 : waitCause(runnerType(group[0]!), group, input).waits.length;
       return { label: place, count: group.length, detail: memory > 0 ? `${plural(memory, "memory wait")} on its runners meanwhile` : "" };
     }).toSorted((a, b) => b.count - a.count);
-    const labels = byLabel.map(([label]) => label);
-    const [top, topJobs] = byLabel[0]!;
-    const most =
-      labels.length === 1 ? ` All were on ${top}.` : topJobs.length * 2 > jobs.length ? ` Most were on ${top}.` : ` They were on ${listed(labels)}.`;
     const repos = [...new Set(jobs.map((job) => job.repo))];
+    const known = causes.flatMap((cause) => (cause.slots === null ? [] : [{ cause, slots: cause.slots, machine: machinesFor(cause, input) }]));
     const unknownKinds = causes.filter((cause) => cause.slots === null).map((cause) => cause.label);
-    const whys = [
-      ...causes.flatMap((cause) => (cause.slots === null ? [] : [whyFor(cause, cause.slots)])),
-      ...(unknownKinds.length > 0 ? [`The logs don't show which of your runners serve ${listed(unknownKinds)}, so they don't say why these jobs waited.`] : []),
+    const unknown = unknownKinds.length > 0 ? `The logs don't show which of your runners take these jobs, so they can't say why they waited.` : null;
+    const whys = [...known.map(({ cause, slots, machine }) => whyFor(cause, slots, machine)), ...(unknown ? [unknown] : [])];
+    const reasons = [
+      ...known.map(({ cause, slots }) => reasonFor(cause, slots)),
+      ...causes.flatMap((cause) => (cause.cause === "slots" && cause.tight ? [`the ${cause.tight} ran low on memory while ${cause.label} jobs ran`] : [])),
+      ...(unknown ? [`The logs don't show which of your runners serve ${listed(unknownKinds)}, so they don't say why these jobs waited.`] : []),
     ];
+    const machines = [...new Set(known.map(({ machine }) => machine))];
+    const fix = [...new Set(known.map(({ cause, machine }) => actionFor(cause, machine)))].join(" ") || `Check that Runnerbox is running on ${UNKNOWN_MACHINE}.`;
+    const gaveUp = `${plural(jobs.length, "job")} waited more than ${minutes} minutes for a runner and gave up.`;
     const words =
       quiet === "other_runners"
         ? {
-            title: "Jobs waited for runners this machine doesn't run",
-            happened: `${plural(jobs.length, "job")} on ${listed(labels)} waited more than ${minutes} minutes and ended without a runner.`,
-            why: "Those labels belong to another machine or to GitHub's machines, so no runner here could take them.",
-            action: "Nothing to do here, unless this machine should serve those labels.",
+            title: "Jobs waited for a runner no machine here has",
+            happened: gaveUp,
+            why: "They asked for another machine, or for one of GitHub's, so no runner here could take them.",
+            action: "Nothing to do here, unless this machine should take those jobs.",
           }
         : {
-            title: quiet === null ? "Jobs are waiting too long for a runner" : "Jobs waited too long for a runner more than a day ago",
-            happened: `${plural(jobs.length, "job")} waited more than ${minutes} minutes for one of your runners and ended without getting one.${most}${quiet === null ? "" : " Since then, runners have taken jobs on those labels again."}`,
+            title:
+              quiet === null
+                ? `Jobs wait too long for a runner on ${machines.length === 1 ? machines[0] : "your machines"}`
+                : "Jobs waited too long for a runner more than a day ago",
+            happened: `${gaveUp}${quiet === null ? "" : " Since then, runners have taken those jobs again."}`,
             why: whys.join(" "),
-            action: quiet === null ? [...new Set(causes.map(actionFor))].join(" ") : "Nothing to do now. If it happens again, it comes back here.",
+            action: quiet === null ? fix : "Nothing to do now. If it happens again, it comes back here.",
           };
     const latest = jobs.at(-1)!;
     return [
@@ -115,6 +131,7 @@ export function waitItems(input: InboxInput): InboxItem[] {
         repo: repos.length === 1 ? repos[0]! : null,
         install: null,
         ...words,
+        ...(quiet === null ? { cost: SLOWER } : {}),
         at: latest.createdAt,
         evidence: {
           steps: [],
@@ -132,7 +149,7 @@ export function waitItems(input: InboxInput): InboxItem[] {
           machine: null,
           launcher: waits,
           durations: [],
-          reasons: whys,
+          reasons,
           breakdown,
         },
       } satisfies InboxItem,

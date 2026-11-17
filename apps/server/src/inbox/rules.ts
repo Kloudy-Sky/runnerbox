@@ -2,7 +2,7 @@ import type { Evidence, InstallState, LauncherEvent, Verdict } from "@runnerbox/
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import type { JobMachine } from "runnerbox/src/tracking/job-machine.ts";
 import { runnerType } from "runnerbox/src/tracking/report.ts";
-import { durationMs, memory, memoryOf, isFailure, jobKey, jobName, median, present, startedMs, unitKey } from "./jobs.ts";
+import { capitalize, durationMs, memory, memoryOf, isFailure, jobKey, jobName, listed, median, present, startedMs, unitKey } from "./jobs.ts";
 
 // The inbox's judgement: rules over data already recorded that tell the machine's failures from
 // the code's. The person who reads it owns the machines, not the code, so a failure in a job's own
@@ -15,6 +15,9 @@ export type InboxInput = {
   machine: (job: JobRecord) => (JobMachine & { vmTotalMiB?: number; hostTotalMiB?: number }) | undefined;
   events: readonly LauncherEvent[];
   installs: readonly InstallState[];
+  // The head commit of each open pull request, by repository, for the repositories whose pull
+  // requests the server read through the GitHub sign-in. A repository missing from it wasn't read.
+  openPulls?: ReadonlyMap<string, readonly string[]> | undefined;
 };
 
 // The VM or host had less than this share of its memory available at some sample during the job.
@@ -24,7 +27,7 @@ const SWAP_PRESSURE_MIB = 1024;
 export const OUT_OF_MEMORY_EXIT = 137;
 
 // One sign that the machine, not the code, failed a job. `source` says what it was, for the plain
-// sentence in Why; `text` states the figures, for the evidence. `kind` picks the advice.
+// sentence in What happened; `text` states the figures, for the evidence. `kind` picks the fix.
 export type MachineCause = {
   kind: "memory" | "connection" | "container";
   source: "vm_memory" | "host_memory" | "swap" | "out_of_memory" | "connection" | "exit";
@@ -68,25 +71,19 @@ export function machineCauses(job: JobRecord, input: Pick<InboxInput, "machine" 
   return causes;
 }
 
-// The machine's causes as one plain sentence, without figures: "The VM ran out of memory while
-// this job ran, and the job's container was stopped for it."
-export function plainCause(causes: readonly MachineCause[]) {
+// The machine's causes as one plain sentence about `machine`, without figures or technical terms:
+// "Memory ran out on example while it ran." A machine's name is never capitalized.
+export function plainCause(causes: readonly MachineCause[], machine: string) {
   const has = (source: MachineCause["source"]) => causes.some((cause) => cause.source === source);
-  const vm = has("vm_memory");
-  const host = has("host_memory");
+  const ranOut = has("vm_memory") || has("host_memory") || has("out_of_memory");
   // Swap is a sign of pressure, not of running out, so it's said as that when it's the only sign.
-  const memory = vm && host ? "the VM and the host ran out of memory" : vm ? "the VM ran out of memory" : host ? "the host ran out of memory" : null;
-  const short = !vm && has("swap") ? "the VM was short of memory and swapping" : null;
-  const pressure = memory ?? short;
   const clauses = [
-    ...(pressure ? [`${pressure} while this job ran`] : []),
-    ...(has("out_of_memory") ? [pressure ? "the job's container was stopped for it" : "the job's container was stopped for using too much memory"] : []),
-    ...(has("connection") ? ["the connection to the VM dropped while it ran"] : []),
-    ...(has("exit") ? ["the job's container stopped with an error"] : []),
+    ...(ranOut ? [`memory ran out on ${machine}`] : has("swap") ? [`memory ran short on ${machine}`] : []),
+    ...(has("connection") ? [`the connection to ${machine} dropped`] : []),
+    ...(has("exit") ? [`something on ${machine} stopped the job with an error`] : []),
   ];
-  const sentence =
-    clauses.length === 0 ? "something on the machine went wrong while this job ran" : clauses.length === 1 ? clauses[0]! : `${clauses.slice(0, -1).join(", ")}, and ${clauses.at(-1)}`;
-  return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
+  const sentence = clauses.length === 0 ? `something on ${machine} went wrong` : listed(clauses);
+  return `${capitalize(sentence)} while it ran.`;
 }
 
 // `retried` is true when an attempt on the same commit (or run) passed after the last failure.

@@ -74,6 +74,13 @@ export class InboxStateError extends Schema.TaggedError<InboxStateError>()("Inbo
 }
 export const InboxItemId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512));
 
+// What an item that needs the owner costs them, most costly first: open pull requests a failing
+// check blocks, jobs that wait longer, or nothing yet. `text` is the phrase the item leads with.
+export const InboxCostLevel = Schema.Literals(["blocking", "slower", "nothing_yet"]);
+export type InboxCostLevel = typeof InboxCostLevel.Type;
+export const InboxCost = Schema.Struct({ level: InboxCostLevel, text: Schema.String });
+export type InboxCost = typeof InboxCost.Type;
+
 export const InboxItem = Schema.Struct({
   id: Schema.String,
   kind: InboxKind,
@@ -82,8 +89,9 @@ export const InboxItem = Schema.Struct({
   verdict: Schema.NullOr(Verdict),
   repo: Schema.NullOr(Schema.String),
   install: Schema.NullOr(Schema.String),
-  // A sentence someone new to CI understands, then what happened, why, and what to do. All
-  // written by rules over the logs, never by a model.
+  // What's wrong, naming the job and the machine, then what happened, why it's the owner's, and
+  // the one step that fixes it, in words someone new to CI understands. Technical terms stay in
+  // `evidence.reasons`. All written by rules over the logs, never by a model.
   title: Schema.String,
   happened: Schema.String,
   why: Schema.String,
@@ -92,6 +100,8 @@ export const InboxItem = Schema.Struct({
   evidence: Evidence,
   // Older servers send items without it; read those as active.
   state: Schema.optionalKey(InboxItemState),
+  // Only on items that need the owner. Older servers send none.
+  cost: Schema.optionalKey(InboxCost),
 });
 export type InboxItem = typeof InboxItem.Type;
 

@@ -21,7 +21,7 @@ import * as ReviewStore from "./ReviewStore.ts";
 
 // Which repositories the owner turned reviews on for and the model that reviews, in
 // `.server/reviews.json`, and the open pull requests on them, each with its newest review. GitHub
-// is asked when a client asks, at most every 20 seconds, with the last ETag for each repository, so
+// is asked when a client asks or the inbox lists, at most every 20 seconds, with the last ETag for each repository, so
 // a list that hasn't changed costs nothing against the owner's budget. Each pull request carries its
 // head commit's checks (PullChecks.ts).
 
@@ -53,6 +53,10 @@ export class Reviews extends Context.Service<
     // The open pull requests on the repositories with reviews on, asked of GitHub now, and when each
     // repository was turned on. Empty when the server isn't signed in. For the pass that reviews unasked.
     readonly open: Effect.Effect<{ readonly pulls: ReadonlyArray<ListedPull>; readonly since: Readonly<Record<string, string>> }, ReviewError>;
+    // The head commit of each open pull request, by repository with reviews on, from the same look
+    // the view uses, without reviews or checks. Null without the sign-in or when the look missed a
+    // repository. For the inbox, which counts the pull requests a failing check blocks.
+    readonly heads: Effect.Effect<ReadonlyMap<string, ReadonlyArray<string>> | null, ReviewError>;
   }
 >()("runnerbox/server/reviews/Reviews") {}
 
@@ -187,7 +191,16 @@ const make = Effect.gen(function* () {
     return { pulls, since: file.since ?? {} };
   });
 
-  return Reviews.of({ status, setRepo, setModel, settings, open });
+  const heads = Effect.gen(function* () {
+    const reached = yield* reach;
+    if (reached === null || reached.problem !== null) return null;
+    const on = new Set((yield* read).repos);
+    const reviewed = reached.repos.filter((repo) => on.has(repo));
+    const { pulls, problem } = yield* look(reviewed, reached.token);
+    return problem === null ? new Map(reviewed.map((repo) => [repo, pulls.filter((pull) => pull.repo === repo).map((pull) => pull.headSha)])) : null;
+  });
+
+  return Reviews.of({ status, setRepo, setModel, settings, open, heads });
 });
 
 export const layer = Layer.effect(Reviews, make);

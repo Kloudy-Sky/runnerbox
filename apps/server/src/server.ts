@@ -97,7 +97,9 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, Inbox.layer.pipe(Layer.provideMerge(InboxState.layer)), RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provide(PullChecks.layer), Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
+    // The inbox counts the open pull requests a failing check blocks, from the reviews' list.
+    Layer.provideMerge(Inbox.layer.pipe(Layer.provideMerge(InboxState.layer))),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provide(PullChecks.layer), Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer, ReviewStore.layer)),
     Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),
