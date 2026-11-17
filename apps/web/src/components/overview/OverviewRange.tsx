@@ -1,0 +1,32 @@
+import { useNavigate } from "@tanstack/react-router";
+import { ChevronDown } from "lucide-react";
+import { useRange } from "../../hooks/useRange.ts";
+import { isRange, RANGES } from "../../lib/range.ts";
+import type { RootSearch } from "../../lib/search.ts";
+import { Button } from "../ui/button.tsx";
+import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu.tsx";
+import { RANGE_WORDS } from "./rangeWords.ts";
+
+// The range every number on Overview counts over, kept in the URL, in the same menu as the machine
+// filter beside it.
+export function OverviewRange() {
+  const { range } = useRange();
+  const navigate = useNavigate();
+  return (
+    <Menu>
+      <MenuTrigger render={<Button variant="outline" size="compact" />}>
+        {RANGE_WORDS[range].now}
+        <ChevronDown className="text-muted-foreground" />
+      </MenuTrigger>
+      <MenuPopup align="end" className="min-w-36">
+        <MenuRadioGroup value={range} onValueChange={(value) => isRange(value) && void navigate({ to: ".", search: (previous: RootSearch) => ({ ...previous, range: value }) })}>
+          {Object.keys(RANGES).filter(isRange).map((option) => (
+            <MenuRadioItem key={option} value={option}>
+              {RANGE_WORDS[option].now}
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}

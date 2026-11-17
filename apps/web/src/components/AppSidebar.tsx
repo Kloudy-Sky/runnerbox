@@ -1,6 +1,6 @@
 import { isInboxItemHidden } from "@runnerbox/contracts";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Gauge, GitPullRequest, Inbox, ListTree, Server, Settings } from "lucide-react";
+import { Gauge, GitPullRequest, Inbox, LayoutDashboard, ListTree, Server, Settings } from "lucide-react";
 import type * as React from "react";
 import { useRange } from "../hooks/useRange.ts";
 import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
@@ -17,14 +17,14 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarMenu, Side
 
 const keep = (previous: RootSearch) => previous;
 
-type Page = { readonly to: "/inbox" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
+type Page = { readonly to: "/" | "/inbox" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
 
 // One row per page, as in Codex: an icon, its name and a count. The pages' own lists live on the
 // pages. Collapsed to its rail, a row keeps its icon, a tooltip and, for Inbox, a dot.
 function PageRow({ page, path }: { page: Page; path: string }) {
   const Icon = page.icon;
-  // The Inbox also opens the app, at "/".
-  const active = path === page.to || path.startsWith(`${page.to}/`) || (page.to === "/inbox" && path === "/");
+  // Overview, at "/", is active only there.
+  const active = path === page.to || (page.to !== "/" && path.startsWith(`${page.to}/`));
   return (
     <SidebarMenuItem>
       <SidebarMenuButton isActive={active} tooltip={page.label} render={<Link to={page.to} search={keep} />}>
@@ -50,6 +50,7 @@ export function AppSidebar() {
   const { reviews } = useServerCapabilities();
 
   const pages: ReadonlyArray<Page> = [
+    { to: "/", label: "Overview", icon: LayoutDashboard },
     { to: "/inbox", label: "Inbox", icon: Inbox, count: waiting > 0 ? String(waiting) : null, alert: waiting > 0 },
     { to: "/runners", label: "Runners", icon: Server, count: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
     { to: "/runs", label: "All runs", icon: ListTree },

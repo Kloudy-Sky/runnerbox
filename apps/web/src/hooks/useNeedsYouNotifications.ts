@@ -48,7 +48,7 @@ export function useNeedsYouNotifications() {
         window.focus();
         void (itemId
           ? navigate({ to: "/inbox/$itemId", params: { itemId }, search: (previous: RootSearch) => previous })
-          : navigate({ to: "/", search: (previous: RootSearch) => previous }));
+          : navigate({ to: "/inbox", search: (previous: RootSearch) => previous }));
       };
     }
   }, [enabled, inbox, environmentId, navigate]);

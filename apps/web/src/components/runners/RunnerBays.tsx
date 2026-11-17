@@ -22,10 +22,10 @@ const TIMED = new Set<RunnerTile["state"]>(["running", "stepped_aside"]);
 
 // Every runner as a tall bay: full while it runs a job, striped while it stands aside for memory,
 // outlined red while it fails to start. Hovering says what it's doing and, when the machine gave
-// one, why.
-export function RunnerBays({ runners, now }: { runners: ReadonlyArray<RunnerTile>; now: number }) {
+// one, why. `small` draws short narrow bays, for Overview, where they sit beside other sections.
+export function RunnerBays({ runners, now, small = false }: { runners: ReadonlyArray<RunnerTile>; now: number; small?: boolean }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-x-2 gap-y-3">
+    <div className={cn("grid gap-x-2 gap-y-3", small ? "grid-cols-[repeat(auto-fill,minmax(4rem,1fr))]" : "grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]")}>
       {runners.map((tile) => {
         const look = BAY[tile.state];
         const words = tile.state === "maybe_running" ? READY_OR_RUNNING : runnerPhase(tile.phase, tile.job);
@@ -34,8 +34,8 @@ export function RunnerBays({ runners, now }: { runners: ReadonlyArray<RunnerTile
             <TooltipTrigger
               render={
                 <div className="flex min-w-0 flex-col gap-1.5">
-                  <div className={cn("h-20", look.bay)} style={tile.state === "stepped_aside" ? STEPPED_ASIDE_STRIPES : undefined} />
-                  <div className="flex min-w-0 flex-col text-xs leading-snug">
+                  <div className={cn(small ? "h-11" : "h-20", look.bay)} style={tile.state === "stepped_aside" ? STEPPED_ASIDE_STRIPES : undefined} />
+                  <div className={cn("flex min-w-0 flex-col leading-snug", small ? "text-[11px]" : "text-xs")}>
                     <span className={cn("truncate font-medium", look.tone)}>{tile.state === "running" && tile.job ? tile.job : look.word}</span>
                     <span className="truncate text-muted-foreground">
                       {tile.kind} {tile.slot}
