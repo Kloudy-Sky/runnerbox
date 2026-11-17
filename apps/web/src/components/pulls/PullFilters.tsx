@@ -10,15 +10,15 @@ type Props = {
   readonly filter: PullFilter;
   readonly onChange: (filter: PullFilter) => void;
   readonly repos: ReadonlyArray<string>;
-  // The signed-in GitHub login, without which "yours" can't be told apart.
-  readonly login: string | null;
+  // Whether any machine is signed in to GitHub, without which "yours" can't be told apart.
+  readonly canTellYours: boolean;
 };
 
 const toggle = "px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-50";
 
 // Which pull requests the table shows: one repository or all, everyone's or the signed-in
-// login's, and all open ones or those in one standing.
-export function PullFilters({ filter, onChange, repos, login }: Props) {
+// account's, and all open ones or those in one standing.
+export function PullFilters({ filter, onChange, repos, canTellYours }: Props) {
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-sm">
       {repos.length > 1 ? (
@@ -43,8 +43,8 @@ export function PullFilters({ filter, onChange, repos, login }: Props) {
         <button
           type="button"
           aria-pressed={filter.yours}
-          disabled={login === null}
-          title={login === null ? "Sign the server in to GitHub to tell which are yours" : `Opened by ${login}`}
+          disabled={!canTellYours}
+          title={canTellYours ? "Opened by the account a machine is signed in to GitHub as" : "Sign a server in to GitHub to tell which are yours"}
           onClick={() => onChange({ ...filter, yours: true })}
           className={cn(toggle, filter.yours ? "bg-foreground/15 text-foreground" : "text-muted-foreground")}
         >

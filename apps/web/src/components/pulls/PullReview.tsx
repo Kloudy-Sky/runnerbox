@@ -10,9 +10,11 @@ import { SectionLabel } from "./SectionLabel.tsx";
 
 type Props = {
   readonly pull: PullRequest;
+  // The machine that keeps this pull request's reviews, and its view.
+  readonly environmentId: string;
   readonly view: ReviewsView;
-  readonly start: (repo: string, number: number) => Promise<unknown>;
-  readonly stop: (repo: string, number: number) => Promise<unknown>;
+  readonly start: () => Promise<unknown>;
+  readonly stop: () => Promise<unknown>;
 };
 
 const ago = (iso: string) => (Date.now() - Date.parse(iso) < 60_000 ? "just now" : `${formatAge(iso)} ago`);
@@ -28,8 +30,8 @@ function unfinished(review: Review) {
 
 // An opened pull request's review: its verdict and reach, each finding with the code it points at,
 // and what to do next. Older reviews of it can be picked. Nothing here was posted to GitHub.
-export function PullReview({ pull, view, start, stop }: Props) {
-  const kept = usePullReviews(pull.repo, pull.number);
+export function PullReview({ pull, environmentId, view, start, stop }: Props) {
+  const kept = usePullReviews(environmentId, pull.repo, pull.number);
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { copyToClipboard, isCopied } = useCopyToClipboard();
@@ -80,11 +82,11 @@ export function PullReview({ pull, view, start, stop }: Props) {
           </Button>
         ) : null}
         {!canReview ? null : going(newest) ? (
-          <Button size="xs" variant="outline" onClick={() => act(stop(pull.repo, pull.number))}>
+          <Button size="xs" variant="outline" onClick={() => act(stop())}>
             Stop
           </Button>
         ) : (
-          <Button size="xs" variant="outline" onClick={() => act(start(pull.repo, pull.number))}>
+          <Button size="xs" variant="outline" onClick={() => act(start())}>
             {newest ? "Review again" : "Review"}
           </Button>
         )}

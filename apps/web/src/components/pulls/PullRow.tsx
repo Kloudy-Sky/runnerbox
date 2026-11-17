@@ -16,17 +16,19 @@ export const wideOnly = "hidden @[700px]:flex";
 
 type Props = {
   readonly pull: PullRequest;
+  // The machine it's shown from, and that machine's view.
+  readonly environmentId: string;
   readonly view: ReviewsView;
   readonly opened: boolean;
-  // Whether this server reviews, so an opened row has a review to show.
-  readonly canRun: boolean;
-  readonly start: (repo: string, number: number) => Promise<unknown>;
-  readonly stop: (repo: string, number: number) => Promise<unknown>;
+  readonly start: () => Promise<unknown>;
+  readonly stop: () => Promise<unknown>;
 };
 
 // One pull request: its title, checks, review and age. Pressing it opens it in place, and the URL
 // says which one is open.
-export function PullRow({ pull, view, opened, canRun, start, stop }: Props) {
+export function PullRow({ pull, environmentId, view, opened, start, stop }: Props) {
+  // A server that runs reviews says whether this session may; one that only lists them leaves it out.
+  const canRun = view.canReview !== undefined;
   const [owner = "", name = ""] = pull.repo.split("/");
   return (
     <>
@@ -54,7 +56,7 @@ export function PullRow({ pull, view, opened, canRun, start, stop }: Props) {
         <div className="mt-1 mb-1.5 border-border border-l-2 pt-1 pb-4 pl-[18px]">
           <PullChecks pull={pull} />
           {canRun ? (
-            <PullReview pull={pull} view={view} start={start} stop={stop} />
+            <PullReview pull={pull} environmentId={environmentId} view={view} start={start} stop={stop} />
           ) : (
             <div className="pt-3">
               <a href={`https://github.com/${pull.repo}/pull/${pull.number}`} target="_blank" rel="noreferrer noopener" className="text-muted-foreground underline underline-offset-2 hover:text-foreground">
