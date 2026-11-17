@@ -13,7 +13,8 @@ import * as ServerPaths from "../config/ServerPaths.ts";
 import { refusal } from "runnerbox/src/changes/change-paths.ts";
 import { type Described, UpSocket } from "../reproduce/UpSocket.ts";
 
-// Proposed changes to an install's numbers: the agent records one, and only the owner decides it.
+// Proposed changes to an install's numbers: the agent or an inbox rule records one, and only the
+// owner decides it.
 // Each is a file in `.server/proposals`, owner-only. Approving sends exactly what was hashed to
 // `up`, which checks it all again itself; what happened next is read from `up`'s own change log.
 
@@ -29,6 +30,7 @@ const Stored = Schema.Struct({
   changes: Schema.Array(ProposedChange),
   reason: Schema.String,
   threadId: Schema.NullOr(Schema.String),
+  rule: Schema.optionalKey(Schema.Struct({ itemId: Schema.String })),
   runUrl: Schema.NullOr(Schema.String),
   revertOf: Schema.NullOr(Schema.String),
   createdAt: Schema.String,
@@ -49,6 +51,8 @@ export type ProposeInput = {
   readonly changes: ReadonlyArray<{ readonly path: string; readonly to: ChangeValue }>;
   readonly reason: string;
   readonly runUrl: string | null;
+  // Set by an inbox rule, which proposes with no thread.
+  readonly rule?: { readonly itemId: string };
 };
 export type Approver = { readonly id: string; readonly label: string };
 
@@ -166,6 +170,7 @@ const make = Effect.gen(function* () {
           changes,
           reason: input.reason,
           threadId: input.threadId,
+          ...(input.rule ? { rule: input.rule } : {}),
           runUrl: input.runUrl,
           revertOf: input.revertOf,
           createdAt: new Date(now).toISOString(),
