@@ -120,7 +120,8 @@ const make = Effect.gen(function* () {
 
   const status = Effect.fn("GitHub.status")(function* (may: May) {
     const { account, pending, failure } = yield* signedIn.status;
-    const reached = account === null ? null : yield* reachWithin(SETTINGS_FRESH_MS);
+    // A look that failed is said in `problem`, so the account and Sign out still show.
+    const reached = account === null ? null : yield* reachWithin(SETTINGS_FRESH_MS).pipe(Effect.catchTag("GitHubError", (error) => Effect.succeed({ installations: [], problem: error.message })));
     // The code signs the server in as whoever types it, so only a session that may sign in is shown it.
     return { app: signedIn.app, account, pending: may.configure ? pending : null, failure, installations: reached?.installations ?? [], problem: reached?.problem ?? null, canConfigure: may.configure };
   });

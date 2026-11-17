@@ -30,7 +30,7 @@ async function fakeGitHub() {
         forms.push(form);
         if (path === "/login/device/code") return json(200, { device_code: "not-a-real-device-code", user_code: "WDJB-MJHT", verification_uri: `${base()}/login/device`, expires_in: 900, interval: 0.02 });
         if (path !== "/login/oauth/access_token") return json(404, {});
-        if (form.grant_type === "refresh_token") return json(200, script.refresh === "renew" ? { access_token: REFRESHED_TOKEN, expires_in: 28_800, refresh_token: "not-a-real-next-refresh-token", refresh_token_expires_in: 15_897_600 } : { error: "bad_refresh_token" });
+        if (form.grant_type === "refresh_token") return json(200, script.refresh === "renew" ? { access_token: REFRESHED_TOKEN, expires_in: 28_800, refresh_token: "not-a-real-next-refresh-token", refresh_token_expires_in: 15_897_600 } : { error: "incorrect_client_credentials" });
         if (script.answer === "wait") return json(200, { error: "authorization_pending" });
         return json(200, script.answer === "approve" ? { access_token: USER_TOKEN, expires_in: 28_800, refresh_token: "not-a-real-refresh-token", refresh_token_expires_in: 15_897_600 } : { error: "access_denied" });
       });

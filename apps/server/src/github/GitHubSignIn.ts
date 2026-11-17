@@ -159,12 +159,14 @@ const make = Effect.gen(function* () {
         yield* keep(granted({ ...grant, access_token: grant.access_token }, held.account, now)).pipe(Effect.ignore);
         return grant.access_token;
       }
-      // The owner revoked the App, or the sign-in ran out: there's nothing left to renew with.
-      if (refreshToken === null || grant?.error === "bad_refresh_token") {
+      // GitHub turned the renewal down, as when the owner revoked the App, or the sign-in ran out:
+      // there's nothing left to renew with, so the server signs out once the token it has ends.
+      if (refreshToken === null || grant?.error !== undefined) {
         if (usable !== null) return usable;
         yield* forget;
         return null;
       }
+      // No answer came, so the next ask tries again.
       return usable ?? (yield* new GitHubError({ reason: "github_unreachable" }));
     }),
   );
@@ -194,15 +196,19 @@ const make = Effect.gen(function* () {
       }
     });
 
-  const cancel = Effect.suspend(() => {
+  // One start or cancel at a time, so two starts together can't both fork a poll and leave one
+  // that nothing can cancel.
+  const starting = yield* Semaphore.make(1);
+  const dropPending = Effect.suspend(() => {
     const waiting = pending;
     pending = null;
     return waiting === null ? Effect.void : Fiber.interrupt(waiting.fiber);
   });
+  const cancel = starting.withPermits(1)(dropPending);
 
-  const start = Effect.gen(function* () {
+  const begin = Effect.gen(function* () {
     if (app === null) return yield* new GitHubError({ reason: "not_configured" });
-    yield* cancel;
+    yield* dropPending;
     const reply = decodeDevice(yield* post("/login/device/code", { client_id: app.clientId }));
     // The address is shown as a link, so it's only taken when it's on the host that was asked.
     if (Option.isNone(reply) || !USER_CODE.test(reply.value.user_code) || !reply.value.verification_uri.startsWith(`${loginBase}/`)) return yield* new GitHubError({ reason: "github_unreachable" });
@@ -223,6 +229,7 @@ const make = Effect.gen(function* () {
     );
     pending = { prompt, fiber };
   });
+  const start = starting.withPermits(1)(begin);
 
   const status = current.pipe(Effect.map((held) => ({ account: held?.account ?? null, pending: pending?.prompt ?? null, failure, epoch })));
   const signOut = cancel.pipe(Effect.andThen(lock.withPermits(1)(forget)));
