@@ -1,6 +1,6 @@
 // Reads docs/t3code-map.json: every runnerbox file taken from T3 Code, and how. `pnpm t3code-diff`
 // and the map's test both start here.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type } from "arktype";
 
@@ -65,4 +65,34 @@ export function parseMap(json: unknown) {
   return { repository: map.repository, commit: map.commit, entries };
 }
 
-export const loadMap = (root: string) => parseMap(JSON.parse(readFileSync(join(root, MAP_PATH), "utf8")));
+const readMap = (root: string) => T3codeMap.assert(JSON.parse(readFileSync(join(root, MAP_PATH), "utf8")));
+
+export const loadMap = (root: string) => parseMap(readMap(root));
+
+// One entry per line, so the map reads as a list and a sync changes one line per file.
+const format = (map: typeof T3codeMap.infer) =>
+  [
+    "{",
+    `  "repository": ${JSON.stringify(map.repository)},`,
+    `  "commit": ${JSON.stringify(map.commit)},`,
+    '  "files": {',
+    Object.entries(map.files)
+      .map(([path, entry]) => `    ${JSON.stringify(path)}: ${JSON.stringify(entry)}`)
+      .join(",\n"),
+    "  }",
+    "}",
+    "",
+  ].join("\n");
+
+// Records that these entries are caught up with upstream at `to`, so the next diff starts there.
+export function markSynced(root: string, paths: ReadonlyArray<string>, to: string) {
+  const map = readMap(root);
+  const files = Object.fromEntries(
+    Object.entries(map.files).map(([path, entry]) => {
+      if (!paths.includes(path)) return [path, entry];
+      const { commit: _, ...rest } = entry;
+      return [path, to === map.commit ? rest : { ...rest, commit: to }];
+    }),
+  );
+  writeFileSync(join(root, MAP_PATH), format({ ...map, files }));
+}

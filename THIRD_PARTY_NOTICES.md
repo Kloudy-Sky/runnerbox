@@ -11,7 +11,7 @@ Much of `apps/`, `packages/` and `infra/relay` is copied from, adapted from or w
 - `stand-in`: runnerbox's own file in place of a T3 Code module the copies import, with only what they use. Its first line says so.
 - `follows`: runnerbox's own code, written after T3 Code's.
 
-A sync starts from `pnpm t3code-diff <t3code checkout>`, which lists the files whose upstream changed since they were taken and fails if a copy was edited.
+A sync starts from `pnpm t3code-diff <t3code checkout>`, which lists the files whose upstream changed since they were taken and fails if a copy was edited. Once a file has taken what it needs, `pnpm t3code-diff <t3code checkout> --synced <path>` records it as caught up, so the next run starts from there. `pnpm test` fails if code that mentions T3 Code has no entry.
 
 ```
 MIT License
