@@ -20,11 +20,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { repo } = useRepo();
   const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }));
   const keep = (previous: RootSearch) => previous;
-  const page = (id: string, label: string, to: "/" | "/runs" | "/reviews" | "/speed" | "/runners" | "/settings", icon: typeof House): Entry => ({ id, label, detail: "", icon, go: () => void navigate({ to, search: keep }) });
+  const page = (id: string, label: string, to: "/" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings", icon: typeof House): Entry => ({ id, label, detail: "", icon, go: () => void navigate({ to, search: keep }) });
   const groups = [
     {
       value: "Pages",
-      items: [page("home", "Home", "/", House), page("runs", "All runs", "/runs", ListTree), page("reviews", "Reviews", "/reviews", GitPullRequest), page("speed", "Speed and cost", "/speed", Gauge), page("runners", "Runners", "/runners", Server), page("settings", "Settings", "/settings", Settings)],
+      items: [page("home", "Home", "/", House), page("runs", "All runs", "/runs", ListTree), page("pulls", "Pull requests", "/pulls", GitPullRequest), page("speed", "Speed and cost", "/speed", Gauge), page("runners", "Runners", "/runners", Server), page("settings", "Settings", "/settings", Settings)],
     },
     {
       value: "Inbox",

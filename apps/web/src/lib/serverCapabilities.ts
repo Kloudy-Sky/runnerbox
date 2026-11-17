@@ -23,7 +23,7 @@ export type Capabilities = {
   readonly checkRelease: boolean;
   // `runners.restartStatus` and `runners.restartWhenIdle`: About can restart an install's runners.
   readonly restartRunners: boolean;
-  // `reviews.status`: the Reviews page and its settings.
+  // `reviews.status`: the Pull requests page and its settings.
   readonly reviews: boolean;
   // `reviews.start` and `reviews.read`: the server reviews a pull request and keeps what it found.
   readonly reviewRuns: boolean;

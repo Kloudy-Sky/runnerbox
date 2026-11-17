@@ -1,17 +1,20 @@
 import type { PullReviews } from "@runnerbox/contracts";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useStore } from "zustand";
 import { going } from "../lib/reviewWords.ts";
-import { useActiveEnvironment } from "./useEnvironment.ts";
-import { useRpcQuery } from "./useRpcQuery.ts";
-import { useServerCapabilities } from "./useServerCapabilities.ts";
+import { runtime } from "../runtime.ts";
 
-// One pull request's reviews as the server keeps them, the newest first. Asked again every few
-// seconds while the newest is still going, and not otherwise: a finished review never changes.
-export function usePullReviews(repo: string, number: number) {
-  const { environment } = useActiveEnvironment();
-  const environmentId = environment?.environmentId ?? "";
-  const enabled = useServerCapabilities().reviewRuns && Number.isInteger(number) && number > 0;
-  const key = ["reviews", repo, number] as const;
-  const reviewing = going(useQueryClient().getQueryData<PullReviews>([environmentId, ...key])?.reviews[0]);
-  return useRpcQuery(key, (client) => client["reviews.read"]({ repo, number }), { enabled, ...(reviewing ? { refetchEvery: 3_000 } : {}) });
+// One pull request's reviews as the machine that ran them keeps them, the newest first. Asked again
+// every few seconds while the newest is still going, and not otherwise: a finished review never
+// changes. Cached where `useRpcQuery` would cache it for that machine.
+export function usePullReviews(environmentId: string, repo: string, number: number) {
+  const connected = useStore(runtime.store, (state) => state.connections[environmentId]?.status === "connected");
+  const queryKey = [environmentId, "reviews", repo, number] as const;
+  const reviewing = going(useQueryClient().getQueryData<PullReviews>(queryKey)?.reviews[0]);
+  return useQuery({
+    queryKey,
+    queryFn: () => runtime.run(environmentId, (client) => client["reviews.read"]({ repo, number })),
+    enabled: connected && Number.isInteger(number) && number > 0,
+    refetchInterval: reviewing ? 3_000 : false,
+  });
 }
