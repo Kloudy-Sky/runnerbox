@@ -10,7 +10,7 @@ import { useReferenceCandidates } from "../../hooks/useReferenceCandidates.ts";
 import type { useThread } from "../../hooks/useThread.ts";
 import { type ReferenceCandidate, referenceToken, withReferences } from "../../lib/composerReferences.ts";
 import type { Capabilities } from "../../lib/serverCapabilities.ts";
-import { rememberedChoice, type TurnChoice } from "../../lib/turnChoice.ts";
+import { effortsOf, rememberedChoice, type TurnChoice } from "../../lib/turnChoice.ts";
 import { detectComposerTrigger, replaceTextRange } from "../../t3tools/shared/composerTrigger.ts";
 import { type ComposerPromptEditorHandle, ComposerPromptEditorTiptap } from "../ComposerPromptEditorTiptap.tsx";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation.tsx";
@@ -111,7 +111,9 @@ export function Composer({ thread, attachments, capabilities, placeholder }: { t
   const submit = async () => {
     if (queueing ? !canQueue : !canSend) return;
     const sentIds = attachments.staged.map((file) => file.id);
-    const options = { accountId, model: capabilities.models ? (model ?? undefined) : undefined, effort: effort ?? undefined, attachments: sentIds, references: sending.references };
+    // The level the picker shows is always sent, the model's default included: left out, a CLI would
+    // fall back to its own config, which may differ from the default the server listed.
+    const options = { accountId, model: capabilities.models ? (model ?? undefined) : undefined, effort: effort ?? effortsOf(providers, choice)?.default ?? undefined, attachments: sentIds, references: sending.references };
     if (queueing) {
       // Out of the draft before the server answers: it can hand the question back first, and that
       // must land in an empty draft, not be cleared after.

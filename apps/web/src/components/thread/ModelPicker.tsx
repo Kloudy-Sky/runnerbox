@@ -65,7 +65,8 @@ export function ModelPicker(props: { providers: ReadonlyArray<Provider>; environ
     setOpen(next);
     if (!next) return;
     setQuery("");
-    setRail(favorites.length > 0 ? "favorites" : (choice.accountId ?? entries[0]?.instanceId ?? "favorites"));
+    // Favorites of a removed account or an unoffered model don't count, so they can't open an empty list.
+    setRail(allRows.some(isFavorite) ? "favorites" : (choice.accountId ?? entries[0]?.instanceId ?? "favorites"));
   };
 
   return (
@@ -161,8 +162,7 @@ export function ModelPicker(props: { providers: ReadonlyArray<Provider>; environ
                     aria-checked={level.id === effort}
                     className={ROW}
                     onClick={() => {
-                      // The model's default is kept as no pick, so it follows the model.
-                      props.onChoice({ ...choice, effort: level.id === efforts.default ? null : level.id });
+                      props.onChoice({ ...choice, effort: level.id });
                       setOpen(false);
                     }}
                   >
