@@ -53,7 +53,7 @@ function fakes({
         events.push(`run ${slot} ${registration}`);
         for (const check of checks.splice(0)) for (let tick = 0; tick < checksPerRun; tick++) await check();
         time += jobMs;
-        return exitCode;
+        return { exitCode, lastLine: null };
       },
       wait: async (ms: number) => {
         events.push(`wait ${ms}`);

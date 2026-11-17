@@ -11,7 +11,8 @@ const CHECK_MS = 15_000;
 
 type SlotActions = {
   mint: (runnerName: string) => Promise<{ runnerId: number; jitConfig: string }>;
-  runContainer: (slot: number, registration: string, image: string) => Promise<number | null>;
+  // The runner's exit code, and the last meaningful line it printed to stderr.
+  runContainer: (slot: number, registration: string, image: string) => Promise<{ exitCode: number | null; lastLine: string | null }>;
   // The image new containers should use.
   image: () => string;
   // Why there's no room for another job right now, or null when there is.
@@ -111,18 +112,20 @@ async function runSlot(installName: string, slot: number, actions: SlotActions, 
       released = newImage ? "image" : "memory";
       log(`slot ${slot}: removed idle ${runnerName}: ${newImage ? `new containers use ${newImage}` : short}`);
     });
-    const exitCode = await runContainer(slot, registration.jitConfig, startedImage);
+    const { exitCode, lastLine } = await runContainer(slot, registration.jitConfig, startedImage);
     stopWatching();
     // A runner that finished its job is already gone, so this usually gets a refusal. One that exited
     // without finishing, as when GitHub hands it a job just as that job is cancelled, would
     // otherwise stay listed as offline.
     if (!released) await release(registration.runnerId);
     registered.delete(slot);
-    record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released, image: startedImage });
-    log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
-    if (stopping()) return report(slot, "stopped");
     // A released runner exits fast on purpose, so that isn't a broken VM.
     const brokenFast = !released && exitCode !== 0 && now() - startedAt < FAST_FAILURE_MS;
+    // Kept only then, so the app can say why the runner never took a job.
+    const why = brokenFast && lastLine ? { lastLine } : {};
+    record({ event: "runner", slot, runner: runnerName, startedAt: iso(startedAt), durationMs: now() - startedAt, exitCode, released, image: startedImage, ...why });
+    log(`slot ${slot}: ${runnerName} finished (${exitCode})`);
+    if (stopping()) return report(slot, "stopped");
     report(slot, "backoff", { detail: brokenFast ? `the last runner exited ${exitCode} within a minute` : "Starting the next runner." });
     await wait(brokenFast ? MINT_RETRY_MS : NEXT_RUNNER_MS);
   }

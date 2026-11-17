@@ -20,6 +20,9 @@ export const LauncherEvent = Schema.Union([
     image: Schema.optionalKey(Schema.String),
     // The kind's container limits when it ran, when `up` recorded them.
     limits: Schema.optionalKey(Schema.Struct({ memoryMiB: Schema.Number, cpus: Schema.Number })),
+    // The last line it printed to stderr, when it failed within a minute, such as "docker: Cannot
+    // connect to the Docker daemon". Runner output: show it as untrusted text. An older `up` won't send it.
+    lastLine: Schema.optionalKey(Schema.String),
   }),
   Schema.Struct({ ...Base, event: Schema.Literal("memory_wait"), slot: Schema.Number }),
   Schema.Struct({ ...Base, event: Schema.Literal("image_build"), tag: Schema.String, ok: Schema.Boolean }),
