@@ -15,6 +15,7 @@ import { AccessSettings } from "./pages/settings/AccessSettings.tsx";
 import { ProvidersSettings } from "./pages/settings/ProvidersSettings.tsx";
 import { ChangesSettings } from "./pages/settings/ChangesSettings.tsx";
 import { ConnectionsSettings } from "./pages/settings/ConnectionsSettings.tsx";
+import { GitHubSettings } from "./pages/settings/GitHubSettings.tsx";
 import { MonitorsSettings } from "./pages/settings/MonitorsSettings.tsx";
 import { NotificationsSettings } from "./pages/settings/NotificationsSettings.tsx";
 import { ReviewsSettings } from "./pages/settings/ReviewsSettings.tsx";
@@ -51,6 +52,7 @@ const routeTree = rootRoute.addChildren([
     // Its name before providers, so saved links still land on it.
     createRoute({ getParentRoute: () => settingsRoute, path: "/accounts", beforeLoad: () => { throw redirect({ to: "/settings/providers", search: true }); } }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/connections", component: ConnectionsSettings }),
+    createRoute({ getParentRoute: () => settingsRoute, path: "/github", component: GitHubSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/access", component: AccessSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/changes", component: ChangesSettings }),
     createRoute({ getParentRoute: () => settingsRoute, path: "/monitors", component: MonitorsSettings }),

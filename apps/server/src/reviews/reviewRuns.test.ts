@@ -7,12 +7,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
 import { ALL_SCOPES, type AuthScope, type Review } from "@runnerbox/contracts";
-import { generateKeyPairSync } from "node:crypto";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import { type FakeStep, makeFakeProvider } from "../testing/FakeProvider.ts";
 import { mcpSession } from "../testing/mcpClient.ts";
+import { TEST_APP, USER_TOKEN, writeGitHubSession } from "../testing/githubSession.ts";
 import { makeReviewFixture, REVIEW_SCRIPT } from "../testing/reviewFixture.ts";
 import { startTestServer } from "../testing/testServer.ts";
 import { autoBudget, type ListedPull, MAX_AUTO_PER_DAY, wantsReview } from "./autoReview.ts";
@@ -21,31 +21,20 @@ import { pullsOf } from "./pullRequests.ts";
 import { reviewableDiff } from "./reviewableDiff.ts";
 import { reviewPrompt } from "./reviewPrompt.ts";
 
-const KEY = generateKeyPairSync("rsa", { modulusLength: 2048, publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } }).privateKey;
 const TIMING = { pollMs: 50, slowMs: 300, maxBackoffMs: 400, idleMs: 200, checkMs: 20 };
 
-// A stand-in for GitHub's API: an App installed on owner/name, with pull request 7 open on the
+// A stand-in for GitHub's API: the App installed on owner/name, with pull request 7 open on the
 // fixture's branch. `script` changes the pull request between requests: its head commit, when it
-// was opened, and whether it's a draft. That the App's own requests are signed by its key is reviews.test.ts's to check.
+// was opened, and whether it's a draft. It answers only the signed-in user's token.
 async function fakeGitHub(code: ReturnType<typeof makeReviewFixture>) {
-  const minted: unknown[] = [];
   const script = { head: code.headSha, openedAt: "2020-01-01T10:00:00Z", draft: false };
   const server = createServer((request, response) => {
     const path = request.url ?? "";
     const pull = { number: 7, title: "A job whose runner is gone waits again", state: "open", body: "It stayed assigned.", draft: script.draft, user: { login: "someone" }, head: { ref: "fix/queue-gone-runner", sha: script.head, repo: { full_name: "owner/name" } }, base: { ref: "main", sha: code.baseSha }, additions: 7, deletions: 3, changed_files: 1, created_at: script.openedAt, updated_at: "2020-01-02T10:00:00Z" };
     const json = (status: number, body: unknown) => void response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
-    if (path === "/app") return json(200, { slug: "example-reviewer", name: "Example Reviewer" });
-    if (path.startsWith("/app/installations?")) return json(200, [{ id: 11 }]);
-    if (path === "/app/installations/11/access_tokens") {
-      let text = "";
-      request.on("data", (chunk) => (text += chunk));
-      request.on("end", () => {
-        minted.push(JSON.parse(text));
-        json(201, { token: "not-a-real-installation-token", expires_at: new Date(Date.now() + 3_600_000).toISOString() });
-      });
-      return;
-    }
-    if (path.startsWith("/installation/repositories?")) return json(200, { total_count: 1, repositories: [{ full_name: "owner/name" }] });
+    if (request.headers.authorization !== `Bearer ${USER_TOKEN}`) return json(401, {});
+    if (path.startsWith("/user/installations?")) return json(200, { installations: [{ id: 11, repository_selection: "selected", account: { login: "owner" } }] });
+    if (path.startsWith("/user/installations/11/repositories?")) return json(200, { total_count: 1, repositories: [{ full_name: "owner/name" }] });
     if (path.startsWith("/repos/owner/name/pulls?")) return json(200, [pull]);
     if (path === "/repos/owner/name/pulls/7") return json(200, pull);
     if (path === `/repos/owner/name/compare/${code.baseSha}...${script.head}` && request.headers.accept === "application/vnd.github.diff") return void response.writeHead(200).end(code.diff);
@@ -53,7 +42,7 @@ async function fakeGitHub(code: ReturnType<typeof makeReviewFixture>) {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, minted, script, close: () => new Promise((resolve) => server.close(resolve)) };
+  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, script, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 async function start(steps: ReadonlyArray<FakeStep>) {
@@ -61,13 +50,12 @@ async function start(steps: ReadonlyArray<FakeStep>) {
   const code = makeReviewFixture(root);
   const github = await fakeGitHub(code);
   const provider = makeFakeProvider({ turns: [], review: steps });
-  const server = await startTestServer({ provider, queue: { apiBase: github.apiBase, gitBase: code.gitBase, reportEnvPath: "/nonexistent/report.env", timing: TIMING } });
+  const server = await startTestServer({ provider, prepare: writeGitHubSession, queue: { apiBase: github.apiBase, gitBase: code.gitBase, app: TEST_APP, reportEnvPath: "/nonexistent/report.env", timing: TIMING } });
   const session = async <A, E>(scopes: ReadonlyArray<AuthScope>, use: (client: Effect.Success<ReturnType<typeof openSession>>["client"]) => Effect.Effect<A, E>) => {
     const { code: pairing } = await server.createPairingCode(scopes);
     const { token } = await Effect.runPromise(pairWithCode(server.baseUrl, pairing, "app"));
     return Effect.runPromise(Effect.scoped(Effect.flatMap(openSession(server.baseUrl, token), ({ client }) => Effect.exit(use(client)))));
   };
-  await session(ALL_SCOPES, (client) => client["reviews.connect"]({ appId: "4242", privateKey: KEY }));
   await session(ALL_SCOPES, (client) => client["reviews.setRepo"]({ repo: "owner/name", review: true }));
   // The newest review of pull request 7, once it's no longer waiting or running.
   const ended = async (): Promise<Review> => {
@@ -111,8 +99,6 @@ test("a review reads the pull request's commit through its own tools, and what i
     assert.deepEqual(search.matches.map((match: { path: string; line: number }) => [match.path, match.line]), [["src/queue.ts", 4]]);
     assert.deepEqual(listed.paths, ["AGENTS.md", "src/queue.ts"]);
 
-    // The code was fetched with a token for that one repository that can only read.
-    assert.deepEqual(github.minted.at(-1), { repositories: ["name"], permissions: { contents: "read", pull_requests: "read" } });
     // It's kept as git objects: no file of the pull request is on the server's disk as a file.
     const kept = join(server.stateDir, ".server", "review-code", "owner", "name");
     assert.ok(existsSync(join(kept, "HEAD")) && !existsSync(join(kept, "src")));

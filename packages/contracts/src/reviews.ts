@@ -1,17 +1,9 @@
 import * as Schema from "effect/Schema";
+import { GitHubAppName } from "./github.ts";
 import { RepoName } from "./history.ts";
 
-// Code review: the open pull requests on the repositories the owner picked, read through a GitHub
-// App the owner made and installed on them. The App's key is kept on the server's machine.
-
-export const GitHubAppId = Schema.String.check(Schema.isPattern(/^\d{1,12}$/));
-// Write-only: the private key GitHub gave when the App was made, as its .pem file reads. It goes to
-// the server and is never sent back.
-export const GitHubAppKey = Schema.String.check(Schema.isMaxLength(8192), Schema.isPattern(/^\s*-----BEGIN (RSA )?PRIVATE KEY-----[A-Za-z0-9+/=\s]+-----END (RSA )?PRIVATE KEY-----\s*$/));
-
-// The App as GitHub names it, which is the name its comments will carry.
-export const ReviewApp = Schema.Struct({ slug: Schema.String, name: Schema.String });
-export type ReviewApp = typeof ReviewApp.Type;
+// Code review: the open pull requests on the repositories the owner picked, read through the
+// server's sign-in to GitHub (github.ts), on the repositories the App is installed on.
 
 // A repository the App is installed on, and whether the owner turned reviews on for it.
 export const ReviewRepo = Schema.Struct({ repo: RepoName, review: Schema.Boolean });
@@ -112,15 +104,15 @@ export const PullRequest = Schema.Struct({
 export type PullRequest = typeof PullRequest.Type;
 
 export const ReviewsView = Schema.Struct({
-  // Null until the owner connects an App.
-  app: Schema.NullOr(ReviewApp),
+  // The App reviews read through, or null until the server is signed in to GitHub.
+  app: Schema.NullOr(GitHubAppName),
   repos: Schema.Array(ReviewRepo),
   // Open pull requests on the repositories with reviews on, the most recently changed first.
   pulls: Schema.Array(PullRequest),
-  // Why the lists may be short or out of date, such as GitHub refusing the App's key.
+  // Why the lists may be short or out of date, such as GitHub not answering.
   problem: Schema.NullOr(Schema.String),
   checkedAt: Schema.NullOr(Schema.String),
-  // Whether this session may connect an App or turn a repository on.
+  // Whether this session may turn a repository on.
   canConfigure: Schema.Boolean,
   // Whether this session may start and stop reviews, which run on the owner's Claude account.
   canReview: Schema.optionalKey(Schema.Boolean),
@@ -133,20 +125,16 @@ export const ReviewsView = Schema.Struct({
 export type ReviewsView = typeof ReviewsView.Type;
 
 export class ReviewError extends Schema.TaggedError<ReviewError>()("ReviewError", {
-  reason: Schema.Literals(["unreadable", "bad_key", "app_refused", "github_unreachable", "not_connected", "unknown_repo", "reviews_off", "pull_not_found", "review_running", "no_review", "provider_unavailable", "model_not_offered", "no_code_access"]),
+  reason: Schema.Literals(["unreadable", "github_unreachable", "not_connected", "unknown_repo", "reviews_off", "pull_not_found", "review_running", "no_review", "provider_unavailable", "model_not_offered"]),
 }) {
   override get message() {
     switch (this.reason) {
       case "unreadable":
         return "Couldn't read or write the review settings on the server.";
-      case "bad_key":
-        return "That isn't a private key GitHub Apps use. Paste the whole .pem file.";
-      case "app_refused":
-        return "GitHub refused that App ID and key. Check both belong to the same App.";
       case "github_unreachable":
-        return "The server couldn't get an answer from GitHub about the App. Try again in a minute.";
+        return "The server couldn't get an answer from GitHub. Try again in a minute.";
       case "not_connected":
-        return "No GitHub App is connected.";
+        return "The server isn't signed in to GitHub. Sign in under Settings, GitHub.";
       case "unknown_repo":
         return "The App isn't installed on that repository.";
       case "reviews_off":
@@ -161,8 +149,6 @@ export class ReviewError extends Schema.TaggedError<ReviewError>()("ReviewError"
         return "Claude Code isn't ready on the server's machine. Check Settings, Providers.";
       case "model_not_offered":
         return "Reviews can't run on that model.";
-      case "no_code_access":
-        return "GitHub wouldn't let the App read that repository's code. Give the App the Contents permission, read-only.";
     }
   }
 }

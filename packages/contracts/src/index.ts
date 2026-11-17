@@ -16,4 +16,5 @@ export * from "./monitors.ts";
 export * from "./attachments.ts";
 export * from "./queue.ts";
 export * from "./update.ts";
+export * from "./github.ts";
 export * from "./reviews.ts";

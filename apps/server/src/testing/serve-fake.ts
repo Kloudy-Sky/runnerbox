@@ -13,8 +13,7 @@
 // It writes fixtures under <dir>, prints a pairing code, and runs until stopped. Never point it
 // at a real state directory. Keep <dir> short: the reproduce socket's path must fit in about
 // 100 characters.
-import { generateKeyPairSync } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { ALL_SCOPES } from "@runnerbox/contracts";
@@ -31,6 +30,7 @@ import { makeFakeProvider } from "./FakeProvider.ts";
 import { fakeUpdates } from "./fakeUpdates.ts";
 import { startFakeUp } from "./fakeUp.ts";
 import { startFakeGitHub } from "./fakeGitHub.ts";
+import { TEST_APP, writeGitHubSession } from "./githubSession.ts";
 import { LINUX_IMAGE, writeFixtures } from "./fixtures.ts";
 import { makeReviewFixture, REVIEW_SCRIPT } from "./reviewFixture.ts";
 import { RUNNER_SCENARIOS, writeRunnerScenario } from "./runnerScenarios.ts";
@@ -71,14 +71,11 @@ const reviewed = makeReviewFixture(join(resolve(target), "git"));
 const fakeGitHub = await startFakeGitHub(Date.now(), reviewed);
 const fakeReportEnv = join(resolve(target), "report.env");
 await writeFile(fakeReportEnv, "GITHUB_TOKEN=not-a-real-token\n", { mode: 0o600 });
-// Reviews start connected to the stand-in's App with owner/name turned on, behind a key made for
-// this run that signs for nothing real.
-const serverDir = join(stateDir, ".server");
-await mkdir(serverDir, { recursive: true, mode: 0o700 });
-const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048, publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
-await writeFile(join(serverDir, "github-app.json"), JSON.stringify({ v: 1, appId: "1", privateKey, slug: "example-reviewer", name: "Example Reviewer" }), { mode: 0o600 });
-await writeFile(join(serverDir, "reviews.json"), JSON.stringify({ v: 1, repos: ["owner/name"] }), { mode: 0o600 });
-const FAKE_GITHUB = { apiBase: fakeGitHub.apiBase, gitBase: reviewed.gitBase, reportEnvPath: fakeReportEnv, timing: { pollMs: 20_000, slowMs: 120_000, maxBackoffMs: 300_000, idleMs: 60_000, checkMs: 1_000 } };
+// It starts signed in to the stand-in as octocat, with reviews on for owner/name. Signing out and
+// in again goes through the stand-in's device flow.
+await writeGitHubSession(stateDir);
+await writeFile(join(stateDir, ".server", "reviews.json"), JSON.stringify({ v: 1, repos: ["owner/name"] }), { mode: 0o600 });
+const FAKE_GITHUB = { apiBase: fakeGitHub.apiBase, gitBase: reviewed.gitBase, loginBase: fakeGitHub.apiBase, app: TEST_APP, reportEnvPath: fakeReportEnv, timing: { pollMs: 20_000, slowMs: 120_000, maxBackoffMs: 300_000, idleMs: 60_000, checkMs: 1_000 } };
 
 const fake = makeFakeProvider({
   available: !values["no-provider"],

@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Bell, Eye, GitPullRequest, Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { Bell, Eye, GitBranch, GitPullRequest, Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { handleSettingsSectionKeyDown } from "../components/settings/settingsSectionNavigation.ts";
 import { SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar.tsx";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSeparator } from "../components/WorkspaceBreadcrumb.tsx";
@@ -8,6 +8,7 @@ import type { RootSearch } from "../lib/search.ts";
 const SECTIONS = [
   { to: "/settings/providers", label: "Providers", icon: KeyRound },
   { to: "/settings/connections", label: "Connections", icon: Plug },
+  { to: "/settings/github", label: "GitHub", icon: GitBranch },
   { to: "/settings/access", label: "Access", icon: ShieldCheck },
   { to: "/settings/changes", label: "Changes", icon: SlidersHorizontal },
   { to: "/settings/monitors", label: "Monitors", icon: Eye },

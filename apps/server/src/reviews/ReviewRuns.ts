@@ -15,12 +15,12 @@ import * as AuthStore from "../auth/AuthStore.ts";
 import { newId } from "../auth/secrets.ts";
 import * as LocalEndpoint from "../config/LocalEndpoint.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
+import * as GitHub from "../github/GitHub.ts";
+import { githubRequest } from "../github/githubRequest.ts";
 import type { SubmittedReview } from "../mcp/reviewTool.ts";
 import { QueueConfig } from "../runners/QueueConfig.ts";
 import { Drivers } from "../threads/provider/Drivers.ts";
 import type { TurnAccount } from "../threads/provider/ProviderAdapter.ts";
-import { appRequest } from "./appRequest.ts";
-import * as GitHubApp from "./GitHubApp.ts";
 import { type FileLines, fetchCommits, type GitResult, type Listed, listPaths, type Matches, MAX_READ_LINES, readLines, searchLines } from "./gitObjects.ts";
 import { pullDiff } from "./pullDiff.ts";
 import { type PullToReview, pullToReview } from "./pullRequests.ts";
@@ -75,7 +75,8 @@ const nowIso = Clock.currentTimeMillis.pipe(Effect.map((ms) => new Date(ms).toIS
 const make = Effect.gen(function* () {
   const { serverDir } = yield* ServerPaths.ServerPaths;
   const config = yield* QueueConfig;
-  const app = yield* GitHubApp.GitHubApp;
+  const github = yield* GitHub.GitHub;
+  const reach = github.reach.pipe(Effect.mapError(Reviews.withoutGitHub));
   const reviews = yield* Reviews.Reviews;
   const store = yield* ReviewStore.ReviewStore;
   const accounts = yield* AccountStore.AccountStore;
@@ -118,8 +119,11 @@ const make = Effect.gen(function* () {
   const work = (run: Run, pull: PullToReview, account: TurnAccount) =>
     Effect.gen(function* () {
       yield* keep(run, { state: "running" });
-      // Made now, not when the review was asked for: a review that waited its turn would find an older one expired.
-      const token = yield* app.codeToken(pull.repo);
+      // Asked for now, not when the review was asked for: a review that waited its turn would find an older token expired.
+      const reached = yield* reach;
+      if (reached === null) return yield* new ReviewError({ reason: "not_connected" });
+      if (!reached.repos.includes(pull.repo)) return yield* new ReviewError({ reason: reached.problem === null ? "unknown_repo" : "github_unreachable" });
+      const { token } = reached;
       const dir = codeDir(pull.repo);
       // Stopping the review ends git too, so it never outlives the review holding the repository's locks or the token.
       yield* Effect.promise((signal) => fetchCommits(dir, `${gitBase}/${pull.repo}.git`, token, [pull.headSha], signal)).pipe(Effect.flatMap(gitFailure));
@@ -176,16 +180,15 @@ const make = Effect.gen(function* () {
     }).pipe(Effect.ignore);
 
   const start = Effect.fn("ReviewRuns.start")(function* (repo: string, number: number) {
-    if ((yield* app.describe) === null) return yield* new ReviewError({ reason: "not_connected" });
+    const reached = yield* reach;
+    if (reached === null) return yield* new ReviewError({ reason: "not_connected" });
     const settings = yield* reviews.settings;
     if (!settings.repos.includes(repo)) return yield* new ReviewError({ reason: "reviews_off" });
     const account = yield* reviewer;
     const status = yield* claude.status({ hasKey: account.apiKey !== null, home: account.home });
     if (!status.available) return yield* new ReviewError({ reason: "provider_unavailable" });
-    const installed = yield* app.installed;
-    const found = installed.repos.find((each) => each.repo === repo);
-    if (found === undefined) return yield* new ReviewError({ reason: installed.problem === null ? "unknown_repo" : "github_unreachable" });
-    const reply = yield* Effect.promise(() => appRequest(config.apiBase, "GET", `repos/${repo}/pulls/${number}`, found.token));
+    if (!reached.repos.includes(repo)) return yield* new ReviewError({ reason: reached.problem === null ? "unknown_repo" : "github_unreachable" });
+    const reply = yield* Effect.promise(() => githubRequest(config.apiBase, "GET", `repos/${repo}/pulls/${number}`, reached.token));
     if (reply.kind === "error") return yield* new ReviewError({ reason: "github_unreachable" });
     const pull = reply.kind === "ok" ? pullToReview(repo, reply.body) : null;
     if (pull === null) return yield* new ReviewError({ reason: "pull_not_found" });

@@ -38,11 +38,14 @@ export async function startTestServer(
     withoutMethods?: ReadonlyArray<RpcMethod>;
     queue?: QueueConfig.QueueConfig["Service"];
     updates?: UpdateWiring;
+    // Runs on the state directory before the server reads it.
+    prepare?: (stateDir: string) => Promise<void>;
   } = {},
 ) {
   const stateDir = options.stateDir ?? (await mkdtemp(join(tmpdir(), "runnerbox-server-test-")));
   const now = Date.now();
   if (options.stateDir === undefined && options.fixtures !== false) await writeFixtures(stateDir, now);
+  await options.prepare?.(stateDir);
   const provider = options.provider ?? makeFakeProviderUnavailable();
   const scope = Effect.runSync(Scope.make());
   // Two loopback listeners, the one apps use and the tunnel-facing one, each on a port the system
