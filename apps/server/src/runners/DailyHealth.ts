@@ -60,10 +60,12 @@ const make = Effect.gen(function* () {
       const since = Math.min(...[samples[0]?.sample.time, events[0]?.startedAt].flatMap((time) => (time === undefined ? [] : [Date.parse(time)])), now);
       const jobs = yield* logs.allJobs(dayStart(since));
       const verdicts = verdictsByJobId(jobs, { machine: machineLookup(samples), events });
-      const machineFailures = jobs
-        .filter((job) => isFailure(job) && verdicts.get(job.jobId) === "infra")
-        .map((job) => ({ runner: job.runner, at: Date.parse(job.completedAt ?? job.startedAt ?? job.createdAt) }));
-      const computed = machineDays({ now, samples, events, installs, machineFailures });
+      const finished = jobs.flatMap((job) =>
+        job.runner === null || job.completedAt === null
+          ? []
+          : [{ runner: job.runner, completedAt: Date.parse(job.completedAt), machineFault: isFailure(job) && verdicts.get(job.jobId) === "infra" }],
+      );
+      const computed = machineDays({ now, samples, events, installs, jobs: finished });
       const rollup = foldDays(yield* readRollup, computed, now);
       yield* writeRollup(rollup);
       return { now, rollup, computed, installs };

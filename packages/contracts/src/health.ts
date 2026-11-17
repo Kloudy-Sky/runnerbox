@@ -1,9 +1,9 @@
 import * as Schema from "effect/Schema";
 
 // Whether a machine took jobs on a day. `up`: all day. `partial`: some of the day, and off the rest,
-// as a laptop's working day. `down`: reporting, but its runners were failing, backing off or
-// waiting, so it took nothing for a stretch. `off`: not running or not reporting at all, as a
-// laptop at night, which is normal and not a fault.
+// as a laptop's working day. `down`: reporting for half an hour or more with no runner online, as
+// runners failing, backing off or waiting. `off`: not running or not reporting at all, as a laptop
+// at night, which is normal and not a fault.
 export const DayUptime = Schema.Literals(["up", "partial", "down", "off"]);
 export type DayUptime = typeof DayUptime.Type;
 
@@ -17,6 +17,7 @@ export const HealthDay = Schema.Struct({
   offMinutes: Schema.Number,
   // The least memory available in the VM in any sample that day. Null with no VM reading.
   lowestVmFreeMiB: Schema.NullOr(Schema.Number),
+  // Jobs its runners finished, from the job log.
   jobsTaken: Schema.Number,
   // Runners that exited with an error within a minute, before any job reached them.
   failedBeforeJob: Schema.Number,

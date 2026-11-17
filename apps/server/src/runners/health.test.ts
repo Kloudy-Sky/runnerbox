@@ -46,10 +46,11 @@ test("a laptop's night reads as off, and runners failing while it reports read a
   const failing = Array.from({ length: 10 }, (_, index) => at(10, 12, index * 30)).map((start) => runner(start, start + 1_000, 125));
   const [laptop] = machineDays({
     now: at(11, 12),
-    samples: [...samplesBetween(at(9, 9), at(9, 17)), ...samplesBetween(at(10, 9), at(10, 17))],
+    // Wednesday it's opened for five minutes and shut before a runner comes online.
+    samples: [...samplesBetween(at(9, 9), at(9, 17)), ...samplesBetween(at(10, 9), at(10, 17)), ...samplesBetween(at(11, 8), at(11, 8, 5))],
     events: [runner(at(9, 9), at(10, 10), 0), runner(at(10, 10), at(10, 12), 0), ...failing],
     installs: [],
-    machineFailures: [],
+    jobs: [at(10, 9, 50), at(10, 11, 30)].map((completedAt) => ({ runner: "laptop-1", completedAt, machineFault: false })),
   });
   const [monday, tuesday, wednesday] = laptop!.days;
 
@@ -61,8 +62,8 @@ test("a laptop's night reads as off, and runners failing while it reports read a
   assert.equal(tuesday!.uptime, "down");
   assert.equal(Math.round(tuesday!.downMinutes / 60), 5);
   assert.deepEqual([tuesday!.jobsTaken, tuesday!.failedBeforeJob], [2, 10]);
-  // Nothing at all on Wednesday morning: off, not down.
-  assert.deepEqual([wednesday!.uptime, wednesday!.offMinutes], ["off", 12 * 60]);
+  // A few minutes reporting with no runner online is off, not down.
+  assert.equal(wednesday!.uptime, "off");
 });
 
 test("each day keeps the least VM memory available in any of its samples", () => {
@@ -76,7 +77,7 @@ test("each day keeps the least VM memory available in any of its samples", () =>
     ],
     events: [],
     installs: [],
-    machineFailures: [],
+    jobs: [],
   });
   assert.deepEqual(laptop!.days.map((day) => day.lowestVmFreeMiB), [180, 3000, null, null]);
 });

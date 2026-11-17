@@ -15,8 +15,9 @@ const DOWN_MINUTES = 30;
 // A slot in these phases has a runner online, or about to be, that can take a job.
 const ONLINE = new Set(["minting", "registered", "busy"]);
 
-// A failed job the history judged the machine's fault, by the runner that ran it.
-export type MachineFailure = { readonly runner: string | null; readonly at: number };
+// A job a self-hosted runner finished, by the runner that ran it. `machineFault` is a failure the
+// history judged the machine's, the `infra` verdict.
+export type FinishedJob = { readonly runner: string; readonly completedAt: number; readonly machineFault: boolean };
 
 export type DaysInput = {
   readonly now: number;
@@ -24,7 +25,7 @@ export type DaysInput = {
   readonly samples: readonly InstallSample[];
   readonly events: readonly LauncherEvent[];
   readonly installs: readonly InstallState[];
-  readonly machineFailures: readonly MachineFailure[];
+  readonly jobs: readonly FinishedJob[];
 };
 
 // `coveredFrom` is the oldest record the logs still hold for the install: days from its start on
@@ -46,8 +47,9 @@ const countBy = <T>(items: readonly T[], key: (item: T) => string) => {
 
 const uptimeOf = ({ upMinutes, downMinutes, offMinutes }: Pick<HealthDay, "upMinutes" | "downMinutes" | "offMinutes">): DayUptime => {
   const dayMinutes = upMinutes + downMinutes + offMinutes;
-  if (upMinutes + downMinutes === 0) return "off";
-  if (upMinutes === 0 || downMinutes >= DOWN_MINUTES) return "down";
+  if (downMinutes >= DOWN_MINUTES) return "down";
+  // Reporting a few minutes without a runner online, as a laptop opened and shut again, isn't a fault.
+  if (upMinutes === 0) return "off";
   return upMinutes >= dayMinutes - ALL_DAY_SLACK_MINUTES ? "up" : "partial";
 };
 
@@ -65,7 +67,7 @@ export function machineDays(input: DaysInput): InstallDays[] {
   const names = new Set([...input.samples.map(({ install }) => install), ...input.events.map(({ install }) => install), ...input.installs.map(({ install }) => install)]);
   // The longest name first, so a runner of `a-b` isn't counted for `a`.
   const byPrefix = [...names].toSorted((a, b) => b.length - a.length);
-  const failures = Map.groupBy(input.machineFailures, ({ runner }) => byPrefix.find((name) => runner?.startsWith(`${name}-`)) ?? "");
+  const jobsOf = Map.groupBy(input.jobs, ({ runner }) => byPrefix.find((name) => runner.startsWith(`${name}-`)) ?? "");
   const samplesOf = Map.groupBy(input.samples, ({ install }) => install);
   const eventsOf = Map.groupBy(input.events, ({ install }) => install);
 
@@ -94,10 +96,12 @@ export function machineDays(input: DaysInput): InstallDays[] {
       const day = dayKey(Date.parse(sample.time));
       lowest.set(day, Math.min(free, lowest.get(day) ?? Infinity));
     }
-    const runners = events.filter((event) => event.event === "runner" && event.released === false);
-    const taken = countBy(runners.filter((event) => !failedFast(event)), (event) => dayKey(endOf(event)));
-    const failedBefore = countBy(runners.filter(failedFast), (event) => dayKey(endOf(event)));
-    const failedByMachine = countBy(failures.get(install) ?? [], ({ at }) => dayKey(at));
+    // Jobs come from the job log, not runner events: a drain removes idle runners without marking
+    // them released, so a runner that ran a long time didn't necessarily take a job.
+    const jobs = jobsOf.get(install) ?? [];
+    const taken = countBy(jobs, ({ completedAt }) => dayKey(completedAt));
+    const failedByMachine = countBy(jobs.filter(({ machineFault }) => machineFault), ({ completedAt }) => dayKey(completedAt));
+    const failedBefore = countBy(events.filter(failedFast), (event) => dayKey(endOf(event)));
 
     // Samples rotate out long before events, which are a line per runner, so samples set coverage.
     const oldest = samples.length > 0 ? [samples[0]!.sample.time] : [events[0]?.startedAt, live?.startedAt];
