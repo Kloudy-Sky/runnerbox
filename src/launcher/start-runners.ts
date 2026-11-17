@@ -27,11 +27,11 @@ import { every } from "./every.ts";
 import { followRunnerOutput } from "./follow-runner.ts";
 import { loadLauncherConfig, type MemoryFloor, type RunnerType, type VmInstall } from "./launcher-config.ts";
 import { checkMemoryFloor, memAvailableMiB, vmStatAvailableMiB } from "./memory-floor.ts";
-import { createLastLine } from "./last-line.ts";
 import { createMemoryLine } from "./memory-line.ts";
 import { memoryMiB } from "./memory-size.ts";
 import { runSlots } from "./run-slots.ts";
 import { runWithSecret } from "./run-with-secret.ts";
+import { withStderrFile } from "./stderr-file.ts";
 import { jobFromRunnerLine } from "./runner-output.ts";
 import { createSlotState, type RunsIn } from "./slot-state.ts";
 import { readTokenFile } from "./token-file.ts";
@@ -55,10 +55,11 @@ const hostAvailableMiB = async () =>
     : memAvailableMiB(await readFile("/proc/meminfo", "utf8"));
 
 // How one install runs a job: what its slots call the thing a job runs in, and the command that
-// runs one job and returns its exit code. `onStderr` sees the command's stderr.
+// runs one job and returns its exit code. `stderr` is the file descriptor the command writes its
+// stderr to, or "inherit" for `up`'s own.
 type Job = {
   image: () => string;
-  run: (slot: number, registration: string, image: string, onStderr: (text: string) => void) => Promise<number | null>;
+  run: (slot: number, registration: string, image: string, stderr: number | "inherit") => Promise<number | null>;
 };
 
 type RecordEvent = (event: LauncherEvent & { runnerType?: string }) => void;
@@ -185,9 +186,9 @@ export async function startRunners(configPath: string) {
           return mintRegistration({ scope: config.scope, token, runnerName, label: runner.label });
         },
         runContainer: async (slot, registration, image) => {
-          const lastLine = createLastLine();
-          const exitCode = await job.run(slot, registration, image, lastLine.push);
-          return { exitCode, lastLine: lastLine.last() };
+          const path = join(stateDir(), config.name, "stderr", `${runner.name}-${slot}`);
+          const { result: exitCode, lastLine } = await withStderrFile(path, (stderr) => job.run(slot, registration, image, stderr));
+          return { exitCode, lastLine };
         },
         image: job.image,
         roomForJob: () => roomForJob(floor),
@@ -234,12 +235,12 @@ export async function startRunners(configPath: string) {
         images.set(runner.name, image.current);
         await startSlots(runner, index, {
           image: image.current,
-          run: async (slot, secret, tag, onStderr) => {
+          run: async (slot, secret, tag, stderr) => {
             const command = dockerRunCommand(config.name, runner, slot, tag);
             // The job's name comes from a separate reader of the container's log, which ends with the run.
             const watched = (vm: Vm) => {
               const stop = followRunnerOutput({ vm, container: containerName(config.name, runner.name, slot), onLine: jobNamesFor(runner.name, slot) });
-              return runInVm({ vm, command, secret, onStderr }).finally(stop);
+              return runInVm({ vm, command, secret, stderr }).finally(stop);
             };
             const exitCode = jobVms ? await jobVms.run(runner, slot, tag, watched) : await watched(config.vm);
             await image.prune();
@@ -253,7 +254,7 @@ export async function startRunners(configPath: string) {
     const { runJob } = installPaths(config);
     await Promise.all(
       config.runners.map((runner, index) =>
-        startSlots(runner, index, { image: () => "host", run: (_slot, secret, _tag, onStderr) => runWithSecret("sudo", ["-n", runJob], secret, onStderr) }),
+        startSlots(runner, index, { image: () => "host", run: (_slot, secret, _tag, stderr) => runWithSecret("sudo", ["-n", runJob], secret, stderr) }),
       ),
     );
   }

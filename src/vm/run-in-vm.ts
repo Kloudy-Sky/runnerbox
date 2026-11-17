@@ -10,8 +10,8 @@ type VmCommand = {
   command: string;
   // Sent over stdin, because arguments are visible to other processes on both machines.
   secret: string;
-  // Sees the command's stderr as it arrives, which still goes to this process's own.
-  onStderr?: (text: string) => void;
+  // A file descriptor for the command's stderr, which otherwise goes to this process's own.
+  stderr?: number | "inherit";
   sshBinary?: string;
 };
 
@@ -32,12 +32,12 @@ export function sshArgs(vm: Vm, command: string) {
 
 // Runs a command over SSH until it ends, and returns its exit code. Null means SSH itself couldn't
 // start or was killed. Ending SSH doesn't stop a container the command started.
-export const runInVm = ({ vm, command, secret, onStderr, sshBinary = "ssh" }: VmCommand) =>
-  runWithSecret(sshBinary, sshArgs(vm, command), secret, onStderr);
+export const runInVm = ({ vm, command, secret, stderr, sshBinary = "ssh" }: VmCommand) =>
+  runWithSecret(sshBinary, sshArgs(vm, command), secret, stderr);
 
 // Runs a short command over SSH and returns its stdout. Fails if it exits non-zero or takes over
 // 20 seconds, so a hung VM can't stall a slot.
-export function readFromVm({ vm, command, sshBinary = "ssh" }: Omit<VmCommand, "secret" | "onStderr">) {
+export function readFromVm({ vm, command, sshBinary = "ssh" }: Omit<VmCommand, "secret" | "stderr">) {
   return new Promise<string>((resolve, reject) => {
     execFile(sshBinary, ["-o", "ConnectTimeout=10", ...sshArgs(vm, command)], { timeout: 20_000 }, (error, stdout) =>
       error ? reject(new Error(`ssh ${command} failed: ${error.message.split("\n")[0]}`)) : resolve(stdout),
