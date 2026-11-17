@@ -36,20 +36,17 @@ test("a job from history and the same job from GitHub show once, at its newest a
   ]);
 });
 
-test("a commit whose runs have all ended isn't asked about again, and one still running is", async () => {
-  const ended = "e".repeat(40);
-  const running = "f".repeat(40);
+test("a run that ended has its jobs fetched once, and a re-run of it still shows", async () => {
+  const sha = "e".repeat(40);
+  // The run's current attempt: 1 failed and ended, until the test re-runs it as 2.
+  let attempt = 1;
   const asked: string[] = [];
   const server = createServer((request, response) => {
     const path = request.url ?? "";
     asked.push(path);
-    const reply = path.includes(`head_sha=${ended}`)
-      ? { workflow_runs: [{ id: 5, run_attempt: 1, status: "completed" }] }
-      : path.includes(`head_sha=${running}`)
-        ? { workflow_runs: [{ id: 6, run_attempt: 1, status: "in_progress" }] }
-        : path.includes("/runs/5/jobs")
-          ? { jobs: [job("test", 1, "completed", "success")] }
-          : { jobs: [{ ...job("test", 1, "in_progress", null), run_id: 6 }] };
+    const reply = path.includes(`head_sha=${sha}`)
+      ? { workflow_runs: [{ id: 5, run_attempt: attempt, status: attempt === 1 ? "completed" : "in_progress" }] }
+      : { jobs: [attempt === 1 ? job("test", 1, "completed", "failure") : job("test", 2, "in_progress", null)] };
     response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(reply));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -57,19 +54,21 @@ test("a commit whose runs have all ended isn't asked about again, and one still 
   const apiBase = `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
   const stateDir = await mkdtemp(join(tmpdir(), "runnerbox-checks-"));
   const layer = PullChecks.layer.pipe(Layer.provide(StateLogs.layer), Layer.provide(ServerPaths.layer(stateDir)), Layer.provide(QueueConfig.layerTest({ apiBase, reportEnvPath: "/nonexistent/report.env", timing: TIMING })));
-  const commits = [{ repo: "owner/name", headSha: ended }, { repo: "owner/name", headSha: running }];
+  const commit = { repo: "owner/name", headSha: sha };
+  const jobsAsked = () => asked.filter((path) => path.includes("/runs/5/jobs")).length;
   try {
-    const states = await Effect.runPromise(
+    await Effect.runPromise(
       Effect.gen(function* () {
         const checks = yield* PullChecks.PullChecks;
-        yield* checks.of(commits, TOKEN, 1);
-        const checksOf = yield* checks.of(commits, TOKEN, 2);
-        return commits.map((commit) => checksOf(commit).map((check) => check.state));
+        const look = (at: number) => checks.of([commit], TOKEN, at).pipe(Effect.map((checksOf) => checksOf(commit).map((check) => check.state)));
+        assert.deepEqual(yield* look(1), ["failed"]);
+        assert.deepEqual(yield* look(2), ["failed"]);
+        assert.equal(jobsAsked(), 1);
+        attempt = 2;
+        assert.deepEqual(yield* look(3), ["running"]);
+        assert.equal(jobsAsked(), 2);
       }).pipe(Effect.provide(layer)),
     );
-    assert.deepEqual(states, [["passed"], ["running"]]);
-    assert.equal(asked.filter((path) => path.includes(`head_sha=${ended}`)).length, 1);
-    assert.equal(asked.filter((path) => path.includes(`head_sha=${running}`)).length, 2);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(stateDir, { recursive: true, force: true });

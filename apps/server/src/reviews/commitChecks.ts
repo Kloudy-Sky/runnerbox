@@ -79,11 +79,6 @@ export function jobsOf(body: unknown): ReadonlyArray<CommitJob> | null {
   });
 }
 
-// Whether nothing on the commit is left to change: it has runs, and every run and job has ended.
-// One with no runs yet may still get them.
-export const allEnded = (runs: ReadonlyArray<{ readonly ended: boolean }>, jobs: ReadonlyArray<CommitJob>) =>
-  runs.length > 0 && runs.every((run) => run.ended) && jobs.every((job) => job.state !== "running" && job.state !== "waiting");
-
 // Each job once, by workflow and name, at its newest run and attempt; a tie goes to the later in
 // `jobs`, so GitHub's go after history's. Names are whatever a workflow file says, so they're
 // cleaned like a title.

@@ -7,22 +7,24 @@ import * as Semaphore from "effect/Semaphore";
 import { createGitHubReader } from "../github/githubReader.ts";
 import * as StateLogs from "../history/StateLogs.ts";
 import { QueueConfig } from "../runners/QueueConfig.ts";
-import { allEnded, checksOf, type CommitJob, jobOfRecord, jobsOf, runsOf } from "./commitChecks.ts";
+import { checksOf, type CommitJob, jobOfRecord, jobsOf, runsOf } from "./commitChecks.ts";
 
 // Each open pull request's checks. This machine's job history answers for the runs it holds, at no
 // cost, and GitHub is asked for the rest through the sign-in, which the App lets read Actions.
 //
 // What bounds the calls to GitHub: only when a client asks for the reviews view, only for its open
 // pull requests, which are on repositories with reviews on, and a commit at most once per look at
-// those pull requests (at most every 20 seconds, Reviews.ts). A commit whose runs have all ended
-// isn't asked about again. One ask lists the commit's runs, then the jobs of each run history
-// doesn't already hold ended. Every request repeats its last ETag, so an unchanged reply is a 304,
-// which GitHub doesn't count, and a reply that isn't an answer stops the asking until the next look.
+// those pull requests (at most every 20 seconds, Reviews.ts). One ask lists the commit's runs, then
+// the jobs of each run attempt not already known to have ended, from history or an earlier ask. A
+// re-run is a new attempt, so it's fetched. Every request repeats its last ETag, so an unchanged list
+// is a 304, which GitHub doesn't count, and a reply that isn't an answer stops the asking until the next look.
 
 type Commit = { readonly repo: string; readonly headSha: string };
-// What GitHub last said about a commit, with the jobs history held then, so a commit that ages out
-// of the history read below keeps them.
-type Answer = { readonly lookedAt: number; readonly jobs: ReadonlyArray<CommitJob>; readonly ended: boolean };
+// What GitHub last said about a commit: the jobs of each of its runs' current attempts, by
+// `id:attempt`, and whether that attempt had ended. It keeps the jobs history held then, so a commit
+// that ages out of the history read below keeps them.
+type RunJobs = { readonly ended: boolean; readonly jobs: ReadonlyArray<CommitJob> };
+type Answer = { readonly lookedAt: number; readonly runs: ReadonlyMap<string, RunJobs> };
 
 const DAY_MS = 86_400_000;
 const HISTORY_DAYS = 14;
@@ -63,19 +65,27 @@ const make = Effect.gen(function* () {
 
   // GitHub's answer for one commit, or null when it gave none. Paths are built from a repository
   // the App is installed on, a checked commit ID and run IDs GitHub gave.
-  const ask = Effect.fn("PullChecks.ask")(function* ({ repo, headSha }: Commit, held: ReadonlyArray<CommitJob>, token: string) {
+  const ask = Effect.fn("PullChecks.ask")(function* ({ repo, headSha }: Commit, held: ReadonlyArray<CommitJob>, known: Answer | undefined, token: string) {
     const listed = yield* Effect.promise(() => reader.get(`repos/${repo}/actions/runs?head_sha=${headSha}&per_page=${RUNS_PER_COMMIT}`, token));
     const runs = listed.kind === "ok" ? runsOf(listed.body) : null;
     if (runs === null) return null;
-    const fetched: CommitJob[] = [];
+    const answered = new Map<string, RunJobs>();
     for (const run of runs) {
-      if (run.ended && held.some((job) => job.runId === run.id && job.attempt === run.attempt)) continue;
-      const reply = yield* Effect.promise(() => reader.get(`repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`, token));
-      const jobs = reply.kind === "ok" ? jobsOf(reply.body) : null;
-      if (jobs === null) return null;
-      fetched.push(...jobs);
+      const attempt = `${run.id}:${run.attempt}`;
+      // History records a run's jobs only once every one has ended.
+      const recorded = held.filter((job) => job.runId === run.id && job.attempt === run.attempt);
+      const before = known?.runs.get(attempt);
+      if (recorded.length > 0) answered.set(attempt, { ended: true, jobs: recorded });
+      else if (before?.ended) answered.set(attempt, before);
+      else {
+        const reply = yield* Effect.promise(() => reader.get(`repos/${repo}/actions/runs/${run.id}/jobs?filter=latest&per_page=100`, token));
+        const jobs = reply.kind === "ok" ? jobsOf(reply.body) : null;
+        if (jobs === null) return null;
+        // Read after the list said the attempt ended, so these are its last.
+        answered.set(attempt, { ended: run.ended, jobs });
+      }
     }
-    return { jobs: [...held, ...fetched], ended: allEnded(runs, fetched) };
+    return answered;
   });
 
   const of = (commits: ReadonlyArray<Commit>, token: string, lookedAt: number) =>
@@ -90,17 +100,18 @@ const make = Effect.gen(function* () {
         for (const commit of open) {
           const key = keyOf(commit);
           const known = answers.get(key);
-          if (known !== undefined && (known.ended || known.lookedAt >= lookedAt)) continue;
+          if (known !== undefined && known.lookedAt >= lookedAt) continue;
           asked ||= answering;
-          const answer = answering ? yield* ask(commit, held.get(key) ?? [], token) : null;
-          if (answer === null) answering = false;
-          answers.set(key, { lookedAt, ...(answer ?? { jobs: known?.jobs ?? [], ended: false }) });
+          const runs = answering ? yield* ask(commit, held.get(key) ?? [], known, token) : null;
+          if (runs === null) answering = false;
+          answers.set(key, { lookedAt, runs: runs ?? known?.runs ?? new Map() });
         }
-        // Only after asking, so the ETags of the commits still running are kept between looks.
+        // Only after a look's asking, so each commit's list keeps its ETag until the next look.
         if (asked) reader.prune();
         return (commit: Commit) => {
           const key = keyOf(commit);
-          return keys.has(key) ? checksOf([...(held.get(key) ?? []), ...(answers.get(key)?.jobs ?? [])]) : [];
+          const runs = [...(answers.get(key)?.runs.values() ?? [])];
+          return keys.has(key) ? checksOf([...(held.get(key) ?? []), ...runs.flatMap((run) => run.jobs)]) : [];
         };
       }),
     );
