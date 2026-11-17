@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type InboxItem, isInboxItemHidden } from "@runnerbox/contracts";
+import { type InboxItem, type InstallState, isInboxItemHidden } from "@runnerbox/contracts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import { deriveInbox } from "./derive.ts";
 import { blankState, itemState, snooze, type StoredItemState, unsettle } from "./itemState.ts";
@@ -62,6 +62,25 @@ test("a passing run doesn't wake a snoozed item", () => {
   const item = failureItem([...flaky, job({ at: NOW - minutes(10), headSha: "a", attempt: 3 })]);
   assert.equal(item.at, iso(NOW - minutes(5)));
   assert.equal(itemState(snoozed, item, NOW).status, "snoozed");
+});
+
+test("a job queued before a snooze that starves after it wakes the item", () => {
+  // This machine serves the label, so a job that never got a runner needs the owner.
+  const install: InstallState = {
+    install: "example",
+    pid: 1,
+    startedAt: iso(NOW - minutes(600)),
+    updatedAt: iso(NOW),
+    stopping: false,
+    stale: false,
+    kinds: [{ name: "linux", label: "example-linux", image: null, building: null, slots: [{ slot: 1, phase: "registered", since: iso(NOW), runner: null, detail: null }] }],
+  };
+  // Queued an hour ago, before the snooze, and cancelled without a runner 20 minutes ago, after it.
+  const starved = job({ at: NOW - minutes(20), createdAt: iso(NOW - minutes(60)), runner: null, conclusion: "cancelled", completedAt: iso(NOW - minutes(20)) });
+  const item = deriveInbox({ now: NOW, jobs: [starved], machine: () => undefined, events: [], installs: [install] }).find((each) => each.kind === "no_runner")!;
+  assert.equal(item.at, iso(NOW - minutes(60)));
+  const state = itemState(snoozed, item, NOW);
+  assert.deepEqual([state.status, state.wokeAt], ["back", iso(NOW - minutes(20))]);
 });
 
 // Failed in its own code on both attempts, then a later run on the branch passed.

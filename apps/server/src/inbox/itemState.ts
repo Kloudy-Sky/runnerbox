@@ -44,19 +44,25 @@ export const unsettle = (stored: StoredItemState, now: string): StoredItemState 
 export const snooze = (stored: StoredItemState, until: string, now: string): StoredItemState => ({ ...stored, snoozedUntil: until, snoozedAt: now });
 export const wake = (stored: StoredItemState): StoredItemState => ({ ...stored, snoozedUntil: null, snoozedAt: null });
 
+// When the latest of these attempts ended, or `fallback` when none says.
+const latestEnd = (attempts: InboxItem["evidence"]["attempts"], fallback: string) => {
+  const ends = attempts.flatMap((attempt) => (attempt.startedAt === null ? [] : [Date.parse(attempt.startedAt) + (attempt.durationMs ?? 0)])).filter((ms) => !Number.isNaN(ms));
+  return ends.length === 0 ? fallback : new Date(Math.max(...ends)).toISOString();
+};
+
 // When the newest failure behind an item ended, or null for an item that isn't a failure, like a
 // slow job. A passing run never moves it, which is why a passing run never wakes a snooze.
 export function failedAt(item: InboxItem): string | null {
   switch (item.kind) {
-    case "failure": {
+    case "failure":
       // Failed as `isFailure` in jobs.ts reads it.
-      const ends = item.evidence.attempts
-        .filter((attempt) => attempt.conclusion === "failure" || attempt.conclusion === "timed_out")
-        .map((attempt) => (attempt.startedAt === null ? Number.NaN : Date.parse(attempt.startedAt) + (attempt.durationMs ?? 0)))
-        .filter((ms) => !Number.isNaN(ms));
-      return ends.length === 0 ? item.at : new Date(Math.max(...ends)).toISOString();
-    }
+      return latestEnd(
+        item.evidence.attempts.filter((attempt) => attempt.conclusion === "failure" || attempt.conclusion === "timed_out"),
+        item.at,
+      );
     case "no_runner":
+      // A wait fails when it ends without a runner, not when the job was queued (`item.at`).
+      return latestEnd(item.evidence.attempts, item.at);
     case "failing_slot":
       return item.at;
     case "slow_job":
