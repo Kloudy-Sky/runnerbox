@@ -116,10 +116,13 @@ const make = Effect.gen(function* () {
           Effect.tap((read) => Effect.sync(() => void (session = read))),
         ),
   );
-  const keep = (next: Session) =>
+  // `alongside` runs in the step that sets the session, before the write, so a status read during
+  // the write already sees what it changes.
+  const keep = (next: Session, alongside: () => void = () => {}) =>
     Effect.suspend(() => {
       session = next;
       refusedToken = null;
+      alongside();
       return fs.makeDirectory(serverDir, { recursive: true, mode: 0o700 }).pipe(Effect.andThen(writeFileAtomic(fs, path, `${JSON.stringify(next)}\n`)), Effect.mapError(unreadable));
     });
   const forget = fs.remove(path, { force: true }).pipe(
@@ -187,7 +190,13 @@ const make = Effect.gen(function* () {
           const login = viewer.kind === "ok" ? Option.getOrUndefined(decodeViewer(viewer.body))?.login : undefined;
           if (login === undefined || !LOGIN.test(login)) return "failed" as const;
           const now = yield* Clock.currentTimeMillis;
-          const kept = yield* lock.withPermits(1)(keep(granted({ ...grant, access_token: grant.access_token }, login, now)).pipe(Effect.tap(() => Effect.sync(() => void (epoch += 1))))).pipe(Effect.exit);
+          // The code is dropped where the session is set, so no status shows it under a signed-in account.
+          // A replaced sign-in's poll is interrupted before this, so the code dropped is always this poll's own.
+          const signedIn = () => {
+            epoch += 1;
+            pending = null;
+          };
+          const kept = yield* lock.withPermits(1)(keep(granted({ ...grant, access_token: grant.access_token }, login, now), signedIn)).pipe(Effect.exit);
           return kept._tag === "Success" ? null : ("failed" as const);
         }
         if (grant.error === "authorization_pending") continue;
