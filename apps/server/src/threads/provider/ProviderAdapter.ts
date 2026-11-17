@@ -29,6 +29,8 @@ export type TurnInput = {
   // A review's turn: its only tools read the pull request's code and hand the review in, and it
   // gets the steps and effort reading a codebase takes.
   readonly review: boolean;
+  // The effort level picked for this turn, one its model offers; null for the model's own default.
+  readonly effort: string | null;
   // The account the turn runs as. Its key, if any, is the only credential that reaches the provider.
   readonly account: TurnAccount;
 };

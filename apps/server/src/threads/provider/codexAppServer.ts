@@ -107,8 +107,10 @@ export const threadStartParams = (turn: { readonly cwd: string; readonly systemP
 });
 
 // `turn/start`: the prompt as text, and images as data URLs in the same message, never a path.
-export const turnStartParams = (threadId: string, prompt: string, images: ReadonlyArray<TurnImage>) => ({
+// Codex takes the effort on each turn, not the thread.
+export const turnStartParams = (threadId: string, prompt: string, images: ReadonlyArray<TurnImage>, effort: string | null = null) => ({
   threadId,
+  ...(effort === null ? {} : { effort }),
   input: [...images.map((image) => ({ type: "image", url: `data:${image.mimeType};base64,${image.base64}` })), { type: "text", text: prompt, text_elements: [] }],
 });
 

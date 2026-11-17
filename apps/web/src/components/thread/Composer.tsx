@@ -10,7 +10,7 @@ import { useReferenceCandidates } from "../../hooks/useReferenceCandidates.ts";
 import type { useThread } from "../../hooks/useThread.ts";
 import { type ReferenceCandidate, referenceToken, withReferences } from "../../lib/composerReferences.ts";
 import type { Capabilities } from "../../lib/serverCapabilities.ts";
-import { rememberedChoice, type TurnChoice, withAccount, withModel } from "../../lib/turnChoice.ts";
+import { rememberedChoice, type TurnChoice } from "../../lib/turnChoice.ts";
 import { detectComposerTrigger, replaceTextRange } from "../../t3tools/shared/composerTrigger.ts";
 import { type ComposerPromptEditorHandle, ComposerPromptEditorTiptap } from "../ComposerPromptEditorTiptap.tsx";
 import { EMPTY_COMPOSER_CONTEXT_RECORDS } from "../composerContextPresentation.tsx";
@@ -18,7 +18,7 @@ import { Button } from "../ui/button.tsx";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip.tsx";
 import { AttachmentStrip } from "./AttachmentStrip.tsx";
 import { DeleteThread } from "./DeleteThread.tsx";
-import { ModelMenu } from "./ModelMenu.tsx";
+import { ModelPicker } from "./ModelPicker.tsx";
 import { ReferenceMenu } from "./ReferenceMenu.tsx";
 import { ReproduceControl } from "./ReproduceControl.tsx";
 
@@ -50,22 +50,14 @@ export function Composer({ thread, attachments, capabilities, placeholder }: { t
   const { providers } = useProviders();
   const accounts = providers.flatMap((provider) => provider.accounts);
 
-  // The account and model picked here, or what this thread last ran on, or the defaults. They're
-  // kept together, so the driver, account and model a thread runs on always agree.
+  // The account, model and effort picked here, or what this thread last ran on, or the defaults.
+  // They're kept together, so the driver, account, model and effort a thread runs on always agree.
   const [picked, setPicked] = useState<TurnChoice | null>(null);
   const lastAsked = view.items.findLast((item) => item._tag === "UserMessage" && item.source === undefined);
   const choice = picked ?? rememberedChoice(providers, lastAsked?._tag === "UserMessage" ? lastAsked : undefined);
-  const { accountId, model } = choice;
+  const { accountId, model, effort } = choice;
   const account = accounts.find((candidate) => candidate.id === accountId);
-  const modelMenu = (
-    <ModelMenu
-      providers={providers}
-      account={account}
-      model={model}
-      onModel={(driver, next) => setPicked(withModel(providers, choice, driver, next))}
-      onAccount={(next) => setPicked(withAccount(providers, choice, next))}
-    />
-  );
+  const modelMenu = <ModelPicker providers={providers} environmentId={thread.environmentId} choice={choice} onChoice={setPicked} />;
 
   // `@` opens the reference list until it's dismissed at that spot or the text moves on.
   const trigger = detectComposerTrigger(draft, expandedCursor);
@@ -119,7 +111,7 @@ export function Composer({ thread, attachments, capabilities, placeholder }: { t
   const submit = async () => {
     if (queueing ? !canQueue : !canSend) return;
     const sentIds = attachments.staged.map((file) => file.id);
-    const options = { accountId, model: capabilities.models ? (model ?? undefined) : undefined, attachments: sentIds, references: sending.references };
+    const options = { accountId, model: capabilities.models ? (model ?? undefined) : undefined, effort: effort ?? undefined, attachments: sentIds, references: sending.references };
     if (queueing) {
       // Out of the draft before the server answers: it can hand the question back first, and that
       // must land in an empty draft, not be cleared after.

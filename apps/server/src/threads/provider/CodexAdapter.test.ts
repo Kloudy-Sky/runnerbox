@@ -40,6 +40,8 @@ async function turn(
     readonly mcpStatus?: ReadonlyArray<unknown>;
     readonly instructionSources?: (ownerHome: string) => ReadonlyArray<string>;
     readonly config?: Record<string, unknown>;
+    readonly catalog?: ReadonlyArray<Record<string, unknown>>;
+    readonly effort?: string;
   } = {},
 ) {
   const dir = await mkdtemp(join(tmpdir(), "runnerbox-codex-test-"));
@@ -52,7 +54,7 @@ async function turn(
   }
   await writeFile(
     join(dir, "fake-codex.json"),
-    JSON.stringify({ scenario, version: options.version ?? "0.167.2", ownerServers: options.ownerServers, mcpStatus: options.mcpStatus, instructionSources: options.instructionSources?.(ownerHome), config: options.config }),
+    JSON.stringify({ scenario, version: options.version ?? "0.167.2", ownerServers: options.ownerServers, mcpStatus: options.mcpStatus, instructionSources: options.instructionSources?.(ownerHome), config: options.config, catalog: options.catalog }),
   );
   const input: TurnInput = {
     systemPrompt: "Example system prompt.",
@@ -62,12 +64,14 @@ async function turn(
     reproduce: false,
     propose: true,
     review: false,
+    effort: options.effort ?? null,
     account: { label: "Codex, API", model: "gpt-6-luna", apiKey: KEY, home: options.ownerHome ? ownerHome : null },
   };
   const exit = await Effect.runPromiseExit(
     Effect.gen(function* () {
       const adapter = yield* makeWith(() => FAKE);
-      return yield* Stream.runCollect(adapter.runTurn(input));
+      const models = options.catalog ? yield* adapter.models : [];
+      return { events: yield* Stream.runCollect(adapter.runTurn(input)), models };
     }).pipe(Effect.provide(ServerPaths.layer(dir))),
   );
   const log = (await readFile(logPath, "utf8").catch(() => ""))
@@ -85,13 +89,33 @@ test("a turn on Runnerbox's tools streams its text, its token reaches codex only
   const run = await turn("answer");
   try {
     assert.ok(Exit.isSuccess(run.exit), stoppedWith(run.exit));
-    const events = Exit.isSuccess(run.exit) ? [...run.exit.value] : [];
+    const events = Exit.isSuccess(run.exit) ? [...run.exit.value.events] : [];
     assert.deepEqual(events.map((event) => event._tag), ["ToolCall", "TextDelta", "Text", "Done"]);
     const env = run.log.find((entry) => entry.env)?.env as { token: string; key: string; home: string };
     assert.equal(env.token, TOKEN);
     assert.equal(env.key, null, "Codex runs on Runnerbox's sign-in, never a key");
     assert.match(env.home, /\.server\/agent\/codex-home$/);
     assert.deepEqual(run.left, [], "codex and what it started are gone");
+  } finally {
+    await run.cleanup();
+  }
+});
+
+test("a model carries the effort levels the installed Codex lists, and the turn's pick reaches turn/start", async () => {
+  const run = await turn("answer", {
+    effort: "high",
+    catalog: [
+      { slug: "gpt-6-luna", visibility: "list", default_reasoning_level: "medium", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }, { effort: "high" }, { effort: "Not A Level" }] },
+      { slug: "gpt-6-sol", visibility: "hide", supported_reasoning_levels: [{ effort: "low" }] },
+    ],
+  });
+  try {
+    assert.ok(Exit.isSuccess(run.exit), stoppedWith(run.exit));
+    // Hidden models stay out, and a level a client couldn't send back isn't offered.
+    assert.deepEqual(Exit.isSuccess(run.exit) && run.exit.value.models, [
+      { id: "gpt-6-luna", label: "GPT-6 Luna", efforts: { levels: [{ id: "low", label: "Low" }, { id: "medium", label: "Medium" }, { id: "high", label: "High" }], default: "medium" } },
+    ]);
+    assert.equal(run.log.find((entry) => entry.received === "turn/start")?.effort, "high");
   } finally {
     await run.cleanup();
   }

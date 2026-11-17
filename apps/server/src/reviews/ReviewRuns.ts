@@ -144,6 +144,7 @@ const make = Effect.gen(function* () {
           reproduce: false,
           propose: false,
           review: true,
+          effort: null,
           account,
         })
         .pipe(

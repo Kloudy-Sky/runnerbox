@@ -18,7 +18,12 @@ export const ApiKey = Schema.String.check(Schema.isPattern(/^\S{8,512}$/));
 
 // A harness is a driver as the composer offers it: whether it can run here, and the models the
 // server lets a turn pick. The list is the server's, so a client can't name a model it didn't offer.
-export const HarnessModel = Schema.Struct({ id: Schema.String, label: Schema.String });
+// The effort levels a model takes, and the one it runs at when none is picked. Servers from before
+// effort send none, and a model without them takes no effort.
+export const EffortName = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,19}$/));
+export const ModelEfforts = Schema.Struct({ levels: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String })), default: Schema.NullOr(Schema.String) });
+export type ModelEfforts = typeof ModelEfforts.Type;
+export const HarnessModel = Schema.Struct({ id: Schema.String, label: Schema.String, efforts: Schema.optionalKey(ModelEfforts) });
 export type HarnessModel = typeof HarnessModel.Type;
 export const Harness = Schema.Struct({
   driver: ProviderDriver,

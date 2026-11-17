@@ -11,7 +11,7 @@ import { InstallName, InstallState, LauncherEvent, MachineSample, RunnerRestart,
 import { QueueView } from "./queue.ts";
 import { RunnersExplained } from "./runnersExplained.ts";
 import { ATTACHMENT_LIMITS, AttachmentChunk, AttachmentError, AttachmentId, ChunkReceived, StageAttachment } from "./attachments.ts";
-import { Account, AccountError, AccountId, Harness, ModelName, SaveAccount } from "./accounts.ts";
+import { Account, AccountError, AccountId, EffortName, Harness, ModelName, SaveAccount } from "./accounts.ts";
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
@@ -52,6 +52,7 @@ const TurnPayload = {
   text: MessageText,
   accountId: Schema.optionalKey(AccountId),
   model: Schema.optionalKey(ModelName),
+  effort: Schema.optionalKey(EffortName),
   attachments: Schema.optionalKey(Schema.Array(AttachmentId).check(Schema.isMaxLength(ATTACHMENT_LIMITS.perMessage))),
   references: Schema.optionalKey(Schema.Array(ThreadReference).check(Schema.isMaxLength(MAX_REFERENCES))),
 };
@@ -211,6 +212,7 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.threadsCreate, { payload: CreateThread, success: ThreadSummary, error: ThreadFailure }),
   // Returns once the question is logged; the answer arrives on the thread's stream.
   // Without `accountId`, the turn runs as the default account. Without `model`, on the account's.
+  // Without `effort`, at the model's own default.
   // `attachments` are files this session staged; the turn claims them into the thread.
   // `references` are other threads and runs on this server, added to the prompt as data.
   Rpc.make(RPC_METHODS.threadsStartTurn, {

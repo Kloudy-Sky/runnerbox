@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Stands in for `codex` in the Codex adapter's tests: `--version`, `login status`, and an
+// Stands in for `codex` in the Codex adapter's tests: `--version`, `login status`, `debug models`, and an
 // `app-server` that plays one scenario over stdio. Runnerbox passes it no test settings, since its
 // environment is allow-listed, so it reads them from `fake-codex.json` in the state directory above
 // its CODEX_HOME, and writes what it saw to `fake-codex.log` there, one JSON line each.
@@ -19,6 +19,8 @@ const settings: {
   // What `thread/start` lists as loaded instruction files, and what `config/read` says of the provider.
   instructionSources?: ReadonlyArray<string>;
   config?: Record<string, unknown>;
+  // What `debug models` prints as the installed CLI's catalog.
+  catalog?: ReadonlyArray<Record<string, unknown>>;
 } = JSON.parse(readFileSync(join(stateDir, "fake-codex.json"), "utf8"));
 const log = (entry: Record<string, unknown>) => appendFileSync(join(stateDir, "fake-codex.log"), `${JSON.stringify(entry)}\n`);
 const args = process.argv.slice(2);
@@ -27,6 +29,10 @@ if (args[0] === "--version") {
   process.exit(0);
 }
 if (args[0] === "login") process.exit(0);
+if (args[0] === "debug" && args[1] === "models") {
+  console.log(JSON.stringify({ models: settings.catalog ?? [] }));
+  process.exit(0);
+}
 if (args[0] === "mcp") {
   log({ mcpList: args, home: process.env.CODEX_HOME });
   console.log(JSON.stringify(settings.ownerServers ?? []));
@@ -71,7 +77,7 @@ const play = () => {
 
 for await (const line of createInterface({ input: process.stdin })) {
   const message = JSON.parse(line);
-  log({ received: message.method ?? `response:${message.id}`, ...(message.method === undefined ? { result: message.result } : {}) });
+  log({ received: message.method ?? `response:${message.id}`, ...(message.method === undefined ? { result: message.result } : {}), ...(message.method === "turn/start" ? { effort: message.params?.effort ?? null } : {}) });
   if (message.id === 100 && message.result?.decision === "approved") log({ executed: "applyPatch" });
   if (message.method === "initialize") send({ id: message.id, result: { userAgent: "codex/0.167.2", codexHome: "", platformFamily: "unix", platformOs: "macos" } });
   if (message.method === "thread/start") {

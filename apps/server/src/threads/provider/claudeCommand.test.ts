@@ -42,6 +42,13 @@ test("claude runs with no built-in tools, only runnerbox's read-only MCP tools, 
   assert.deepEqual(claudeArgs({ mcpConfigPath: "x", systemPrompt: "p", model: "haiku", reproduce: false, propose: true }).at(-1), "--model=haiku");
 });
 
+test("the picked effort reaches claude, and a review always reads at high", () => {
+  const picked = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: "opus", effort: "max", reproduce: false, propose: true });
+  assert.deepEqual(picked.filter((arg) => !args.includes(arg)), ["--effort=max", "--model=opus"]);
+  const review = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: "opus", effort: "low", reproduce: false, propose: false, review: true });
+  assert.ok(review.includes("--effort=high") && !review.includes("--effort=low"));
+});
+
 test("a monitor's turn may only read: no proposals and no shell", () => {
   const monitor = claudeArgs({ mcpConfigPath: "/state/.server/agent/mcp/turn.json", systemPrompt: "prompt", model: "haiku", reproduce: false, propose: false });
   assert.ok(monitor.includes(`--allowedTools=${READ_ONLY_TOOLS.join(",")}`));
