@@ -1,4 +1,4 @@
-import type { InboxItem, InboxSummary } from "@runnerbox/contracts";
+import { type InboxItem, type InboxSummary, isInboxItemHidden } from "@runnerbox/contracts";
 import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
 import { jobTotals } from "../history/jobTotals.ts";
 import { plainDuration, plural } from "./jobs.ts";
@@ -10,7 +10,8 @@ const hours = (ms: number) => plural(Math.round(ms / HOUR_MS), "hour");
 export function summarize(jobs: readonly JobRecord[], items: readonly InboxItem[], days: number): InboxSummary {
   const { jobs: ran, passed, failed, typicalWaitMs, ownMachinesMs, githubMachinesMs } = jobTotals(jobs);
   const passRate = passed + failed === 0 ? null : passed / (passed + failed);
-  const needYou = items.filter((item) => item.group === "needs_you").length;
+  // What the owner snoozed or settled waits out of the count.
+  const needYou = items.filter((item) => item.group === "needs_you" && !isInboxItemHidden(item)).length;
   const window = days === 1 ? "the last day" : `the last ${days} days`;
   // What needs the owner comes first: when nothing ran because every runner is failing, that's
   // the news, not the quiet week.

@@ -24,8 +24,8 @@ const QUIET_TITLES: Record<QuietKind, (count: number) => string> = {
   other_runners: () => "Waits for other machines' runners",
 };
 
-export function buildInbox(input: InboxInput, days: number): Inbox {
-  const all = deriveInbox(input);
+// `all` is the derived items, with their snooze and settle when the caller has them.
+export function buildInbox(input: InboxInput, days: number, all: readonly InboxItem[] = deriveInbox(input)): Inbox {
   const quiet: QuietGroup[] = (Object.keys(QUIET_TITLES) as QuietKind[]).flatMap((kind) => {
     const items = all.filter((item) => item.quiet === kind);
     return items.length === 0 ? [] : [{ kind, title: QUIET_TITLES[kind](items.length), items }];

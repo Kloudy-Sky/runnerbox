@@ -7,6 +7,7 @@ import * as DailyTotals from "../history/DailyTotals.ts";
 import * as JobHistory from "../history/JobHistory.ts";
 import type { LogReadError } from "../history/StateLogs.ts";
 import * as Inbox from "../inbox/Inbox.ts";
+import * as InboxState from "../inbox/InboxState.ts";
 import * as LauncherLogs from "../runners/LauncherLogs.ts";
 import * as RunnerQueue from "../runners/RunnerQueue.ts";
 import * as RunnersExplained from "../runners/RunnersExplained.ts";
@@ -42,6 +43,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const explained = yield* RunnersExplained.RunnersExplained;
       const health = yield* DailyHealth.DailyHealth;
       const inbox = yield* Inbox.Inbox;
+      const inboxState = yield* InboxState.InboxState;
       const auth = yield* AuthStore.AuthStore;
       const threads = yield* Threads.Threads;
       const proposals = yield* Proposals.Proposals;
@@ -85,6 +87,10 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "history.jobResources": (input) =>
           history.jobResources(input).pipe(Effect.mapError((error) => new StateReadError({ what: error._tag === "JobNotFound" ? `job ${error.jobId}` : error.what }))),
         "inbox.list": ({ days }) => inbox.list(days).pipe(toWire),
+        "inbox.settle": ({ id }) => inboxState.settle(id),
+        "inbox.unsettle": ({ id }) => inboxState.unsettle(id),
+        "inbox.snooze": ({ id, until }) => inboxState.snooze(id, until),
+        "inbox.wake": ({ id }) => inboxState.wake(id),
         "runners.events": ({ days }) => launcher.events(days).pipe(toWire),
         "runners.samples": ({ days, maxPoints }) => launcher.samples(days, maxPoints).pipe(toWire),
         "runners.state": () => runnerState.current.pipe(toWire),
