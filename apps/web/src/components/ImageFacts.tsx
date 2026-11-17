@@ -9,14 +9,15 @@ const TONE: Record<ImageStatus["tone"], string> = {
 };
 
 // One kind's image: how fresh it is, in a word and a sentence, and the tools jobs find in it, with
-// a sentence under any that's old.
+// a sentence under any that's old. `named` puts the kind's name over it, for a machine with several.
 // Shows nothing when Runnerbox on the machine reports nothing about the image yet.
-export function ImageFacts({ kind, now, typicalBuildMs }: { kind: typeof KindState.Type; now: number; typicalBuildMs: number | null }) {
+export function ImageFacts({ kind, now, typicalBuildMs, named = false }: { kind: typeof KindState.Type; now: number; typicalBuildMs: number | null; named?: boolean }) {
   const status = imageStatus(kind, now, typicalBuildMs);
   const tools = (kind.tools ?? []).filter((tool) => tool.version !== null);
   if (!status && tools.length === 0) return null;
   return (
     <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-x-3 gap-y-0.5 pt-1 pb-1.5">
+      {named ? <span className="col-span-2 text-muted-foreground">{kind.name}</span> : null}
       {status ? (
         <>
           <span className="text-muted-foreground">Image</span>

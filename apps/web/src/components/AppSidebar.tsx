@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Activity, Gauge, GitPullRequest, Inbox, ListTree, Server, Settings } from "lucide-react";
+import { Gauge, GitPullRequest, Inbox, ListTree, Server, Settings } from "lucide-react";
 import type * as React from "react";
 import { useRange } from "../hooks/useRange.ts";
 import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
@@ -16,7 +16,7 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarMenu, Side
 
 const keep = (previous: RootSearch) => previous;
 
-type Page = { readonly to: "/" | "/now" | "/runs" | "/reviews" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
+type Page = { readonly to: "/" | "/runs" | "/reviews" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
 
 // One row per page, as in Codex: an icon, its name and a count. The pages' own lists live on the
 // pages. Collapsed to its rail, a row keeps its icon, a tooltip and, for Needs you, a dot.
@@ -50,12 +50,11 @@ export function AppSidebar() {
 
   const pages: ReadonlyArray<Page> = [
     { to: "/", label: "Needs you", icon: Inbox, count: waiting > 0 ? String(waiting) : null, alert: waiting > 0 },
-    { to: "/now", label: "Now", icon: Activity, count: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
+    { to: "/runners", label: "Runners", icon: Server, count: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
     { to: "/runs", label: "All runs", icon: ListTree },
     // Left out on a server older than reviews, which would have nothing to show.
     ...(reviews ? [{ to: "/reviews", label: "Reviews", icon: GitPullRequest } as const] : []),
     { to: "/speed", label: "Speed and cost", icon: Gauge },
-    { to: "/runners", label: "Runners", icon: Server },
   ];
 
   return (
