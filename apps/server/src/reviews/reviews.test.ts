@@ -63,7 +63,7 @@ test("a signed-in server lists the repositories the App is installed on, and rea
 
     const on = await session(ALL_SCOPES, (client) => client["reviews.setRepo"]({ repo: "owner/name", review: true }));
     assert.ok(Exit.isSuccess(on));
-    assert.deepEqual(on.value.pulls, [{ repo: "owner/name", number: 7, title: "Fix the widget again", author: "someone", branch: "fix/widget", base: "main", headSha: "a".repeat(40), draft: false, openedAt: "2026-11-14T10:00:00Z", updatedAt: "2026-11-15T10:00:00Z" }]);
+    assert.deepEqual(on.value.pulls, [{ repo: "owner/name", number: 7, title: "Fix the widget again", author: "someone", branch: "fix/widget", base: "main", headSha: "a".repeat(40), draft: false, openedAt: "2026-11-14T10:00:00Z", updatedAt: "2026-11-15T10:00:00Z", checks: [] }]);
 
     // However often clients ask, GitHub is asked for a repository's list once in 20 seconds.
     const again = await session(["history:read"], (client) => client["reviews.status"]());

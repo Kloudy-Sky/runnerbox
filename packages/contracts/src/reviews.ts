@@ -85,6 +85,20 @@ export type PullReviews = typeof PullReviews.Type;
 
 export const ReviewModel = Schema.Struct({ id: Schema.String, label: Schema.String });
 
+// `waiting` is queued for a runner, or held by GitHub before it's given one.
+export const CheckState = Schema.Literals(["passed", "failed", "running", "waiting", "skipped", "cancelled"]);
+export type CheckState = typeof CheckState.Type;
+
+// One job that ran, or will run, on a pull request's head commit: its newest attempt.
+export const Check = Schema.Struct({
+  name: Schema.String,
+  workflow: Schema.NullOr(Schema.String),
+  state: CheckState,
+  startedAt: Schema.NullOr(Schema.String),
+  durationMs: Schema.NullOr(Schema.Number),
+});
+export type Check = typeof Check.Type;
+
 export const PullRequest = Schema.Struct({
   repo: RepoName,
   number: Schema.Int,
@@ -100,6 +114,8 @@ export const PullRequest = Schema.Struct({
   review: Schema.optionalKey(ReviewSummary),
   // Why it's never reviewed unasked: a draft, a bot's, or from a fork. Pressing Review still works.
   skipped: Schema.optionalKey(Schema.Literals(["draft", "bot", "fork"])),
+  // Its head commit's checks, from this machine's job history and GitHub. An older server leaves it out.
+  checks: Schema.optionalKey(Schema.Array(Check)),
 });
 export type PullRequest = typeof PullRequest.Type;
 

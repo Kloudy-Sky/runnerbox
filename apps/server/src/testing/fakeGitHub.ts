@@ -3,8 +3,9 @@ import { createServer } from "node:http";
 // A stand-in for GitHub's Actions and releases API, for the fake server: owner/name has two runs queued, one
 // holding a job for example-linux and one for example-docker, and one job for a hosted label. It
 // answers with ETags like GitHub, so a repeated look is a 304. It also answers as GitHub with the
-// App installed on owner/name and owner/other, with three pull requests open on owner/name, to any
-// token, and signs a server in as octocat a few seconds after it asks for a code.
+// App installed on owner/name and owner/other, with three pull requests open on owner/name, the
+// second with a run going, to any token, and signs a server in as octocat a few seconds after it
+// asks for a code.
 // `code` is the first pull request's real commits and diff, from reviewFixture.ts, so it can be reviewed.
 export async function startFakeGitHub(now: number, code?: { readonly baseSha: string; readonly headSha: string; readonly diff: string }) {
   const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -35,6 +36,14 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     "/repos/owner/name/actions/runs?status=queued&per_page=20": runs,
     "/repos/owner/name/actions/runs/7/jobs?filter=latest&per_page=100": { jobs: [job("e2e", "example-linux", 6, 7), { ...job("lint", "ubuntu-24.04", 6, 7), labels: ["ubuntu-24.04"] }] },
     "/repos/owner/name/actions/runs/8/jobs?filter=latest&per_page=100": { jobs: [job("integration", "example-docker", 2, 8)] },
+    // Pull request 40's checks: one passed on a hosted runner, one still running.
+    [`/repos/owner/name/actions/runs?head_sha=${"0".repeat(40)}&per_page=100`]: { workflow_runs: [{ id: 9, run_attempt: 1, status: "in_progress" }] },
+    "/repos/owner/name/actions/runs/9/jobs?filter=latest&per_page=100": {
+      jobs: [
+        { run_id: 9, run_attempt: 1, workflow_name: "ci", name: "lint", status: "completed", conclusion: "success", started_at: ago(94), completed_at: ago(93) },
+        { run_id: 9, run_attempt: 1, workflow_name: "ci", name: "e2e", status: "in_progress", conclusion: null, started_at: ago(4), completed_at: null },
+      ],
+    },
     // The fixtures' gh is 2.45.0, well behind; their runner is the newest.
     "/repos/cli/cli/releases/latest": { tag_name: "v2.83.0", published_at: new Date(now - 14 * 86_400_000).toISOString() },
     "/repos/cli/cli/releases/tags/v2.45.0": { tag_name: "v2.45.0", published_at: "2024-02-07T00:00:00Z" },

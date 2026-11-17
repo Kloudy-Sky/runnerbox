@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import { COMMIT_ID } from "./gitObjects.ts";
 
 const TITLE_CHARS = 200;
-const NAME_CHARS = 100;
+export const NAME_CHARS = 100;
 
 // GitHub's reply is outside input: only these fields are read, and anything else is ignored.
 const Pulls = Schema.Array(
@@ -43,7 +43,7 @@ export type PullToReview = PullRequest & { readonly description: string; readonl
 
 // One line, without control characters or runs of spaces, cut to `max`: a title or branch is
 // whatever its author typed.
-const line = (text: string, max: number) => {
+export const oneLine = (text: string, max: number) => {
   const clean = text.replace(/[\p{Cc}\s]+/gu, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 };
@@ -56,10 +56,10 @@ export function pullsOf(repo: string, body: unknown): ReadonlyArray<ListedPull> 
       pulls.map((pull) => ({
         repo,
         number: pull.number,
-        title: line(pull.title, TITLE_CHARS),
-        author: line(pull.user?.login ?? "ghost", NAME_CHARS),
-        branch: line(pull.head.ref, NAME_CHARS),
-        base: line(pull.base.ref, NAME_CHARS),
+        title: oneLine(pull.title, TITLE_CHARS),
+        author: oneLine(pull.user?.login ?? "ghost", NAME_CHARS),
+        branch: oneLine(pull.head.ref, NAME_CHARS),
+        base: oneLine(pull.base.ref, NAME_CHARS),
         headSha: COMMIT_ID.test(pull.head.sha) ? pull.head.sha : "",
         draft: pull.draft ?? false,
         openedAt: pull.created_at,
@@ -81,10 +81,10 @@ export function pullToReview(repo: string, body: unknown): PullToReview | null {
   return {
     repo,
     number: pull.number,
-    title: line(pull.title, TITLE_CHARS),
-    author: line(pull.user?.login ?? "ghost", NAME_CHARS),
-    branch: line(pull.head.ref, NAME_CHARS),
-    base: line(pull.base.ref, NAME_CHARS),
+    title: oneLine(pull.title, TITLE_CHARS),
+    author: oneLine(pull.user?.login ?? "ghost", NAME_CHARS),
+    branch: oneLine(pull.head.ref, NAME_CHARS),
+    base: oneLine(pull.base.ref, NAME_CHARS),
     headSha: pull.head.sha,
     baseSha: pull.base.sha,
     draft: pull.draft ?? false,
