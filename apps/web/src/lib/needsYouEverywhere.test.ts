@@ -4,8 +4,8 @@ import type { Inbox, InboxItem } from "@runnerbox/contracts";
 import { needsYouEverywhere } from "./needsYouEverywhere.ts";
 
 const evidence = { steps: [], attempts: [], machine: null, launcher: [], durations: [], reasons: [], breakdown: [] };
-const item = (id: string, at: string, happened = ""): InboxItem => ({
-  id, kind: "failure", group: "needs_you", quiet: null, verdict: "infra", repo: "owner/name", install: null,
+const item = (id: string, kind: InboxItem["kind"], at: string, happened = ""): InboxItem => ({
+  id, kind, group: "needs_you", quiet: null, verdict: null, repo: "owner/name", install: null,
   title: id, happened, why: "", action: "", at, evidence,
 });
 const inbox = (...items: InboxItem[]): Inbox => ({
@@ -15,13 +15,25 @@ const inbox = (...items: InboxItem[]): Inbox => ({
 });
 
 test("a failure two machines both report counts once, told by the machine that saw it last", () => {
-  const first = inbox(item("failure:e2e:infra", "2026-11-17T10:00:00Z", "seen first"), item("failing_slot:example:docker", "2026-11-17T09:00:00Z"));
-  const second = inbox(item("failure:e2e:infra", "2026-11-17T10:30:00Z", "seen last"));
-  const items = needsYouEverywhere([first, second]);
-  assert.deepEqual(items.map((each) => each.id).toSorted(), ["failing_slot:example:docker", "failure:e2e:infra"]);
-  assert.equal(items.find((each) => each.id === "failure:e2e:infra")?.happened, "seen last");
+  const items = needsYouEverywhere([
+    { environmentId: "a", inbox: inbox(item("failure:e2e:infra", "failure", "2026-11-17T10:00:00Z", "seen first")) },
+    { environmentId: "b", inbox: inbox(item("failure:e2e:infra", "failure", "2026-11-17T10:30:00Z", "seen last")) },
+  ]);
+  assert.deepEqual(items.map((each) => each.happened), ["seen last"]);
+});
+
+test("each machine's own problem counts, even when the two share an id", () => {
+  const items = needsYouEverywhere([
+    { environmentId: "a", inbox: inbox(item("no_runner:needs_you", "no_runner", "2026-11-17T10:00:00Z")) },
+    { environmentId: "b", inbox: inbox(item("no_runner:needs_you", "no_runner", "2026-11-17T10:05:00Z")) },
+  ]);
+  assert.equal(items.length, 2);
 });
 
 test("a machine with no answer hides nothing the others report", () => {
-  assert.deepEqual(needsYouEverywhere([undefined, inbox(item("failure:lint:infra", "2026-11-17T10:00:00Z"))]).map((each) => each.id), ["failure:lint:infra"]);
+  const items = needsYouEverywhere([
+    { environmentId: "a", inbox: undefined },
+    { environmentId: "b", inbox: inbox(item("failure:lint:infra", "failure", "2026-11-17T10:00:00Z")) },
+  ]);
+  assert.deepEqual(items.map((each) => each.id), ["failure:lint:infra"]);
 });

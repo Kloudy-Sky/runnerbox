@@ -45,7 +45,7 @@ export function AppSidebar() {
   const machines = useRunnerStateEverywhere();
   const slots = [...machines.values()].flat().filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots));
   const busy = slots.filter((slot) => slot.phase === "busy").length;
-  const waiting = needsYouEverywhere(inboxes.map((answer) => answer.data)).length;
+  const waiting = needsYouEverywhere(inboxes.map((answer) => ({ environmentId: answer.environment.environmentId, inbox: answer.data }))).length;
   const { reviews } = useServerCapabilities();
 
   const pages: ReadonlyArray<Page> = [
