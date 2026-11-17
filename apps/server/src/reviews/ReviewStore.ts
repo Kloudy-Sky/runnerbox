@@ -22,7 +22,8 @@ export class ReviewStore extends Context.Service<
   ReviewStore,
   {
     readonly list: (repo: string, number: number) => Effect.Effect<ReadonlyArray<Review>, ReviewError>;
-    // Every review kept, of every pull request, for totals across them.
+    // Every review kept, of every pull request, for totals across them. A pull request whose file
+    // won't decode is left out, so one bad file doesn't take the totals down; reading it says why.
     readonly all: Effect.Effect<ReadonlyArray<Review>, ReviewError>;
     // Adds the review, or replaces the one with its ID.
     readonly put: (review: Review) => Effect.Effect<void, ReviewError>;
@@ -67,7 +68,7 @@ const make = Effect.gen(function* () {
     Effect.catchTag("PlatformError", (error) => (error.reason._tag === "NotFound" ? Effect.succeed<Array<string>>([]) : Effect.fail(error))),
     Effect.mapError(unreadable),
     Effect.map((paths) => paths.flatMap(pullOf)),
-    Effect.flatMap((pulls) => Effect.forEach(pulls, ({ repo, number }) => list(repo, number))),
+    Effect.flatMap((pulls) => Effect.forEach(pulls, ({ repo, number }) => list(repo, number).pipe(Effect.orElseSucceed((): ReadonlyArray<Review> => [])))),
     Effect.map((lists) => lists.flat()),
   );
 
