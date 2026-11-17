@@ -38,3 +38,8 @@ export type ClientSettings = { readonly sendShortcut: "enter" | "mod-enter-multi
 // As T3 Code's `settings.ts` defines it. Runnerbox has no setting for it and always uses "locale".
 export const TimestampFormat = Schema.Literals(["locale", "12-hour", "24-hour"]);
 export type TimestampFormat = typeof TimestampFormat.Type;
+
+// T3 Code brands these slugs; runnerbox's provider instances are its accounts, by account ID, and
+// their drivers are the server's own driver IDs.
+export type ProviderInstanceId = string;
+export type ProviderDriverKind = string;

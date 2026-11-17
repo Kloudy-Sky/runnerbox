@@ -15,7 +15,7 @@ export const REPRODUCE_TOOL = toolName(REPRODUCE_TOOL_NAME);
 export const PROPOSE_TOOL = toolName(PROPOSE_TOOL_NAME);
 export const REVIEW_TOOLS = REVIEW_TOOL_NAMES.map(toolName);
 
-export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly systemPrompt: string; readonly model: string | undefined; readonly reproduce: boolean; readonly propose: boolean; readonly review?: boolean }) {
+export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly systemPrompt: string; readonly model: string | undefined; readonly effort?: string | null; readonly reproduce: boolean; readonly propose: boolean; readonly review?: boolean }) {
   return [
     "--print",
     "--input-format=stream-json",
@@ -46,7 +46,7 @@ export function claudeArgs(turn: { readonly mcpConfigPath: string; readonly syst
     // Replaces Claude Code's own prompt, which describes tools this agent doesn't have.
     `--system-prompt=${turn.systemPrompt}`,
     `--max-turns=${turn.review ? MAX_REVIEW_STEPS : turn.reproduce ? MAX_REPRODUCE_STEPS : MAX_AGENT_STEPS}`,
-    ...(turn.review ? ["--effort=high"] : []),
+    ...(turn.review ? ["--effort=high"] : turn.effort ? [`--effort=${turn.effort}`] : []),
     ...(turn.model === undefined ? [] : [`--model=${turn.model}`]),
   ];
 }

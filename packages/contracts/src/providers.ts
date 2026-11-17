@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { Account, HarnessModel, SaveAccount } from "./accounts.ts";
+import { Account, HarnessModel, ModelEfforts, SaveAccount } from "./accounts.ts";
 import { ProviderStatus } from "./threads.ts";
 
 // What `providers.*` send: each driver this server runs, with its status, models and accounts,
@@ -22,6 +22,8 @@ export const Provider = Schema.Struct({
   // Ready when any of its accounts can run turns; otherwise the first account's fix.
   status: ProviderStatus,
   models: Schema.Array(HarnessModel),
+  // The effort levels of the model a turn runs on when it names none, when the server knows them.
+  efforts: Schema.optionalKey(ModelEfforts),
   accounts: Schema.Array(ProviderAccount),
   // Whether an account here may have an API key, or only use the machine's sign-in. Servers from
   // before it allow keys.

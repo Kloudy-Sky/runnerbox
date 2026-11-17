@@ -11,6 +11,7 @@ import { useActiveEnvironment } from "./useEnvironment.ts";
 type SendOptions = {
   readonly accountId?: string | undefined;
   readonly model?: string | undefined;
+  readonly effort?: string | undefined;
   readonly attachments?: ReadonlyArray<string>;
   readonly references?: ReadonlyArray<ThreadReference>;
 };
@@ -96,10 +97,10 @@ export function useThread(subject: ThreadSubject, days: number) {
     runtime.run(environmentId, (client) => client["threads.stopReproduce"]({ id: threadId })).catch((cause: unknown) => setError(errorText(cause)));
   };
 
-  // `accountId` picks the account the turn runs as, and `model` one of its harness's models; without
-  // them, the defaults. `attachments` are files this session staged, which the turn takes into the
+  // `accountId` picks the account the turn runs as, `model` one of its harness's models, and `effort`
+  // one of that model's levels; without them, the defaults. `attachments` are files this session staged, which the turn takes into the
   // thread, and `references` other threads and runs it brings in as data.
-  const send = async (text: string, { accountId, model, attachments = [], references = [] }: SendOptions = {}) => {
+  const send = async (text: string, { accountId, model, effort, attachments = [], references = [] }: SendOptions = {}) => {
     setError(null);
     try {
       let id = threadId;
@@ -115,6 +116,7 @@ export function useThread(subject: ThreadSubject, days: number) {
           text,
           ...(accountId ? { accountId } : {}),
           ...(model ? { model } : {}),
+          ...(effort ? { effort } : {}),
           ...(attachments.length > 0 ? { attachments } : {}),
           ...(references.length > 0 ? { references } : {}),
         }),
@@ -140,6 +142,7 @@ export function useThread(subject: ThreadSubject, days: number) {
           text,
           ...(options.accountId ? { accountId: options.accountId } : {}),
           ...(options.model ? { model: options.model } : {}),
+          ...(options.effort ? { effort: options.effort } : {}),
           ...(options.attachments && options.attachments.length > 0 ? { attachments: options.attachments } : {}),
           ...(options.references && options.references.length > 0 ? { references: options.references } : {}),
         }),

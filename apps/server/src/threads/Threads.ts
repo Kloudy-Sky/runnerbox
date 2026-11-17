@@ -46,7 +46,7 @@ import type { Executed } from "../reproduce/UpSocket.ts";
 import { systemPrompt, turnPrompt } from "./prompt.ts";
 import * as AccountStore from "../accounts/AccountStore.ts";
 import { Drivers } from "./provider/Drivers.ts";
-import { driverStatus, HARNESSES, offersModel } from "./provider/harnesses.ts";
+import { driverStatus, HARNESSES, offersEffort, offersModel } from "./provider/harnesses.ts";
 import type { ProviderEvent } from "./provider/ProviderAdapter.ts";
 import { resolveReference } from "./references.ts";
 import { subjectPacket } from "./subjectPacket.ts";
@@ -103,13 +103,14 @@ export class Threads extends Context.Service<
 >()("runnerbox/server/threads/Threads") {}
 
 // `model` is the composer's pick, one of the account's driver's offered models. It wins over the
-// account's own model; a monitor's model wins over both.
+// account's own model; a monitor's model wins over both. `effort` is a level the model it runs on offers.
 // `attachments` are files `sessionId` staged, claimed into the thread with the question.
 // `references` are other threads and runs, read once now and logged with it.
 export type TurnOptions = {
   readonly references?: ReadonlyArray<ThreadReference> | undefined;
   readonly accountId?: string | undefined;
   readonly model?: string | undefined;
+  readonly effort?: string | undefined;
   readonly attachments?: { readonly sessionId: string; readonly ids: ReadonlyArray<string> } | undefined;
   readonly scopes: ReadonlyArray<AuthScope>;
   readonly monitor?: { readonly model: string } | undefined;
@@ -311,13 +312,22 @@ const make = Effect.gen(function* () {
   const settleReproduce = (id: string) =>
     reproduces.refresh(id).pipe(Effect.flatMap((reason) => (reason === null ? Effect.void : ended(id, reason).pipe(Effect.ignore))));
 
+  // What the composer picked, checked against what the account's driver offers now: an effort level
+  // must be one the model the turn runs on takes.
+  const checkChoice = Effect.fn("Threads.checkChoice")(function* (account: AccountStore.ResolvedAccount, model: string | undefined, effort: string | undefined) {
+    if (model !== undefined && !offersModel(account.driver, model)) return yield* new ThreadError({ reason: "model_not_offered" });
+    if (effort === undefined) return;
+    const offered = yield* drivers.get(account.driver).models;
+    if (!offersEffort(account.driver, offered, model ?? account.model, effort)) return yield* new ThreadError({ reason: "effort_not_offered" });
+  });
+
   // `fromQueue` is the waiting question itself, the one start a waiting question doesn't block.
   // It starts only if it's still waiting when the lock is taken: Stop or Cancel may have won.
-  const begin = Effect.fn("Threads.begin")(function* (id: string, text: string, { accountId, model, attachments: attaching, references: referring = [], scopes, monitor }: TurnOptions, fromQueue: Waiting | null) {
+  const begin = Effect.fn("Threads.begin")(function* (id: string, text: string, { accountId, model, effort, attachments: attaching, references: referring = [], scopes, monitor }: TurnOptions, fromQueue: Waiting | null) {
     const account = yield* accounts
       .resolve(accountId)
       .pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
-    if (model !== undefined && !offersModel(account.driver, model)) return yield* new ThreadError({ reason: "model_not_offered" });
+    yield* checkChoice(account, model, effort);
     const references = yield* Effect.forEach(referring, (ref) => resolveReference(log.read, id, ref).pipe(Effect.provideContext(readers)));
     // So a turn doesn't get the shell for a container `up` already removed.
     yield* settleReproduce(id);
@@ -343,6 +353,7 @@ const make = Effect.gen(function* () {
           at: yield* nowIso,
           accountId: account.id,
           ...(model !== undefined && !monitor ? { model } : {}),
+          ...(effort !== undefined && !monitor ? { effort } : {}),
           ...(attached.length > 0 ? { attachments: attached } : {}),
           ...(references.length > 0 ? { references } : {}),
           ...(monitor ? { source: "monitor" as const } : {}),
@@ -388,6 +399,7 @@ const make = Effect.gen(function* () {
               reproduce: reproducing,
               propose: !monitor,
               review: false,
+              effort: monitor ? null : (effort ?? null),
               account: { label: account.label, model: monitor?.model ?? model ?? account.model, apiKey: account.apiKey, home: account.home },
             })
             .pipe(Stream.runForEach(onEvent(id, turn)));
@@ -406,7 +418,7 @@ const make = Effect.gen(function* () {
   const queueTurn = Effect.fn("Threads.queueTurn")(function* (id: string, text: string, options: TurnOptions) {
     // What would refuse it later is refused now, while the owner is still looking.
     const account = yield* accounts.resolve(options.accountId).pipe(Effect.mapError((error) => new ThreadError({ reason: error.reason === "not_found" ? "account_not_found" : "log_unreadable" })));
-    if (options.model !== undefined && !offersModel(account.driver, options.model)) return yield* new ThreadError({ reason: "model_not_offered" });
+    yield* checkChoice(account, options.model, options.effort);
     const waiting = yield* lock.withPermits(1)(
       Effect.gen(function* () {
         yield* loadUnlocked(id);

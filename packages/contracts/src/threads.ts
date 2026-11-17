@@ -37,7 +37,7 @@ export const MAX_REFERENCES = 3;
 // What a thread's log holds after its first line, in order. `seq` counts from 1 in each thread.
 // `accountId` is the account the turn ran as; older lines don't have it.
 // `source` is "monitor" when a monitor asked, not the owner; older lines don't have it.
-// `model` is the model the turn picked in the composer, when it picked one.
+// `model` and `effort` are what the turn picked in the composer, when it picked them.
 // `attachments` are the files sent with it; the bytes are in the thread's attachments directory.
 // `references` are the threads and runs it named, as they read when it was sent.
 export const UserMessage = Schema.TaggedStruct("UserMessage", {
@@ -47,6 +47,7 @@ export const UserMessage = Schema.TaggedStruct("UserMessage", {
   at,
   accountId: Schema.optionalKey(Schema.String),
   model: Schema.optionalKey(Schema.String),
+  effort: Schema.optionalKey(Schema.String),
   attachments: Schema.optionalKey(Schema.Array(Attachment)),
   references: Schema.optionalKey(Schema.Array(ResolvedReference)),
   source: Schema.optionalKey(Schema.Literal("monitor")),
@@ -151,7 +152,7 @@ export const CreateThread = Schema.Struct({
 });
 
 export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError", {
-  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "reproduce_running", "reference_not_found", "reference_self", "queue_full", "server_updating"]),
+  reason: Schema.Literals(["thread_not_found", "subject_not_found", "turn_running", "provider_unavailable", "log_unreadable", "account_not_found", "model_not_offered", "effort_not_offered", "reproduce_running", "reference_not_found", "reference_self", "queue_full", "server_updating"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -179,6 +180,8 @@ export class ThreadError extends Schema.TaggedError<ThreadError>()("ThreadError"
         return "The server is restarting on a new version. Ask again in a moment.";
       case "model_not_offered":
         return "That model isn't offered for this account's harness. Pick another in the composer.";
+      case "effort_not_offered":
+        return "That model doesn't take that effort level. Pick another in the composer.";
     }
   }
 }

@@ -104,7 +104,7 @@ const make = Effect.gen(function* () {
         // Closing the stream's scope, on interrupt or at the end, stops the process.
         const child = yield* Effect.acquireRelease(
           Effect.sync(() =>
-            spawn(executable, claudeArgs({ mcpConfigPath, systemPrompt: input.systemPrompt, model: input.account.model ?? envModel, reproduce: input.reproduce, propose: input.propose, review: input.review }), {
+            spawn(executable, claudeArgs({ mcpConfigPath, systemPrompt: input.systemPrompt, model: input.account.model ?? envModel, effort: input.effort, reproduce: input.reproduce, propose: input.propose, review: input.review }), {
               cwd,
               env: claudeEnv(process.env, input.account.apiKey),
               stdio: ["pipe", "pipe", "pipe"],

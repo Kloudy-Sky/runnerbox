@@ -4,7 +4,7 @@ import { mkdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createInterface } from "node:readline";
-import type { ProviderStatus } from "@runnerbox/contracts";
+import { EffortName, type HarnessModel, type ProviderStatus } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -14,7 +14,7 @@ import { allowedTools, appliedProblems, appServerArgs, DISABLED_FEATURES, launch
 import { codexEnv, codexHome } from "./codexCommand.ts";
 import { decodeMessage, type ErrorResponse, McpServers, ProviderConfig, type Response, ThreadStarted } from "./codexProtocol.ts";
 import { decide, type TurnState } from "./codexTurnPolicy.ts";
-import { HARNESSES } from "./harnesses.ts";
+import { effortLevels, HARNESSES } from "./harnesses.ts";
 import { loginHomeProblem } from "./loginHome.ts";
 import { SERVER_NAME } from "./runnerboxTools.ts";
 import { CodexProviderAdapter, ProviderError, type ProviderEvent, type TurnInput } from "./ProviderAdapter.ts";
@@ -89,13 +89,26 @@ const run = (executable: string, args: ReadonlyArray<string>, home: string, own:
   );
 
 // `codex debug models` lists the installed CLI's catalog without a sign-in or a model call. Only
-// slugs it shows (not hidden ones) are kept.
+// slugs it shows (not hidden ones) are kept, each with the effort levels it lists.
 // `codex mcp list --json`, of which only each server's name and whether it's on are read.
 const ServerList = Schema.fromJsonString(Schema.Array(Schema.Struct({ name: Schema.String, enabled: Schema.Boolean })));
 const decodeServerList = Schema.decodeUnknownOption(ServerList);
 const decodeMcpServers = Schema.decodeUnknownOption(McpServers);
 const decodeProviderConfig = Schema.decodeUnknownOption(ProviderConfig);
-const Catalog = Schema.fromJsonString(Schema.Struct({ models: Schema.Array(Schema.Struct({ slug: Schema.String, visibility: Schema.optional(Schema.String) })) }));
+// Only levels a client could send back are offered.
+const decodeEffort = Schema.decodeUnknownOption(EffortName);
+const Catalog = Schema.fromJsonString(
+  Schema.Struct({
+    models: Schema.Array(
+      Schema.Struct({
+        slug: Schema.String,
+        visibility: Schema.optional(Schema.String),
+        default_reasoning_level: Schema.optional(Schema.NullOr(Schema.String)),
+        supported_reasoning_levels: Schema.optional(Schema.NullOr(Schema.Array(Schema.Struct({ effort: Schema.String })))),
+      }),
+    ),
+  }),
+);
 
 // Spoken to as T3 Code's Codex adapter speaks to it (MIT, see THIRD_PARTY_NOTICES.md), with a
 // client of Runnerbox's own for the few messages a turn uses.
@@ -170,7 +183,12 @@ export const makeWith = (find: () => string | null) =>
       const { ok, stdout } = yield* run(executable, ["debug", "models"], home, true);
       const catalog = Schema.decodeUnknownOption(Catalog)(stdout);
       if (!ok || catalog._tag === "None") return [];
-      return HARNESSES.codex.models.filter((model) => catalog.value.models.some((each) => each.slug === model.id && each.visibility !== "hide"));
+      return HARNESSES.codex.models.flatMap((model): ReadonlyArray<HarnessModel> => {
+        const listing = catalog.value.models.find((each) => each.slug === model.id && each.visibility !== "hide");
+        if (listing === undefined) return [];
+        const levels = (listing.supported_reasoning_levels ?? []).map((level) => level.effort).filter((id) => decodeEffort(id)._tag === "Some");
+        return [levels.length === 0 ? model : { ...model, efforts: effortLevels(levels, listing.default_reasoning_level ?? null) }];
+      });
     });
     const models = yield* Effect.cachedWithTTL(listed, "10 minutes");
 
@@ -258,7 +276,7 @@ export const makeWith = (find: () => string | null) =>
             if (servers._tag === "None") return Effect.fail(failed("Codex listed its MCP servers in a way Runnerbox couldn't read."));
             const problems = mcpProblems(servers.value, allowedTools(turn));
             if (problems.length > 0) return refuse(problems);
-            send({ id: 5, method: "turn/start", params: turnStartParams(threadId, input.prompt, input.images) });
+            send({ id: 5, method: "turn/start", params: turnStartParams(threadId, input.prompt, input.images, input.effort) });
             return Effect.succeed([]);
           }
           case 5:

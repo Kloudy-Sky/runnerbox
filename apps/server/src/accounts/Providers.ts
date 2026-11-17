@@ -26,9 +26,9 @@ const make = Effect.gen(function* () {
     const all = yield* accounts.listAll;
     return yield* Effect.forEach(drivers.running, (driver) =>
       Effect.gen(function* () {
-        const { label, acceptsKeys, ownerLogin } = HARNESSES[driver];
+        const { label, acceptsKeys, ownerLogin, efforts } = HARNESSES[driver];
         const own = all.filter((account) => account.driver === driver);
-        return { driver, label, status: driverStatus(label, own), models: yield* drivers.get(driver).models, accounts: own, acceptsKeys, ownerLogin } satisfies Provider;
+        return { driver, label, status: driverStatus(label, own), models: yield* drivers.get(driver).models, ...(efforts === null ? {} : { efforts }), accounts: own, acceptsKeys, ownerLogin } satisfies Provider;
       }),
     );
   });

@@ -247,33 +247,38 @@ test("a thread on an install's runners starts from what the Runners page shows, 
     assert.ok(fake.inputs[0]?.prompt.endsWith(`Owner: ${RUNNERS_QUESTION}`));
   }));
 
-test("a turn runs on the model the composer picked, over the account's own, and only on one the server offers", () =>
+test("a turn runs on the model and effort the composer picked, over the account's own, and only on ones the server offers", () =>
   withServer([[{ text: "On the pick." }], [{ text: "On the account's." }]], async (server, fake) => {
     const { token } = await appSession(server);
-    const { harnesses, refused, items } = await withClient(server, token, (client) =>
+    const { harnesses, refused, unknownLevel, unlistedModel, items } = await withClient(server, token, (client) =>
       Effect.gen(function* () {
         const account = yield* client["accounts.save"]({ driver: "claude", label: "Pinned", model: "claude-example-1" });
         const { thread } = yield* newThread(client);
-        const turn = (text: string, model?: string) =>
+        const turn = (text: string, model?: string, effort?: string) =>
           Effect.gen(function* () {
             const listening = yield* untilTurnEnds(client["threads.subscribe"]({ id: thread.id }).pipe(Stream.drop(1))).pipe(Effect.forkChild);
             yield* Effect.sleep(50);
-            yield* client["threads.startTurn"]({ id: thread.id, text, accountId: account.id, ...(model ? { model } : {}) });
+            yield* client["threads.startTurn"]({ id: thread.id, text, accountId: account.id, ...(model ? { model } : {}), ...(effort ? { effort } : {}) });
             yield* Fiber.join(listening);
           });
         const refused = yield* Effect.flip(client["threads.startTurn"]({ id: thread.id, text: "On this?", accountId: account.id, model: "claude-example-1" }));
-        yield* turn("On Haiku?", "haiku");
+        // A level the model doesn't take, and any level on a model the server doesn't list.
+        const unknownLevel = yield* Effect.flip(client["threads.startTurn"]({ id: thread.id, text: "Harder?", accountId: account.id, model: "haiku", effort: "turbo" }));
+        const unlistedModel = yield* Effect.flip(client["threads.startTurn"]({ id: thread.id, text: "Harder?", accountId: account.id, effort: "high" }));
+        yield* turn("On Haiku?", "haiku", "high");
         yield* turn("And now?");
-        return { harnesses: yield* client["threads.harnesses"](), refused, items: (yield* client["threads.read"]({ id: thread.id })).items };
+        return { harnesses: yield* client["threads.harnesses"](), refused, unknownLevel, unlistedModel, items: (yield* client["threads.read"]({ id: thread.id })).items };
       }),
     );
     assert.deepEqual(harnesses.map((harness) => [harness.driver, harness.models.map((model) => model.id)]), [["claude", ["haiku", "sonnet", "opus"]]]);
     assert.equal(harnesses[0]?.status.available, true);
     // Only a name from the list: the account's own model is fine as its default, but not as a pick.
     assert.equal(refused._tag === "ThreadError" && refused.reason, "model_not_offered");
-    assert.deepEqual(fake.inputs.map((input) => input.account.model), ["haiku", "claude-example-1"]);
+    assert.equal(unknownLevel._tag === "ThreadError" && unknownLevel.reason, "effort_not_offered");
+    assert.equal(unlistedModel._tag === "ThreadError" && unlistedModel.reason, "effort_not_offered");
+    assert.deepEqual(fake.inputs.map((input) => [input.account.model, input.effort]), [["haiku", "high"], ["claude-example-1", null]]);
     // The log keeps the pick, so the composer can offer it again, and nothing when there wasn't one.
-    assert.deepEqual(items.flatMap((item) => (item._tag === "UserMessage" ? [item.model ?? null] : [])), ["haiku", null]);
+    assert.deepEqual(items.flatMap((item) => (item._tag === "UserMessage" ? [[item.model ?? null, item.effort ?? null]] : [])), [["haiku", "high"], [null, null]]);
   }));
 
 test("after a restart, a thread's first watcher gets the line saying the turn was cut off once, not twice", async () => {
