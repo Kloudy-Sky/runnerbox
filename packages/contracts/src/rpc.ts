@@ -5,7 +5,7 @@ import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, PairingCode, SessionSummary } from "./auth.ts";
 import { DayTotals, Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
 import { GitHubError, GitHubStatus } from "./github.ts";
-import { Inbox } from "./inbox.ts";
+import { Inbox, InboxItemId, InboxStateError, Instant } from "./inbox.ts";
 import { MachineHealth } from "./health.ts";
 import { JobResources } from "./resources.ts";
 import { JobTrend, KindUsageReport } from "./usage.ts";
@@ -48,6 +48,7 @@ const ReproduceFailure = Schema.Union([AuthorizationError, ThreadError, Reproduc
 const ProposalFailure = Schema.Union([AuthorizationError, ProposalError]);
 const ReviewFailure = Schema.Union([AuthorizationError, ReviewError]);
 const GitHubFailure = Schema.Union([AuthorizationError, GitHubError]);
+const InboxStateFailure = Schema.Union([AuthorizationError, InboxStateError]);
 const ProposalId = { id: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)) };
 const ThreadId = { id: Schema.String };
 const TurnPayload = {
@@ -76,6 +77,10 @@ export const RPC_METHODS = {
   historyJobTrends: "history.jobTrends",
   historyDailyTotals: "history.dailyTotals",
   inboxList: "inbox.list",
+  inboxSettle: "inbox.settle",
+  inboxUnsettle: "inbox.unsettle",
+  inboxSnooze: "inbox.snooze",
+  inboxWake: "inbox.wake",
   runnersEvents: "runners.events",
   runnersSamples: "runners.samples",
   runnersState: "runners.state",
@@ -179,6 +184,15 @@ export const RunnerboxRpcGroup = RpcGroup.make(
     error: ReadError,
   }),
   Rpc.make(RPC_METHODS.inboxList, { payload: { days: Days }, success: Inbox, error: ReadError }),
+  // Snooze and settle change only what the app shows for an item, never what runs. The next
+  // inbox.list carries the item's new state.
+  Rpc.make(RPC_METHODS.inboxSettle, { payload: { id: InboxItemId }, error: InboxStateFailure }),
+  // Keeps an item in the list even after a later run fixed it, until it fails again.
+  Rpc.make(RPC_METHODS.inboxUnsettle, { payload: { id: InboxItemId }, error: InboxStateFailure }),
+  // Hides an item until `until`, or until it fails again. A time already past is refused.
+  Rpc.make(RPC_METHODS.inboxSnooze, { payload: { id: InboxItemId, until: Instant }, error: InboxStateFailure }),
+  // Ends a snooze now, and clears the "back" an ended snooze leaves.
+  Rpc.make(RPC_METHODS.inboxWake, { payload: { id: InboxItemId }, error: InboxStateFailure }),
   Rpc.make(RPC_METHODS.runnersEvents, {
     payload: { days: Days },
     success: Schema.Array(LauncherEvent),
@@ -335,6 +349,11 @@ export const RPC_SCOPES = {
   [RPC_METHODS.historyDailyTotals]: HISTORY,
   // The inbox reads launcher events and samples alongside jobs.
   [RPC_METHODS.inboxList]: ["history:read", "runners:read"],
+  // Anyone who may ask the agent about an item may snooze or settle it.
+  [RPC_METHODS.inboxSettle]: ["threads:operate"],
+  [RPC_METHODS.inboxUnsettle]: ["threads:operate"],
+  [RPC_METHODS.inboxSnooze]: ["threads:operate"],
+  [RPC_METHODS.inboxWake]: ["threads:operate"],
   [RPC_METHODS.runnersEvents]: RUNNERS,
   [RPC_METHODS.runnersSamples]: RUNNERS,
   [RPC_METHODS.runnersState]: RUNNERS,

@@ -128,6 +128,7 @@
     "apps/server/src/environment/EnvironmentIdentity.ts": {"relation":"follows","upstream":"apps/server/src/environment/ServerEnvironment.ts","commit":"3a8c250cb0c8056f2f563091fd412fe5db809fa1"},
     "apps/server/src/http/connectRoutes.ts": {"relation":"follows","upstream":"apps/server/src/cloud/http.ts","commit":"3a8c250cb0c8056f2f563091fd412fe5db809fa1"},
     "apps/server/src/http/dpop.ts": {"relation":"follows","upstream":["apps/server/src/auth/dpop.ts","apps/server/src/auth/replayMarkers.ts"],"commit":"3a8c250cb0c8056f2f563091fd412fe5db809fa1"},
+    "apps/server/src/inbox/itemState.ts": {"relation":"follows","upstream":["packages/client-runtime/src/state/threadSettled.ts","apps/server/src/orchestration-v2/Orchestrator.ts"],"note":"thread settle and snooze, and their wake rules, applied to inbox items"},
     "apps/server/src/mcp/route.ts": {"relation":"follows","upstream":"apps/server/src/mcp/McpHttpServer.ts","commit":"3a8c250cb0c8056f2f563091fd412fe5db809fa1"},
     "apps/server/src/rpc/RpcAuthorization.ts": {"relation":"follows","upstream":"apps/server/src/auth/RpcAuthorization.ts","commit":"3a8c250cb0c8056f2f563091fd412fe5db809fa1"},
     "apps/server/src/rpc/ws.ts": {"relation":"follows","upstream":["apps/server/src/ws.ts","apps/server/src/auth/EnvironmentAuth.ts"],"commit":"3a8c250cb0c8056f2f563091fd412fe5db809fa1"},

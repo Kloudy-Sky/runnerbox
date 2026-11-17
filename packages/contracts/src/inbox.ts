@@ -49,6 +49,31 @@ export const Evidence = Schema.Struct({
 });
 export type Evidence = typeof Evidence.Type;
 
+// A point in time, as an ISO string, that the server can compare with its clock.
+export const Instant = Schema.String.check(Schema.makeFilter((value: string) => !Number.isNaN(Date.parse(value)), { expected: "a date and time" }));
+
+// Where an item sits for the owner (see apps/server/src/inbox/itemState.ts). "back" is a snooze
+// that ended, by its time or by a new failure, until the owner wakes or snoozes it again.
+// "settled" is the owner's doing, or a later run that passed.
+export const InboxItemStatus = Schema.Literals(["active", "snoozed", "back", "settled"]);
+export type InboxItemStatus = typeof InboxItemStatus.Type;
+export const InboxItemState = Schema.Struct({
+  status: InboxItemStatus,
+  snoozedUntil: Schema.NullOr(Instant),
+  wokeAt: Schema.NullOr(Instant),
+  // When the owner settled it. Null when a later run did, or it isn't settled.
+  settledAt: Schema.NullOr(Instant),
+});
+export type InboxItemState = typeof InboxItemState.Type;
+
+// Snoozing, settling or waking an item went wrong on the server. The path stays there.
+export class InboxStateError extends Schema.TaggedError<InboxStateError>()("InboxStateError", { why: Schema.String }) {
+  override get message() {
+    return this.why;
+  }
+}
+export const InboxItemId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512));
+
 export const InboxItem = Schema.Struct({
   id: Schema.String,
   kind: InboxKind,
@@ -65,6 +90,8 @@ export const InboxItem = Schema.Struct({
   action: Schema.String,
   at: Schema.String,
   evidence: Evidence,
+  // Older servers send items without it; read those as active.
+  state: Schema.optionalKey(InboxItemState),
 });
 export type InboxItem = typeof InboxItem.Type;
 
@@ -89,6 +116,9 @@ export type InboxSummary = typeof InboxSummary.Type;
 
 export const Inbox = Schema.Struct({ summary: InboxSummary, items: Schema.Array(InboxItem), quiet: Schema.Array(QuietGroup) });
 export type Inbox = typeof Inbox.Type;
+
+// Snoozed and settled items are kept out of what needs the owner now.
+export const isInboxItemHidden = (item: InboxItem) => item.state?.status === "snoozed" || item.state?.status === "settled";
 
 // Every item, whether it needs the owner or sits in a quiet group.
 export const inboxItems = (inbox: Inbox) => [...inbox.items, ...inbox.quiet.flatMap((group) => group.items)];
