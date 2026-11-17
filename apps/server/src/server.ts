@@ -29,6 +29,7 @@ import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as QueueConfig from "./runners/QueueConfig.ts";
 import * as RunnerQueue from "./runners/RunnerQueue.ts";
 import * as RunnersExplained from "./runners/RunnersExplained.ts";
+import * as DailyHealth from "./runners/DailyHealth.ts";
 import * as RunnerRestarts from "./runners/RunnerRestarts.ts";
 import * as RunnerState from "./runners/RunnerState.ts";
 import * as ToolReleases from "./runners/ToolReleases.ts";
@@ -94,7 +95,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer, ReviewStore.layer)),
     Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),
