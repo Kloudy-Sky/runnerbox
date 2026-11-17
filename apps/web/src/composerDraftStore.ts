@@ -1,4 +1,4 @@
-// Runnerbox's own, not T3 Code's file of this name: the composer's unsent drafts, one per subject
+// A stand-in of runnerbox's, not T3 Code's file of this name: the composer's unsent drafts, one per subject
 // on each environment, kept in this client's local storage so they survive navigation and a
 // restart. A draft is the editor's Markdown and the files staged for it: the server holds a staged
 // file's bytes, and the draft only its ID and name.

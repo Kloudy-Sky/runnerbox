@@ -31,6 +31,7 @@ An **environment** is one server and the machine it owns. Clients reach it over 
 - **Effect** in `apps/*` and `packages/*`, with Effect Schema for everything on the wire and every file the server owns. Server features are `Context.Service`s; an RPC handler or MCP tool decodes, calls one service method and maps its error, nothing else. Follow T3 Code's [Effect service conventions](https://github.com/pingdotgg/t3code/blob/main/docs/internals/effect-services.md). The one exception is `apps/server/src/update/supervisor`, which imports only Node's own modules on purpose: it's what `serve` runs before any server code loads, and an update can't replace it.
 - Types come from inference. Write `any` nowhere, and no functions that only cast.
 - One concern per file. Comments say why, in a line or two, and change when the code does.
+- A file copied from, adapted from, standing in for or written after T3 Code gets an entry in [docs/t3code-map.json](docs/t3code-map.json). `pnpm t3code-diff` reads it for a sync.
 - Tests check behaviour someone relies on. A test that only restates wiring, or guards a deleted feature, is a cost.
 - Shell that runs on a host (generated or shipped) uses `set -euo pipefail`, quotes every value, and checks state before changing it.
 

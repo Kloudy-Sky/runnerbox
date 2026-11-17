@@ -1,6 +1,17 @@
 # Third-party notices
 
-Parts of `apps/` and `packages/` follow, or are adapted from, [T3 Code](https://github.com/pingdotgg/t3code): the environment, pairing and scoped-session model, the RPC scope middleware, the WebSocket ticket flow, the MCP endpoint's authentication, the SSH port-forward route, and Runnerbox Connect's relay protocol (signed link, mint and health proofs, DPoP-bound credentials, managed tunnel allocations and their generation claims, and the loopback and device-grant sign-in), the isolation that keeps agent threads' Claude Code process away from the user's own settings, MCP servers and hooks, the provider list's drivers and their accounts (after T3 Code's provider instances) and their settings page, laid out as its provider instance card in list and editor mode, the Codex home a Codex account can point at, after its Codex home path setting, and how a headless Codex run turns off the MCP servers in that home's config, and how its own MCP tools are offered to Codex directly rather than deferred, the desktop app's updater (`apps/desktop/src/updates`), the server's supervisor and its updates, with a trial start and a return to the previous version (`apps/server/src/update`, after T3 Code's service launcher), the sidebar's Update, which moves every connected server and then the app in one step (`apps/web/src/lib/updateEverything.ts`, `state/updateEverything.ts`, `hooks/useNow.ts` and `components/update`, after T3 Code's `components/sidebar/updateEverything.logic.ts`, `updateEverythingRun.tsx`, `SidebarUpdateCapsule.tsx` and `UpdateEverythingDialog.tsx`), the release workflow's nightly and stable channels and their versioning, and the web app's theme, primitives and settings layout, the sidebar's collapse to an icon rail (its eased width, the reduced-motion and route-change snap, the `mod+b` toggle and the remembered open state, after `AppSidebarLayout.tsx`), the composer's rich text editor and the thread's timeline (copied or followed, listed below), the composer's model picker, with its provider rail, search, favorites and docked effort column (`apps/web/src/components/thread/ModelPicker.tsx`, after `ProviderModelPicker.tsx`, `ModelPickerContent.tsx` and `ComposerModelEffort.tsx`), and the names of effort levels (`apps/server/src/threads/provider/harnesses.ts`, after `CodexProvider.ts`), its sidebar layout, its slot composition, and its usage chart's drawing (`components/usage/UsageProviderChart.tsx` at the commit below): the monotone curve maths in `apps/web/src/lib/curve.ts`, lifted as they are, and the hover crosshair and pointer-following tooltip in `apps/web/src/components/job/ResourceChart.tsx`. T3 Code is under the MIT license below.
+## T3 Code
+
+Much of `apps/`, `packages/` and `infra/relay` is copied from, adapted from or written after [T3 Code](https://github.com/pingdotgg/t3code): the web app's theme, primitives, settings layout, composer editor and timeline; the environment, pairing and scoped-session model; Runnerbox Connect's relay protocol; the agent providers and their isolation; the desktop and server updaters; and the release workflow's channels. T3 Code is under the MIT license below.
+
+[`docs/t3code-map.json`](docs/t3code-map.json) lists every such file, the T3 Code file or files it came from, the commit it was taken at, and how:
+
+- `copied`: unedited. Runnerbox's differences live in its own files, such as `apps/web/src/theme/runnerbox.css`.
+- `adapted`: copied, with each cut marked `// runnerbox:`.
+- `stand-in`: runnerbox's own file in place of a T3 Code module the copies import, with only what they use. Its first line says so.
+- `follows`: runnerbox's own code, written after T3 Code's.
+
+A sync starts from `pnpm t3code-diff <t3code checkout>`, which lists the files whose upstream changed since they were taken and fails if a copy was edited.
 
 ```
 MIT License
@@ -25,130 +36,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
-
-## T3 Code's theme, primitives and settings layout, copied
-
-Copied from T3 Code at commit `4c8cb0445da6c84fa799edee057af355d1e992aa` (`main`, 2026-11-14). A later sync starts from that commit: diff upstream's `apps/web/src` from there and apply it to the files below.
-
-Upstream path under `apps/web/src`, and where it is here (the same path unless noted):
-
-- `components/WorkspaceBreadcrumb.tsx`
-- `components/WorkspacePageContainer.tsx`
-- `components/settings/SettingsGroup.tsx`
-- `components/settings/settingsLayout.tsx`, with T3 Code's settings scopes cut, each cut marked `// runnerbox:`
-- `components/settings/settingsSectionNavigation.ts`
-- `components/ui/autocomplete.tsx`
-- `components/ui/button.tsx`
-- `components/ui/closing-positioner.tsx`
-- `components/ui/collapsible.tsx`
-- `components/ui/command.tsx`
-- `components/ui/dialog-styles.ts`
-- `components/ui/dialog.tsx`
-- `components/ui/empty.tsx`
-- `components/ui/input.tsx`
-- `components/ui/kbd.tsx`
-- `components/ui/menu.tsx`
-- `components/ui/popover.tsx`
-- `components/ui/scroll-area.tsx`
-- `components/ui/select.tsx`
-- `components/ui/sheet.tsx`
-- `components/ui/sidebar.tsx`
-- `components/ui/sidebarState.ts`
-- `components/ui/spinner.tsx`
-- `components/ui/switch.tsx`
-- `components/ui/textarea.tsx`
-- `components/ui/toast.logic.ts`
-- `components/ui/toast.tsx`
-- `components/ui/toastHelpers.ts`
-- `components/ui/tooltip.tsx`
-- `hooks/useLocalStorage.ts`
-- `hooks/useMediaQuery.ts`
-- `hooks/useResizeDrag.ts`
-- `hooks/useStableCallback.ts`
-- `index.css` as `theme/t3code.css`
-- `lib/accessibilityAnnouncements.ts`
-- `lib/observeResize.ts`
-- `lib/visibleAnimation.ts`
-- `lib/windowControlsOverlay.ts`
-- `panelAnimations.ts`
-
-Runnerbox's differences live in its own files, never in the copies, except the cuts marked `// runnerbox:` in `settingsLayout.tsx`. `apps/web/src/theme/runnerbox.css` overrides the theme. These stand in for T3 Code modules the copies import, with only what the copies use, each marked at its top as runnerbox's:
-
-- `apps/web/src/env.ts`
-- `apps/web/src/hooks/useCopyToClipboard.ts`
-- `apps/web/src/hooks/useSettings.ts`
-- `apps/web/src/hooks/useThreadRouteTarget.ts`
-- `apps/web/src/lib/t3codeContracts.ts` (mapped to `@t3tools/contracts` and `@t3tools/contracts/settings`)
-- `apps/web/src/lib/utils.ts`
-
-## T3 Code's composer editor, copied
-
-The composer's rich text editor, the thread's timeline parts, and what they import are copied unedited from T3 Code at the same commit as the theme, `4c8cb0445da6c84fa799edee057af355d1e992aa`. (They are also identical at `9db3cb10916c81830efa0d0d7be6601d2fe51158`, the commit the composer's design was drawn up against; the one commit between the two touches only T3 Code's mobile app.) A later sync diffs upstream from that commit and applies it to the files below.
-
-From upstream's `apps/web/src`, at the same path here under `apps/web/src`:
-
-- `components/ComposerPromptEditorTiptap.tsx`
-- `components/ContextChip.tsx`
-- `components/chat/ComposerControl.tsx`
-- `components/chat/MessageCopyButton.tsx`
-- `components/chat/ModelPickerSidebar.tsx`
-- `components/chat/TimelineOverlays.tsx`
-- `components/chat/TimelineRowParts.tsx`
-- `components/chat/TimelineSystemDivider.tsx`
-- `components/chat/WorkLog.tsx`
-- `components/chat/assistantCitationCommentDismissal.ts`
-- `components/chat/pageScrollController.ts`
-- `components/composerAttachmentInsertion.ts`
-- `components/ui/anchoredCopyToast.ts`
-- `components/composerContextActions.ts`
-- `components/composerInlineTokenPaste.ts`
-- `components/composerSelection.ts`
-- `composer-code-block.ts`
-- `composer-editor-mentions.ts`
-- `composer-list-continuation.ts`
-- `composer-logic.ts`
-- `composer-markdown-source.ts`
-- `composer-rich-text-doc.ts`
-- `composer-rich-text.ts`
-- `composer-text-direction.ts`
-- `composer-undo-grouping.ts`
-- `lib/composerContextReferences.ts`
-- `textDirection.ts`
-- `timestampFormat.ts`
-
-From upstream's packages, under `apps/web/src/t3tools`, where tsconfig and Vite map `@t3tools/shared/*` and `@t3tools/client-runtime/*`:
-
-- `packages/shared/src/<name>.ts` as `t3tools/shared/<name>.ts`, for `assistantCitations`, `composerContextClipboard`, `composerContextReferences`, `composerInlineTokens`, `composerTrigger`, `connectAuth`, `inlineSkills`, `remote`, `textDirection` and `threadLinks`
-- `packages/contracts/src/<name>.ts` as `t3tools/contracts/<name>.ts`, for `assistantCitations`, `baseSchemas`, `composerContext` and `composerContextClipboard`, which `lib/t3codeContracts.ts` re-exports as `@t3tools/contracts`
-
-These stand in for T3 Code modules the copies import, with only what the copies use, each marked at its top as runnerbox's. Most make a feature runnerbox doesn't have inert: skills, model mentions, citations, file mentions, keybindings, code highlighting.
-
-- `apps/web/src/components/chat/AssistantCitationChip.tsx`
-- `apps/web/src/components/chat/ComposerCodeBlockNodeView.tsx`
-- `apps/web/src/components/chat/FileTagChip.tsx`
-- `apps/web/src/components/chat/ModelMentionChip.tsx`
-- `apps/web/src/components/chat/ProviderInstanceIcon.tsx`, with Claude's and Codex's marks from T3 Code's `components/Icons.tsx`
-- `apps/web/src/components/chat/SkillInlineText.tsx`
-- `apps/web/src/components/chat/WorkspaceEntryIcon.tsx`
-- `apps/web/src/components/composerCodeBlockHighlight.ts`
-- `apps/web/src/components/composerContextPresentation.tsx`
-- `apps/web/src/keybindings.ts`
-- `apps/web/src/lib/assistantTextSelection.ts`
-- `apps/web/src/lib/diffRendering.ts`
-- `apps/web/src/pierre-icons.ts`
-- `apps/web/src/providerInstances.ts`
-- `apps/web/src/rpc/atomRegistry.ts`
-- `apps/web/src/shortcuts/dispatcher.ts`
-- `apps/web/src/state/entities.ts`
-- `apps/web/src/state/server.ts`
-- `apps/web/src/t3tools/atom-react.ts` (mapped to `@effect/atom-react`, which needs Effect 4.1; runnerbox is on 4.0)
-- `apps/web/src/t3tools/client-runtime/composerModelMentions.ts`
-- `apps/web/src/t3tools/client-runtime/providerSkills.ts`
-- `apps/web/src/t3tools/client-runtime/state/threads.ts`
-- `apps/web/src/t3tools/contracts/guestShare.ts`
-- `apps/web/src/t3tools/shared/markdownMath.ts` (T3 Code finds math with remark; runnerbox doesn't take remark's packages for it)
-
-`apps/web/src/composerDraftStore.ts` is runnerbox's own, not T3 Code's file of that name: it keeps the composer's drafts, and keeps the one export the copied toast reads.
 
 ## Inter
 
