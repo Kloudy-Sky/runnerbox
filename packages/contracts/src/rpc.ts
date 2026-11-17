@@ -4,6 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, PairingCode, SessionSummary } from "./auth.ts";
 import { Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
+import { GitHubError, GitHubStatus } from "./github.ts";
 import { Inbox } from "./inbox.ts";
 import { JobResources } from "./resources.ts";
 import { JobTrend, KindUsageReport } from "./usage.ts";
@@ -15,7 +16,7 @@ import { Account, AccountError, AccountId, EffortName, Harness, ModelName, SaveA
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
-import { GitHubAppId, GitHubAppKey, PullNumber, PullReviews, Review, ReviewError, ReviewsView } from "./reviews.ts";
+import { PullNumber, PullReviews, Review, ReviewError, ReviewsView } from "./reviews.ts";
 import { ReleaseCheck, ReleaseVersion, ServerUpdateError, UpdateProgress, UpdateStatus } from "./update.ts";
 import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
 
@@ -45,6 +46,7 @@ const AttachmentFailure = Schema.Union([AuthorizationError, AttachmentError]);
 const ReproduceFailure = Schema.Union([AuthorizationError, ThreadError, ReproduceError]);
 const ProposalFailure = Schema.Union([AuthorizationError, ProposalError]);
 const ReviewFailure = Schema.Union([AuthorizationError, ReviewError]);
+const GitHubFailure = Schema.Union([AuthorizationError, GitHubError]);
 const ProposalId = { id: Schema.String.check(Schema.isPattern(/^[0-9a-f]{16}$/)) };
 const ThreadId = { id: Schema.String };
 const TurnPayload = {
@@ -119,9 +121,11 @@ export const RPC_METHODS = {
   monitorsStatus: "monitors.status",
   monitorsSave: "monitors.save",
   monitorsMarkRead: "monitors.markRead",
+  githubStatus: "github.status",
+  githubSignIn: "github.signIn",
+  githubCancelSignIn: "github.cancelSignIn",
+  githubSignOut: "github.signOut",
   reviewsStatus: "reviews.status",
-  reviewsConnect: "reviews.connect",
-  reviewsDisconnect: "reviews.disconnect",
   reviewsSetRepo: "reviews.setRepo",
   reviewsSetModel: "reviews.setModel",
   reviewsRead: "reviews.read",
@@ -261,11 +265,15 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.monitorsSave, { payload: MonitorSettings, success: MonitorStatus, error: Schema.Union([AuthorizationError, MonitorError]) }),
   // The owner opened the item's thread, so its "Looked into" mark goes.
   Rpc.make(RPC_METHODS.monitorsMarkRead, { payload: { itemId: Schema.String }, error: Schema.Union([AuthorizationError, MonitorError]) }),
-  // The App the owner connected, the repositories it's installed on, and their open pull requests.
+  // Who the server is signed in to GitHub as, and where the App is installed.
+  Rpc.make(RPC_METHODS.githubStatus, { success: GitHubStatus, error: GitHubFailure }),
+  // Asks GitHub for a code and returns at once. The server waits for the owner to approve it, and status says when.
+  Rpc.make(RPC_METHODS.githubSignIn, { success: GitHubStatus, error: GitHubFailure }),
+  Rpc.make(RPC_METHODS.githubCancelSignIn, { success: GitHubStatus, error: GitHubFailure }),
+  // Forgets the token. GitHub still lists the authorization until the owner revokes it there.
+  Rpc.make(RPC_METHODS.githubSignOut, { success: GitHubStatus, error: GitHubFailure }),
+  // The repositories the App is installed on, and the open pull requests on the ones turned on.
   Rpc.make(RPC_METHODS.reviewsStatus, { success: ReviewsView, error: ReviewFailure }),
-  // The owner's own GitHub App. The key is checked against GitHub, kept on the server and never sent back.
-  Rpc.make(RPC_METHODS.reviewsConnect, { payload: { appId: GitHubAppId, privateKey: GitHubAppKey }, success: ReviewsView, error: ReviewFailure }),
-  Rpc.make(RPC_METHODS.reviewsDisconnect, { success: ReviewsView, error: ReviewFailure }),
   Rpc.make(RPC_METHODS.reviewsSetRepo, { payload: { repo: RepoName, review: Schema.Boolean }, success: ReviewsView, error: ReviewFailure }),
   Rpc.make(RPC_METHODS.reviewsSetModel, { payload: { model: Schema.String.check(Schema.isMaxLength(60)) }, success: ReviewsView, error: ReviewFailure }),
   // A pull request's reviews as the server keeps them. Nothing here is posted to GitHub.
@@ -374,11 +382,15 @@ export const RPC_SCOPES = {
   [RPC_METHODS.monitorsStatus]: THREADS,
   [RPC_METHODS.monitorsSave]: ["access:write", "threads:operate"],
   [RPC_METHODS.monitorsMarkRead]: THREADS,
+  // The account and where the App is installed say no more than the repositories reviews already list.
+  [RPC_METHODS.githubStatus]: HISTORY,
+  // A token that can read the owner's code and write to their pull requests manages access.
+  [RPC_METHODS.githubSignIn]: ACCESS,
+  [RPC_METHODS.githubCancelSignIn]: ACCESS,
+  [RPC_METHODS.githubSignOut]: ACCESS,
   // Pull request titles, authors and branches are history like a job's are.
   [RPC_METHODS.reviewsStatus]: HISTORY,
-  // A key that can write to the owner's repositories, and which of them it's used on, manage access.
-  [RPC_METHODS.reviewsConnect]: ACCESS,
-  [RPC_METHODS.reviewsDisconnect]: ACCESS,
+  // Which repositories are read manages access.
   [RPC_METHODS.reviewsSetRepo]: ACCESS,
   [RPC_METHODS.reviewsSetModel]: ACCESS,
   [RPC_METHODS.reviewsRead]: HISTORY,

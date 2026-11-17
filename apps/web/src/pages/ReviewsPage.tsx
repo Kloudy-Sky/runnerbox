@@ -14,9 +14,10 @@ const th = "py-1.5 pr-4 text-left font-normal text-muted-foreground";
 const shortRepo = (repo: string) => repo.slice(repo.indexOf("/") + 1);
 
 // What stands between the owner and a list, in the order they'd fix it.
+// Why there's nothing to list, and the settings page that fixes it.
 function nothingToShow(view: ReviewsView) {
-  if (view.app === null) return "Connect a GitHub App to see pull requests here.";
-  if (!view.repos.some((repo) => repo.review)) return "No repository has reviews turned on.";
+  if (view.app === null) return { why: "Sign the server in to GitHub to see pull requests here.", fix: "/settings/github" } as const;
+  if (!view.repos.some((repo) => repo.review)) return { why: "No repository has reviews turned on.", fix: "/settings/reviews" } as const;
   return null;
 }
 
@@ -60,9 +61,9 @@ export function ReviewsPage() {
       {view.autoPaused ? <p className="px-6 pb-2 text-warning">40 reviews have started on their own in the last day, so new pushes wait. Review still works on any pull request.</p> : null}
       {blocked !== null ? (
         <p className="px-6 text-muted-foreground">
-          {blocked}{" "}
+          {blocked.why}{" "}
           {view.canConfigure ? (
-            <Link to="/settings/reviews" search={(previous: RootSearch) => previous} className="text-foreground underline-offset-4 hover:underline">
+            <Link to={blocked.fix} search={(previous: RootSearch) => previous} className="text-foreground underline-offset-4 hover:underline">
               Open Settings
             </Link>
           ) : null}

@@ -2,8 +2,9 @@ import { createServer } from "node:http";
 
 // A stand-in for GitHub's Actions and releases API, for the fake server: owner/name has two runs queued, one
 // holding a job for example-linux and one for example-docker, and one job for a hosted label. It
-// answers with ETags like GitHub, so a repeated look is a 304. It also answers as a GitHub App
-// installed on owner/name and owner/other, with three pull requests open on owner/name, to any token.
+// answers with ETags like GitHub, so a repeated look is a 304. It also answers as GitHub with the
+// App installed on owner/name and owner/other, with three pull requests open on owner/name, to any
+// token, and signs a server in as octocat a few seconds after it asks for a code.
 // `code` is the first pull request's real commits and diff, from reviewFixture.ts, so it can be reviewed.
 export async function startFakeGitHub(now: number, code?: { readonly baseSha: string; readonly headSha: string; readonly diff: string }) {
   const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -20,10 +21,9 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
   const pull = (number: number, title: string, branch: string, opened: number, changed: number, draft = false) => ({ number, title, draft, user: { login: "someone" }, head: { ref: branch, sha: String(number % 10).repeat(40), repo: { full_name: "owner/name" } }, base: { ref: "main" }, created_at: ago(opened), updated_at: ago(changed) });
   const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha, repo: { full_name: "owner/name" } } } : {}) };
   const replies: Record<string, unknown> = {
-    "/app": { slug: "example-reviewer", name: "Example Reviewer" },
-    "/app/installations?per_page=100": [{ id: 1 }],
-    "/app/installations/1/access_tokens": { token: "not-a-real-installation-token", expires_at: new Date(now + 3_600_000).toISOString() },
-    "/installation/repositories?per_page=100&page=1": { total_count: 2, repositories: [{ full_name: "owner/name" }, { full_name: "owner/other" }] },
+    "/user": { login: "octocat" },
+    "/user/installations?per_page=100": { installations: [{ id: 1, repository_selection: "selected", account: { login: "owner" }, html_url: "https://github.com/settings/installations/1" }] },
+    "/user/installations/1/repositories?per_page=100&page=1": { total_count: 2, repositories: [{ full_name: "owner/name" }, { full_name: "owner/other" }] },
     "/repos/owner/name/pulls?state=open&sort=updated&direction=desc&per_page=50": [
       first,
       pull(40, "Restart runners from About", "feat/restart-from-about", 1500, 95),
@@ -41,8 +41,16 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     "/repos/actions/runner/releases/latest": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
     "/repos/actions/runner/releases/tags/v2.338.2": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
   };
+  // The device flow: a code that's approved on the second time it's asked about.
+  let polls = 0;
   const server = createServer((request, response) => {
     const path = request.url ?? "";
+    const json = (body: unknown) => void response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
+    if (path === "/login/device/code") {
+      polls = 0;
+      return json({ device_code: "not-a-real-device-code", user_code: "WDJB-MJHT", verification_uri: `${base()}/login/device`, expires_in: 900, interval: 2 });
+    }
+    if (path === "/login/oauth/access_token") return json((polls += 1) < 2 ? { error: "authorization_pending" } : { access_token: "not-a-real-user-token", expires_in: 28_800, refresh_token: "not-a-real-refresh-token", refresh_token_expires_in: 15_897_600 });
     const rate = { "x-ratelimit-remaining": "4900", "x-ratelimit-limit": "5000", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600) };
     if (code && path === `/repos/owner/name/compare/${code.baseSha}...${code.headSha}`) return void response.writeHead(200, { ...rate, "content-type": "text/plain" }).end(code.diff);
     const reply = replies[path] ?? (path.includes("/actions/runs?") ? { workflow_runs: [] } : undefined);
@@ -50,7 +58,10 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     if (request.headers["if-none-match"] === `"${path}"`) return void response.writeHead(304, { ...rate, etag: `"${path}"` }).end();
     response.writeHead(200, { ...rate, etag: `"${path}"`, "content-type": "application/json" }).end(JSON.stringify(reply));
   });
+  const base = () => {
+    const address = server.address();
+    return `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`;
+  };
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}` };
+  return { apiBase: base() };
 }

@@ -6,7 +6,7 @@ import { useActiveEnvironment } from "./useEnvironment.ts";
 import { useRpcQuery } from "./useRpcQuery.ts";
 import { useServerCapabilities } from "./useServerCapabilities.ts";
 
-// The environment's reviews: the GitHub App connected, the repositories it's installed on, and
+// The environment's reviews: the repositories the GitHub App is installed on, and
 // their open pull requests, each with its newest review. Asked again every half minute, since pull
 // requests change on GitHub's own time, and every few seconds while a review runs. `available` is
 // false on a server older than reviews, and `canRun` on one that lists pull requests but can't
@@ -26,8 +26,6 @@ export function useReviews() {
     available,
     canRun,
     view: status.data ?? null,
-    connect: (appId: string, privateKey: string) => runtime.run(environmentId, (client) => client["reviews.connect"]({ appId, privateKey })).then(show),
-    disconnect: () => runtime.run(environmentId, (client) => client["reviews.disconnect"]()).then(show),
     setRepo: (repo: string, review: boolean) => runtime.run(environmentId, (client) => client["reviews.setRepo"]({ repo, review })).then(show),
     setModel: (model: string) => runtime.run(environmentId, (client) => client["reviews.setModel"]({ model })).then(show),
     start: (repo: string, number: number) => runtime.run(environmentId, (client) => client["reviews.start"]({ repo, number })).then(refresh),

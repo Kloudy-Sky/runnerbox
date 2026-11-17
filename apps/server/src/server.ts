@@ -15,6 +15,8 @@ import * as ListeningPorts from "./config/ListeningPorts.ts";
 import * as LocalEndpoint from "./config/LocalEndpoint.ts";
 import * as ServerPaths from "./config/ServerPaths.ts";
 import * as EnvironmentIdentity from "./environment/EnvironmentIdentity.ts";
+import * as GitHub from "./github/GitHub.ts";
+import * as GitHubSignIn from "./github/GitHubSignIn.ts";
 import * as JobHistory from "./history/JobHistory.ts";
 import * as StateLogs from "./history/StateLogs.ts";
 import * as ConnectRoutes from "./http/connectRoutes.ts";
@@ -35,7 +37,6 @@ import type { CodexProviderAdapter, ProviderAdapter } from "./threads/provider/P
 import * as Monitors from "./monitors/Monitors.ts";
 import * as Proposals from "./proposals/Proposals.ts";
 import * as Reproduces from "./reproduce/Reproduces.ts";
-import * as GitHubApp from "./reviews/GitHubApp.ts";
 import * as ReviewRuns from "./reviews/ReviewRuns.ts";
 import * as Reviews from "./reviews/Reviews.ts";
 import * as ReviewStore from "./reviews/ReviewStore.ts";
@@ -92,7 +93,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHubApp.layer), Layer.provideMerge(ReviewStore.layer)))),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, LauncherLogs.layer, Inbox.layer, RunnersExplained.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer), Layer.provideMerge(ReviewStore.layer)))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer)),
     Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),

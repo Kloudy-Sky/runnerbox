@@ -12,6 +12,7 @@ import * as RunnersExplained from "../runners/RunnersExplained.ts";
 import * as RunnerState from "../runners/RunnerState.ts";
 import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
+import * as GitHub from "../github/GitHub.ts";
 import * as ReviewRuns from "../reviews/ReviewRuns.ts";
 import * as Reviews from "../reviews/Reviews.ts";
 import * as ReviewWatch from "../reviews/ReviewWatch.ts";
@@ -43,6 +44,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const monitors = yield* Monitors.Monitors;
       // The same scopes the server checks on monitors.save, so the switch is never offered when saving would be refused.
       const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
+      const github = yield* GitHub.GitHub;
       const reviews = yield* Reviews.Reviews;
       const reviewRuns = yield* ReviewRuns.ReviewRuns;
       const reviewWatch = yield* ReviewWatch.ReviewWatch;
@@ -114,8 +116,10 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "monitors.save": (settings) => monitors.save(settings),
         "monitors.markRead": ({ itemId }) => monitors.markRead(itemId),
         "reviews.status": () => reviewWatch.status(mayReview),
-        "reviews.connect": ({ appId, privateKey }) => reviews.connect(appId, privateKey, mayReview),
-        "reviews.disconnect": () => reviews.disconnect(mayReview),
+        "github.status": () => github.status(mayReview),
+        "github.signIn": () => github.signIn(mayReview),
+        "github.cancelSignIn": () => github.cancelSignIn(mayReview),
+        "github.signOut": () => github.signOut(mayReview),
         "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review, mayReview),
         "reviews.setModel": ({ model }) => reviews.setModel(model, mayReview),
         "reviews.read": ({ repo, number }) => reviewRuns.read(repo, number, mayReview.review),
