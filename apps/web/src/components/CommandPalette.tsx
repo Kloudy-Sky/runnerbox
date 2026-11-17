@@ -33,7 +33,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         label: item.title,
         detail: item.group === "needs_you" ? "needs you" : "nothing to do",
         icon: CircleDot,
-        go: () => void navigate({ to: "/item/$itemId", params: { itemId: item.id }, search: keep }),
+        go: () => void navigate({ to: "/inbox/$itemId", params: { itemId: item.id }, search: keep }),
       })),
     },
     {
