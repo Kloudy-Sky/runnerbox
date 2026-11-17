@@ -60,6 +60,8 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
   const answered = shown.flatMap((machine) => (machine.install ? [{ ...machine, install: machine.install }] : []));
   // Ages on the page are measured from the newest answer, so it renders the same from the same data.
   const now = Math.max(0, ...answered.map((machine) => machine.now));
+  // Machines, not installs: one machine can run several.
+  const reporting = new Set(answered.map((machine) => machine.environmentId)).size;
   const tiles = answered.filter((machine) => !machine.install.stale).flatMap((machine) => machine.install.runners);
   const running = tiles.filter((tile) => tile.state === "running").length;
   const shownQueues = [...new Set(shown.map((machine) => machine.environmentId))].flatMap((environmentId) => {
@@ -97,7 +99,7 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
         ) : null}
         {tiles.length > 0 ? (
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-            <Fact label="Working" value={`${running} of ${tiles.length}`} detail={several ? `runners on ${answered.length} machines` : "runners"} />
+            <Fact label="Working" value={`${running} of ${tiles.length}`} detail={reporting > 1 ? `runners on ${reporting} machines` : "runners"} />
             {shownQueues.length > 0 ? <Fact label="Waiting" value={String(waiting.length)} detail={waiting[0] ? `the longest for ${formatAge(waiting[0].job.since, now)}` : "for a runner"} /> : null}
           </dl>
         ) : null}

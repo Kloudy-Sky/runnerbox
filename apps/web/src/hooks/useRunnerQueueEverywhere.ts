@@ -15,8 +15,8 @@ const hasQueue = (environmentId: string, since: number) => {
 
 // The jobs GitHub has queued for each saved machine's runners, pushed by its server, keyed by the
 // machine's environment id. Watching is what makes a server ask GitHub, so only a view that shows
-// them should call this. A machine appears with its first push; one too old to have the queue
-// never does.
+// them should call this. A machine appears with its first push and leaves while it's disconnected;
+// one too old to have the queue never appears.
 export function useRunnerQueueEverywhere() {
   const environments = useStore(runtime.store, (state) => state.environments);
   const connections = useStore(runtime.store, (state) => state.connections);
@@ -48,15 +48,16 @@ export function useRunnerQueueEverywhere() {
       for (const stop of stops) stop();
     };
   }, [followable]);
-  // A machine removed from the saved list drops out, even though its last push is still held.
+  // Only connected machines count: a disconnected one's last push would keep a job it can no longer
+  // see as waiting. A machine removed from the saved list drops out the same way.
   return useMemo(
     () =>
       new Map(
         environments.flatMap((environment) => {
           const queue = byMachine.get(environment.environmentId);
-          return queue ? [[environment.environmentId, queue] as const] : [];
+          return queue && connections[environment.environmentId]?.status === "connected" ? [[environment.environmentId, queue] as const] : [];
         }),
       ),
-    [environments, byMachine],
+    [environments, connections, byMachine],
   );
 }
