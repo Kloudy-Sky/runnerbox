@@ -17,9 +17,3 @@ export function useRunnerState() {
   }, [environmentId, connected]);
   return installs && installs.environmentId === environmentId ? installs.value : undefined;
 }
-
-// Slots with a runner online, out of all slots of running installs.
-export function listening(installs: ReadonlyArray<InstallState>) {
-  const slots = installs.filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots));
-  return { online: slots.filter((slot) => slot.phase === "registered" || slot.phase === "busy").length, total: slots.length };
-}

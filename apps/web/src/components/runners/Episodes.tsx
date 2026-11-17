@@ -5,20 +5,27 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collaps
 
 const SHOWN_ROWS = 10;
 
+// One episode with the machine it happened on, when the page shows several, and the moment that
+// machine's server wrote it, which its ages are measured from.
+export type MachineEpisode = { readonly episode: Episode; readonly machine: string | null; readonly now: number };
+
 // What happened, newest first: one sentence for each stretch of related records, opening to the
 // records themselves, where runner IDs and exit codes live.
-export function Episodes({ episodes, now }: { episodes: ReadonlyArray<Episode>; now: number }) {
+export function Episodes({ episodes }: { episodes: ReadonlyArray<MachineEpisode> }) {
   if (episodes.length === 0) return <p className="text-muted-foreground">Nothing recorded in this range.</p>;
   return (
     <div className="flex flex-col gap-1.5">
-      {episodes.map((episode) => {
+      {episodes.map(({ episode, machine, now }) => {
         const more = episode.rows.length - SHOWN_ROWS + episode.more;
         return (
-          <Collapsible key={episode.id}>
+          <Collapsible key={`${machine}-${episode.id}`}>
             <CollapsibleTrigger className="group/episode grid w-full grid-cols-[1rem_4.25rem_minmax(0,1fr)] items-start text-left">
               <ChevronRight className="mt-0.5 size-3.5 text-muted-foreground transition-transform duration-150 group-data-panel-open/episode:rotate-90" />
               <span className="whitespace-nowrap text-muted-foreground tabular-nums">{formatAge(episode.endedAt, now)} ago</span>
-              <span className={episode.bad ? "text-destructive" : undefined}>{episode.sentence}</span>
+              <span className={episode.bad ? "text-destructive" : undefined}>
+                {machine ? <span className="text-muted-foreground">{machine} · </span> : null}
+                {episode.sentence}
+              </span>
             </CollapsibleTrigger>
             <CollapsiblePanel>
               <div className="overflow-x-auto pt-1 pb-2 pl-[5.25rem]">
