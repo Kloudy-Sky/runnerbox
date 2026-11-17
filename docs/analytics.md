@@ -10,6 +10,7 @@ Everything runnerbox records stays on the host, in `~/.local/state/runnerbox/` (
 | `<install>/samples.ndjson` | `up`, every minute | The host, the VM and every container in the VM |
 | `<install>/containers.ndjson` | `up`, every 15 seconds while the install's job containers exist | Every container in the VM, without the host or VM |
 | `<install>/events.ndjson` | `up` | One finished thing `up` did |
+| `<install>/stderr/<kind>-<slot>` | `up`, while a runner runs | Not a log: the runner command's stderr, copied to `up`'s own stderr and removed when the runner ends. Emptied past 10 MB, checked every 15 seconds |
 | `<install>/state.json` | `up`, as things change and every 15 seconds | Not a log: what each slot is doing now |
 | `.server/` | `runnerbox serve` | Not analytics: the server's environment ID and key, and `auth.json` with pairing codes and sessions, stored as hashes |
 
@@ -32,7 +33,7 @@ A field that couldn't be read is absent, never `0`. A missing `host` means `/pro
 ## Events
 
 Every event has `time`, when it was written, and `startedAt` and `durationMs`. Events from a runner kind carry its `runnerType`, the kind's `name`, and their `slot` counts within that kind.
-- `runner`: one runner, from registration until its container ended. `exitCode` is the container's, or `null` if SSH failed. `released` is `"memory"` or `"image"` when the slot removed it unused, because memory dropped or a new image was ready, so its time was waiting, not work. Otherwise it's `false`. A runner's time includes waiting for a job, so match it to GitHub's job record for run time. `limits` has the kind's container `memoryMiB` and `cpus` when the runner ran, since an approved change can alter them later. Host kinds and older lines have none.
+- `runner`: one runner, from registration until its container ended. `exitCode` is the container's, or `null` if SSH failed. `released` is `"memory"` or `"image"` when the slot removed it unused, because memory dropped or a new image was ready, so its time was waiting, not work. Otherwise it's `false`. A runner's time includes waiting for a job, so match it to GitHub's job record for run time. `limits` has the kind's container `memoryMiB` and `cpus` when the runner ran, since an approved change can alter them later. Host kinds and older lines have none. `lastLine` is set when the runner ended non-zero within a minute without being released, so it never took a job: the last line its command printed to stderr, read from its `stderr` file, such as `docker: Cannot connect to the Docker daemon`, with escape codes and control characters removed, Docker's help hint skipped, and cut to 200 characters. It's the runner's own output, so a client shows it as untrusted text. Older lines have none.
 - `memory_wait`: a slot waiting for `memoryFloor`, or for slots that started waiting before it, before registering.
 - `image_build`: a build of a project image, with `tag` and `ok`.
 
