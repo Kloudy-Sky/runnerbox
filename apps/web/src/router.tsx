@@ -1,8 +1,7 @@
 import { createHashHistory, createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 import { AppShell } from "./components/AppShell.tsx";
 import { parseSearch } from "./lib/search.ts";
-import { HomePage } from "./pages/HomePage.tsx";
-import { ItemPage } from "./pages/ItemPage.tsx";
+import { InboxPage } from "./pages/InboxPage.tsx";
 import { PullRequestsPage } from "./pages/PullRequestsPage.tsx";
 import { RunnersPage } from "./pages/RunnersPage.tsx";
 import { RunPage } from "./pages/RunPage.tsx";
@@ -35,8 +34,10 @@ const rootRoute = createRootRoute({ validateSearch: parseSearch, component: AppS
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsPage });
 
 const routeTree = rootRoute.addChildren([
-  createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/item/$itemId", component: ItemPage }),
+  // The Inbox opens the app until Overview takes "/".
+  createRoute({ getParentRoute: () => rootRoute, path: "/", component: InboxPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/inbox", component: InboxPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/inbox/$itemId", component: InboxPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", component: RunsPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs/$jobId", component: RunPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/pulls", component: PullRequestsPage }),
@@ -59,7 +60,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   // Earlier names, so saved links, and links in threads, still land somewhere.
   createRoute({ getParentRoute: () => rootRoute, path: "/now", beforeLoad: () => { throw redirect({ to: "/runners", search: true }); } }),
-  createRoute({ getParentRoute: () => rootRoute, path: "/inbox", beforeLoad: () => { throw redirect({ to: "/", search: true }); } }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/item/$itemId", beforeLoad: ({ params }) => { throw redirect({ to: "/inbox/$itemId", params, search: true }); } }),
   createRoute({ getParentRoute: () => rootRoute, path: "/analytics", beforeLoad: () => { throw redirect({ to: "/speed", search: true }); } }),
   createRoute({ getParentRoute: () => rootRoute, path: "/connect", beforeLoad: () => { throw redirect({ to: "/settings/connections", search: true }); } }),
   createRoute({ getParentRoute: () => rootRoute, path: "/reviews", beforeLoad: () => { throw redirect({ to: "/pulls", search: true }); } }),

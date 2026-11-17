@@ -1,7 +1,9 @@
-import { type Check, inboxItems, type PullRequest } from "@runnerbox/contracts";
+import type { Check, PullRequest } from "@runnerbox/contracts";
 import { Link } from "@tanstack/react-router";
-import { useInbox } from "../../hooks/useInbox.ts";
+import { useRange } from "../../hooks/useRange.ts";
+import { useRpcQueryEverywhere } from "../../hooks/useRpcQueryEverywhere.ts";
 import { checkTime } from "../../lib/checkWords.ts";
+import { inboxRows } from "../../lib/inboxRows.ts";
 import { machineFailureFor } from "../../lib/machineFailure.ts";
 import type { RootSearch } from "../../lib/search.ts";
 import { SectionLabel } from "./SectionLabel.tsx";
@@ -19,10 +21,12 @@ function said(check: Check) {
 }
 
 // An opened pull request's checks by name, with their state and time, and, for one that failed
-// because of a machine, the inbox item that says so.
+// because of a machine, the inbox item that says so, from the Inbox's list across every machine.
+// Each machine's copy is looked in, since only one may hold an attempt on the head commit.
 export function PullChecks({ pull }: { pull: PullRequest }) {
-  const inbox = useInbox().data;
-  const all = inbox === undefined ? [] : inboxItems(inbox);
+  const { days } = useRange();
+  const inboxes = useRpcQueryEverywhere(["inbox", days], (client) => client["inbox.list"]({ days }));
+  const all = inboxRows(inboxes.map((answer) => ({ environmentId: answer.environment.environmentId, inbox: answer.data }))).all.flatMap((row) => row.copies.map((copy) => copy.item));
   const checks = pull.checks ?? [];
   const failures = checks.flatMap((check) => {
     const item = machineFailureFor(pull, check, all);
@@ -47,7 +51,7 @@ export function PullChecks({ pull }: { pull: PullRequest }) {
       {failures.map((item) => (
         <p key={item.id} className="pt-1 text-muted-foreground">
           {item.title}.{" "}
-          <Link to="/item/$itemId" params={{ itemId: item.id }} search={keepSearch} className="underline underline-offset-2 hover:text-foreground">
+          <Link to="/inbox/$itemId" params={{ itemId: item.id }} search={keepSearch} className="underline underline-offset-2 hover:text-foreground">
             See it in Inbox
           </Link>
         </p>

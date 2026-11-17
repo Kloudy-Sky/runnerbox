@@ -6,6 +6,9 @@ import type { Inbox, InboxItem } from "@runnerbox/contracts";
 // meaning something else there.
 const SHARED_KINDS: ReadonlySet<InboxItem["kind"]> = new Set(["failure", "slow_job"]);
 
+// What an item is one of across machines: its id for a shared kind, else the machine and its id.
+export const mergeKey = (environmentId: string, item: InboxItem) => (SHARED_KINDS.has(item.kind) ? item.id : `${environmentId}\0${item.id}`);
+
 // What needs the owner across every machine. A shared item counts once, as the machine that saw it
 // last tells it; a machine's own item always counts. A machine with no answer yet, or offline, adds
 // nothing and hides nothing.
@@ -13,7 +16,7 @@ export function needsYouEverywhere(answers: ReadonlyArray<{ readonly environment
   const byKey = new Map<string, InboxItem>();
   for (const { environmentId, inbox } of answers) {
     for (const item of inbox?.items ?? []) {
-      const key = SHARED_KINDS.has(item.kind) ? item.id : `${environmentId}\0${item.id}`;
+      const key = mergeKey(environmentId, item);
       const held = byKey.get(key);
       if (!held || Date.parse(item.at) > Date.parse(held.at)) byKey.set(key, item);
     }

@@ -1,3 +1,4 @@
+import { isInboxItemHidden } from "@runnerbox/contracts";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Gauge, GitPullRequest, Inbox, ListTree, Server, Settings } from "lucide-react";
 import type * as React from "react";
@@ -16,14 +17,14 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarMenu, Side
 
 const keep = (previous: RootSearch) => previous;
 
-type Page = { readonly to: "/" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
+type Page = { readonly to: "/inbox" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings"; readonly label: string; readonly icon: React.ComponentType; readonly count?: string | null; readonly alert?: boolean };
 
 // One row per page, as in Codex: an icon, its name and a count. The pages' own lists live on the
-// pages. Collapsed to its rail, a row keeps its icon, a tooltip and, for Needs you, a dot.
+// pages. Collapsed to its rail, a row keeps its icon, a tooltip and, for Inbox, a dot.
 function PageRow({ page, path }: { page: Page; path: string }) {
   const Icon = page.icon;
-  // An inbox item opens from Needs you, so Needs you stays the open page.
-  const active = page.to === "/" ? path === "/" || path.startsWith("/item/") : path === page.to || path.startsWith(`${page.to}/`);
+  // The Inbox also opens the app, at "/".
+  const active = path === page.to || path.startsWith(`${page.to}/`) || (page.to === "/inbox" && path === "/");
   return (
     <SidebarMenuItem>
       <SidebarMenuButton isActive={active} tooltip={page.label} render={<Link to={page.to} search={keep} />}>
@@ -45,11 +46,11 @@ export function AppSidebar() {
   const machines = useRunnerStateEverywhere();
   const slots = [...machines.values()].flat().filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots));
   const busy = slots.filter((slot) => slot.phase === "busy").length;
-  const waiting = needsYouEverywhere(inboxes.map((answer) => ({ environmentId: answer.environment.environmentId, inbox: answer.data }))).length;
+  const waiting = needsYouEverywhere(inboxes.map((answer) => ({ environmentId: answer.environment.environmentId, inbox: answer.data }))).filter((item) => !isInboxItemHidden(item)).length;
   const { reviews } = useServerCapabilities();
 
   const pages: ReadonlyArray<Page> = [
-    { to: "/", label: "Needs you", icon: Inbox, count: waiting > 0 ? String(waiting) : null, alert: waiting > 0 },
+    { to: "/inbox", label: "Inbox", icon: Inbox, count: waiting > 0 ? String(waiting) : null, alert: waiting > 0 },
     { to: "/runners", label: "Runners", icon: Server, count: slots.length > 0 ? `${busy} of ${slots.length} busy` : null },
     { to: "/runs", label: "All runs", icon: ListTree },
     // Left out on a server older than reviews, which would have nothing to show.

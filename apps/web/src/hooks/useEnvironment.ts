@@ -1,12 +1,16 @@
+import { useContext } from "react";
 import { useStore } from "zustand";
 import { runtime } from "../runtime.ts";
+import { EnvironmentScope } from "../state/environmentScope.ts";
 import { usePreferences } from "../state/preferences.ts";
 
-// The environment this window shows: the one picked last, or the first saved one.
+// The environment this window shows: the one an EnvironmentScope above names, else the one picked
+// last, or the first saved one.
 export function useActiveEnvironment() {
   const environments = useStore(runtime.store, (state) => state.environments);
+  const scoped = useContext(EnvironmentScope);
   const activeId = usePreferences((state) => state.activeEnvironmentId);
-  const environment = environments.find((saved) => saved.environmentId === activeId) ?? environments[0];
+  const environment = environments.find((saved) => saved.environmentId === scoped) ?? environments.find((saved) => saved.environmentId === activeId) ?? environments[0];
   const connection = useStore(runtime.store, (state) => (environment ? state.connections[environment.environmentId] : undefined));
   return { environment, connection };
 }
