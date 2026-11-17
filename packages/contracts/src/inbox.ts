@@ -102,6 +102,8 @@ export const InboxItem = Schema.Struct({
   state: Schema.optionalKey(InboxItemState),
   // Only on items that need the owner. Older servers send none.
   cost: Schema.optionalKey(InboxCost),
+  // The open proposal a rule wrote for this item, which the owner can approve from it.
+  fix: Schema.optionalKey(Schema.Struct({ proposalId: Schema.String })),
 });
 export type InboxItem = typeof InboxItem.Type;
 

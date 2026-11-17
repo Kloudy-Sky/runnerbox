@@ -1,7 +1,8 @@
 import * as Schema from "effect/Schema";
 
-// A change to one install's numbers that the agent proposed and only the owner can approve: a
-// kind's slots, memory floors, and a kind's memory and CPU limits. `up` checks and applies it.
+// A change to one install's numbers that the agent or an inbox rule proposed and only the owner can
+// approve: a kind's slots, memory floors, and a kind's memory and CPU limits. `up` checks and
+// applies it.
 
 // The value a field held when proposed, and the one approved: a number, or a size such as 3600m.
 export const ChangeValue = Schema.Union([Schema.Number, Schema.String.check(Schema.isPattern(/^[0-9]+[bkmg]$/))]);
@@ -22,9 +23,11 @@ export const Proposal = Schema.Struct({
   id: Schema.String,
   install: Schema.String,
   changes: Schema.Array(ProposedChange),
-  // The agent's reason, shown as untrusted text.
+  // The agent's reason, shown as untrusted text, or the rule's sentence.
   reason: Schema.String,
   threadId: Schema.NullOr(Schema.String),
+  // Set when an inbox rule wrote it rather than the agent: the item it fixes. Its threadId is null.
+  rule: Schema.optionalKey(Schema.Struct({ itemId: Schema.String })),
   // The run the evidence came from, where a rerun happens.
   runUrl: Schema.NullOr(Schema.String),
   // Set on a revert: the applied proposal it undoes.

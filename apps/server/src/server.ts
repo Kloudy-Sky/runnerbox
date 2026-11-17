@@ -25,6 +25,7 @@ import * as Routes from "./http/routes.ts";
 import * as Mcp from "./mcp/route.ts";
 import * as Inbox from "./inbox/Inbox.ts";
 import * as InboxState from "./inbox/InboxState.ts";
+import * as RuleFixes from "./inbox/RuleFixes.ts";
 import * as Ws from "./rpc/ws.ts";
 import * as LauncherLogs from "./runners/LauncherLogs.ts";
 import * as QueueConfig from "./runners/QueueConfig.ts";
@@ -85,7 +86,7 @@ type ServicesInput = {
 
 // Every service, shared by the RPC socket and MCP. Built outside `HttpRouter.serve` so all routes
 // see the same instances.
-export const layerServices = (input: ServicesInput) => Layer.mergeAll(Monitors.layer, ReviewWatch.layer).pipe(Layer.provideMerge(layerCore(input)));
+export const layerServices = (input: ServicesInput) => Layer.mergeAll(Monitors.layer, ReviewWatch.layer, RuleFixes.layer).pipe(Layer.provideMerge(layerCore(input)));
 
 // Everything but the monitor, which sits on top so a test can run it on a fake clock.
 export const layerCore = (input: ServicesInput) =>
@@ -93,13 +94,15 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provideMerge(Layer.mergeAll(Threads.layer, Providers.layer, ReviewRuns.layer, (input.updates ?? releaseUpdates).supervision)),
     Layer.provideMerge(AccountStore.layer),
     Layer.provideMerge(Drivers.layer),
-    Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Proposals.layer, Attachments.layer, RunnerRestarts.layer).pipe(Layer.provideMerge(UpSocket.layer))),
+    Layer.provideMerge(Layer.mergeAll(Reproduces.layer, Attachments.layer, RunnerRestarts.layer)),
     Layer.provide(input.provider ?? ClaudeAdapter.layer),
     Layer.provide(input.codex ?? Layer.empty),
     Layer.provide(LocalEndpoint.layer(input.host)),
     // The inbox counts the open pull requests a failing check blocks, from the reviews' list.
     Layer.provideMerge(Inbox.layer.pipe(Layer.provideMerge(InboxState.layer))),
     Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provide(PullChecks.layer), Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
+    // Below the inbox, which shows the fix a rule proposed for an item.
+    Layer.provideMerge(Proposals.layer.pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer, ReviewStore.layer)),
     Layer.provideMerge(ToolReleases.layer.pipe(Layer.provideMerge(input.queue ?? QueueConfig.layer))),
     Layer.provideMerge(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(input.label))),
