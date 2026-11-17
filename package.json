@@ -13,6 +13,7 @@
     "test": "node --test \"src/**/*.test.ts\" \"scripts/**/*.test.ts\" && pnpm -r test",
     "typecheck": "tsc && pnpm -r typecheck",
     "leak-check": "node scripts/leak-check.ts",
+    "t3code-diff": "node scripts/t3code-diff.ts",
     "desktop:dist": "pnpm --filter @runnerbox/web build && pnpm --filter @runnerbox/desktop dist"
   },
   "dependencies": {
