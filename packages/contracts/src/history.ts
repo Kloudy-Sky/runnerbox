@@ -113,3 +113,23 @@ export const Overview = Schema.Struct({
   queueP50Ms: NullableNumber,
 });
 export type Overview = typeof Overview.Type;
+
+// One UTC date's totals over every repo with a job log, for the Overview's charts. A date with
+// nothing on it is all zeros, and its typical times are null, since nothing ran to have one.
+export const DayTotals = Schema.Struct({
+  // "2026-06-15"
+  day: Schema.String,
+  jobs: Schema.Number,
+  passed: Schema.Number,
+  failed: Schema.Number,
+  typicalWaitMs: NullableNumber,
+  ownMachinesMs: Schema.Number,
+  githubMachinesMs: Schema.Number,
+  // Reviews that finished, and how many of them found something to fix.
+  reviews: Schema.Number,
+  reviewsWithFindings: Schema.Number,
+  typicalReviewMs: NullableNumber,
+  // What every review started that day cost, including ones that failed or were stopped.
+  reviewCostUsd: Schema.Number,
+});
+export type DayTotals = typeof DayTotals.Type;

@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { Review, ReviewError } from "@runnerbox/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -22,6 +22,9 @@ export class ReviewStore extends Context.Service<
   ReviewStore,
   {
     readonly list: (repo: string, number: number) => Effect.Effect<ReadonlyArray<Review>, ReviewError>;
+    // Every review kept, of every pull request, for totals across them. A pull request whose file
+    // won't decode is left out, so one bad file doesn't take the totals down; reading it says why.
+    readonly all: Effect.Effect<ReadonlyArray<Review>, ReviewError>;
     // Adds the review, or replaces the one with its ID.
     readonly put: (review: Review) => Effect.Effect<void, ReviewError>;
     // Marks a review as one a fiber in this process is working on, until the effect it wraps ends.
@@ -55,6 +58,20 @@ const make = Effect.gen(function* () {
 
   const list = (repo: string, number: number) => read(repo, number).pipe(Effect.map((reviews) => reviews.map(settled)));
 
+  // A pull request's file as `pathOf` names it, relative to the reviews directory. Anything else there is skipped.
+  const pullOf = (path: string) => {
+    const [owner, name, file, ...rest] = path.split(sep);
+    const number = file?.match(/^(\d+)\.json$/)?.[1];
+    return owner && name && number && rest.length === 0 ? [{ repo: `${owner}/${name}`, number: Number(number) }] : [];
+  };
+  const all = fs.readDirectory(join(serverDir, "reviews"), { recursive: true }).pipe(
+    Effect.catchTag("PlatformError", (error) => (error.reason._tag === "NotFound" ? Effect.succeed<Array<string>>([]) : Effect.fail(error))),
+    Effect.mapError(unreadable),
+    Effect.map((paths) => paths.flatMap(pullOf)),
+    Effect.flatMap((pulls) => Effect.forEach(pulls, ({ repo, number }) => list(repo, number).pipe(Effect.orElseSucceed((): ReadonlyArray<Review> => [])))),
+    Effect.map((lists) => lists.flat()),
+  );
+
   const put = (review: Review) =>
     lock.withPermits(1)(
       Effect.gen(function* () {
@@ -74,7 +91,7 @@ const make = Effect.gen(function* () {
       () => Effect.sync(() => working.delete(id)),
     );
 
-  return ReviewStore.of({ list, put, live });
+  return ReviewStore.of({ list, all, put, live });
 });
 
 export const layer = Layer.effect(ReviewStore, make);
