@@ -350,3 +350,11 @@ test("a check failing on an open pull request's head commit says it blocks it", 
   assert.deepEqual(cost([sha, "d".repeat(40)]), { level: "blocking", text: "Blocking 1 pull request" });
   assert.deepEqual(cost(["d".repeat(40)]), { level: "nothing_yet", text: "Nothing yet" });
 });
+
+test("a machine failure on two machines names both, since each needs the change", () => {
+  const events: LauncherEvent[] = ["a", "b"].map((install) => ({ install, event: "runner", slot: 1, runner: `${install}-1`, startedAt: iso(NOW), durationMs: 1, exitCode: 137, released: false }));
+  const jobs = [job({ runId: 1, conclusion: "failure", runner: "a-1" }), job({ runId: 2, conclusion: "failure", runner: "b-1", at: NOW - minutes(30) })];
+  const [item] = deriveInbox(input({ jobs, events }));
+  assert.equal(item!.title, "The ci / test check keeps failing because a and b run out of memory");
+  assert.equal(item!.action, "Run fewer jobs at once on a and b, so each one has the memory it needs.");
+});

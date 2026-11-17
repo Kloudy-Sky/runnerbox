@@ -55,7 +55,8 @@ export class Reviews extends Context.Service<
     readonly open: Effect.Effect<{ readonly pulls: ReadonlyArray<ListedPull>; readonly since: Readonly<Record<string, string>> }, ReviewError>;
     // The head commit of each open pull request, by repository with reviews on, from the same look
     // the view uses, without reviews or checks. Null without the sign-in or when the look missed a
-    // repository. For the inbox, which counts the pull requests a failing check blocks.
+    // repository, and a repository whose list may be cut short is left out. For the inbox, which
+    // counts the pull requests a failing check blocks.
     readonly heads: Effect.Effect<ReadonlyMap<string, ReadonlyArray<string>> | null, ReviewError>;
   }
 >()("runnerbox/server/reviews/Reviews") {}
@@ -197,7 +198,10 @@ const make = Effect.gen(function* () {
     const on = new Set((yield* read).repos);
     const reviewed = reached.repos.filter((repo) => on.has(repo));
     const { pulls, problem } = yield* look(reviewed, reached.token);
-    return problem === null ? new Map(reviewed.map((repo) => [repo, pulls.filter((pull) => pull.repo === repo).map((pull) => pull.headSha)])) : null;
+    if (problem !== null) return null;
+    // A repository with a full page may have more open than were listed, so it isn't counted.
+    const listedOn = reviewed.map((repo) => [repo, pulls.filter((pull) => pull.repo === repo).map((pull) => pull.headSha)] as const);
+    return new Map(listedOn.filter(([, heads]) => heads.length < PULLS_PER_REPO));
   });
 
   return Reviews.of({ status, setRepo, setModel, settings, open, heads });
