@@ -1,6 +1,6 @@
 import { inboxItems } from "@runnerbox/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { CircleDot, FileText, Gauge, GitPullRequest, House, ListTree, Server, Settings } from "lucide-react";
+import { CircleDot, FileText, Gauge, GitPullRequest, Inbox, LayoutDashboard, ListTree, Server, Settings } from "lucide-react";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
@@ -10,7 +10,7 @@ import type { RootSearch } from "../lib/search.ts";
 import { AutocompleteEmpty } from "./ui/autocomplete.tsx";
 import { Command, CommandCollection, CommandDialog, CommandDialogPopup, CommandGroup, CommandGroupLabel, CommandInput, CommandItem, CommandList } from "./ui/command.tsx";
 
-type Entry = { id: string; label: string; detail: string; icon: typeof House; go: () => void };
+type Entry = { id: string; label: string; detail: string; icon: typeof LayoutDashboard; go: () => void };
 
 // T3 Code's command palette: jump to a page, an inbox item or a recent run by typing part of it.
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -20,11 +20,11 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { repo } = useRepo();
   const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }));
   const keep = (previous: RootSearch) => previous;
-  const page = (id: string, label: string, to: "/" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings", icon: typeof House): Entry => ({ id, label, detail: "", icon, go: () => void navigate({ to, search: keep }) });
+  const page = (id: string, label: string, to: "/" | "/inbox" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings", icon: typeof LayoutDashboard): Entry => ({ id, label, detail: "", icon, go: () => void navigate({ to, search: keep }) });
   const groups = [
     {
       value: "Pages",
-      items: [page("home", "Home", "/", House), page("runs", "All runs", "/runs", ListTree), page("pulls", "Pull requests", "/pulls", GitPullRequest), page("speed", "Speed and cost", "/speed", Gauge), page("runners", "Runners", "/runners", Server), page("settings", "Settings", "/settings", Settings)],
+      items: [page("overview", "Overview", "/", LayoutDashboard), page("inbox", "Inbox", "/inbox", Inbox), page("runs", "All runs", "/runs", ListTree), page("pulls", "Pull requests", "/pulls", GitPullRequest), page("speed", "Speed and cost", "/speed", Gauge), page("runners", "Runners", "/runners", Server), page("settings", "Settings", "/settings", Settings)],
     },
     {
       value: "Inbox",

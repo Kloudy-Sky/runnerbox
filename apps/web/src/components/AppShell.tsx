@@ -60,7 +60,8 @@ export function AppShell() {
                   <TooltipPopup side="bottom">Toggle sidebar (⌘B)</TooltipPopup>
                 </Tooltip>
                 <div className="ml-auto flex items-center gap-1">
-                  <RangePicker />
+                  {/* Overview has its own range beside its machine filter. */}
+                  {path !== "/" ? <RangePicker /> : null}
                   <Button variant="ghost-muted" size="xs" onClick={() => setCommandOpen(true)} aria-label="Jump to a page, item or run" title="Jump to a page, item or run">
                     <Kbd>⌘K</Kbd>
                   </Button>

@@ -2,6 +2,7 @@ import { createHashHistory, createRootRoute, createRoute, createRouter, redirect
 import { AppShell } from "./components/AppShell.tsx";
 import { parseSearch } from "./lib/search.ts";
 import { InboxPage } from "./pages/InboxPage.tsx";
+import { OverviewPage } from "./pages/OverviewPage.tsx";
 import { PullRequestsPage } from "./pages/PullRequestsPage.tsx";
 import { RunnersPage } from "./pages/RunnersPage.tsx";
 import { RunPage } from "./pages/RunPage.tsx";
@@ -34,8 +35,8 @@ const rootRoute = createRootRoute({ validateSearch: parseSearch, component: AppS
 const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/settings", component: SettingsPage });
 
 const routeTree = rootRoute.addChildren([
-  // The Inbox opens the app until Overview takes "/".
-  createRoute({ getParentRoute: () => rootRoute, path: "/", component: InboxPage }),
+  // Overview opens the app.
+  createRoute({ getParentRoute: () => rootRoute, path: "/", component: OverviewPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/inbox", component: InboxPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/inbox/$itemId", component: InboxPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/runs", component: RunsPage }),
