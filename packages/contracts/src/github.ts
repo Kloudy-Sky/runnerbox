@@ -43,7 +43,7 @@ export const GitHubStatus = Schema.Struct({
 export type GitHubStatus = typeof GitHubStatus.Type;
 
 export class GitHubError extends Schema.TaggedError<GitHubError>()("GitHubError", {
-  reason: Schema.Literals(["unreadable", "not_configured", "github_unreachable"]),
+  reason: Schema.Literals(["unreadable", "not_configured", "github_unreachable", "device_flow_disabled"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -53,6 +53,8 @@ export class GitHubError extends Schema.TaggedError<GitHubError>()("GitHubError"
         return "This server has no GitHub App to sign in through.";
       case "github_unreachable":
         return "The server couldn't get an answer from GitHub. Try again in a minute.";
+      case "device_flow_disabled":
+        return "GitHub won't sign in through this App until Device Flow is on, under the App's General settings on GitHub.";
     }
   }
 }

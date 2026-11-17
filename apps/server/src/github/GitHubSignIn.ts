@@ -209,7 +209,10 @@ const make = Effect.gen(function* () {
   const begin = Effect.gen(function* () {
     if (app === null) return yield* new GitHubError({ reason: "not_configured" });
     yield* dropPending;
-    const reply = decodeDevice(yield* post("/login/device/code", { client_id: app.clientId }));
+    const answer = yield* post("/login/device/code", { client_id: app.clientId });
+    // The one refusal the owner can fix: the App's settings on GitHub have the device flow off.
+    if (Option.getOrUndefined(decodeGrant(answer))?.error === "device_flow_disabled") return yield* new GitHubError({ reason: "device_flow_disabled" });
+    const reply = decodeDevice(answer);
     // The address is shown as a link, so it's only taken when it's on the host that was asked.
     if (Option.isNone(reply) || !USER_CODE.test(reply.value.user_code) || !reply.value.verification_uri.startsWith(`${loginBase}/`)) return yield* new GitHubError({ reason: "github_unreachable" });
     const { device_code, user_code, verification_uri, expires_in, interval } = reply.value;

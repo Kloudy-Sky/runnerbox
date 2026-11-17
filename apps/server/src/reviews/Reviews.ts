@@ -37,7 +37,7 @@ type Looked = { readonly at: number; readonly repos: string; readonly pulls: Rea
 export type May = { readonly configure: boolean; readonly review: boolean };
 
 // A review can't go on without the sign-in, whatever kept it from being read.
-export const withoutGitHub = (error: GitHubError) => new ReviewError({ reason: error.reason === "not_configured" ? "not_connected" : error.reason });
+export const withoutGitHub = (error: GitHubError) => new ReviewError({ reason: error.reason === "unreadable" ? "unreadable" : error.reason === "github_unreachable" ? "github_unreachable" : "not_connected" });
 
 export class Reviews extends Context.Service<
   Reviews,
