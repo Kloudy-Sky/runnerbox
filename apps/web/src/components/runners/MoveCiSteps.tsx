@@ -53,7 +53,7 @@ export function MoveCiSteps({ repo }: { repo: CiRepo }) {
             <p className="text-muted-foreground">
               {patched.length === 1 ? "1 job" : `${patched.length} jobs`} in {files === 1 ? "1 file" : `${files} files`}. Each keeps its GitHub runner until the variable is set.
             </p>
-            <pre className="max-h-80 overflow-auto rounded-md bg-surface py-2 font-mono text-xs leading-relaxed">
+            <pre className="max-h-[28rem] overflow-auto rounded-md bg-surface py-2 font-mono text-xs leading-relaxed">
               {repo.patch
                 .trimEnd()
                 .split("\n")
