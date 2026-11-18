@@ -38,3 +38,18 @@ test("files a crash left empty are replaced, and the key then survives restarts,
     await rm(stateDir, { recursive: true, force: true });
   }
 });
+
+test("servers starting at once on a fresh machine all start, with one ID and one key", async () => {
+  for (let round = 0; round < 30; round++) {
+    const stateDir = await mkdtemp(join(tmpdir(), "runnerbox-identity-"));
+    try {
+      const started = await Promise.all(Array.from({ length: 4 }, () => start(stateDir)));
+      const identities = started.map((exit) => (exit._tag === "Success" ? exit.value.descriptor : null));
+      assert.ok(identities.every((identity) => identity !== null), "every server started");
+      assert.equal(new Set(identities.map((identity) => identity?.environmentId)).size, 1);
+      assert.equal(new Set(identities.map((identity) => identity?.publicKey)).size, 1);
+    } finally {
+      await rm(stateDir, { recursive: true, force: true });
+    }
+  }
+});
