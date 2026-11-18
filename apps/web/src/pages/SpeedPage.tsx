@@ -4,6 +4,7 @@ import { NoHistory } from "../components/NoHistory.tsx";
 import { PageHeader } from "../components/PageHeader.tsx";
 import { RepoPicker } from "../components/RepoPicker.tsx";
 import { AllNumbers } from "../components/speed/AllNumbers.tsx";
+import { Costs } from "../components/speed/Costs.tsx";
 import { Facts } from "../components/speed/Facts.tsx";
 import { HealthRows } from "../components/speed/HealthRows.tsx";
 import { JobPanel } from "../components/speed/JobPanel.tsx";
@@ -13,7 +14,7 @@ import { Section } from "../components/speed/Section.tsx";
 import { TimeByJob, trendKey } from "../components/speed/TimeByJob.tsx";
 import { WaitGrid } from "../components/speed/WaitGrid.tsx";
 import { waitGrid, waitSentence } from "../components/speed/waitsByHour.ts";
-import { hours } from "../components/speed/words.ts";
+import { hours, rangeWords } from "../components/speed/words.ts";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRange } from "../hooks/useRange.ts";
@@ -41,6 +42,8 @@ export function SpeedPage() {
   const [picked, setPicked] = useState<string | null>(null);
   const usage = useRpcQueryEverywhere(["kindUsage", days], (client) => client["history.kindUsage"]({ days }));
   const health = useRpcQueryEverywhere(["health", HEALTH_DAYS], (client) => client["runners.health"]({ days: HEALTH_DAYS }));
+  // Each machine runs its own reviews on its own Claude account, so their cost adds up across machines.
+  const totals = useRpcQueryEverywhere(["dailyTotals", days], (client) => client["history.dailyTotals"]({ days }));
   // Carries its repo, so a range change keeps it on screen while the next loads but another repo's
   // jobs never show under this repo's name.
   const trendsQuery = useRpcQuery(
@@ -74,7 +77,8 @@ export function SpeedPage() {
   }
   // One machine picked follows the active one, so the sidebar's switcher moves it too.
   const shown = (environmentId: string) => machine === ALL_MACHINES || environmentId === environment?.environmentId;
-  const reports = usage.flatMap((answer) => (answer.data && shown(answer.environment.environmentId) ? [answer.data] : []));
+  const answered = usage.flatMap((answer) => (answer.data && shown(answer.environment.environmentId) ? [{ environmentId: answer.environment.environmentId, label: answer.environment.label, report: answer.data }] : []));
+  const reports = answered.map((answer) => answer.report);
   const kinds = reports.flatMap((report) => report.kinds);
   const priced = reports.flatMap((report) => (report.totalCost ? [report.totalCost.usd] : []));
   const ownMs = kinds.reduce((total, kind) => total + kind.runnerMs, 0);
@@ -90,6 +94,14 @@ export function SpeedPage() {
   // Two machines serving the same label can name the same bottleneck, so each sentence shows once.
   const sentences = new Set([waitSentence(grid), ...kinds.flatMap((kind) => (kind.bottleneck ? [kind.bottleneck.text] : []))].filter((sentence) => sentence !== null));
   const summary = inbox.data?.summary;
+  // Runner time above is each picked machine's own; GitHub's time is only in job history, so the
+  // share compares the two sides of the same history rather than mixing the scopes.
+  const historyMs = summary ? summary.ownMachinesMs + summary.githubMachinesMs : 0;
+  const ownShare = summary && historyMs > 0 ? summary.ownMachinesMs / historyMs : null;
+  const reviewDays = totals.flatMap((answer) => (answer.data && shown(answer.environment.environmentId) ? answer.data : []));
+  const reviewCount = reviewDays.reduce((total, day) => total + day.reviews, 0);
+  const reviewUsd = reviewDays.reduce((total, day) => total + day.reviewCostUsd, 0);
+  const reviews = reviewCount > 0 || reviewUsd > 0 ? { reviews: reviewCount, usd: reviewUsd } : null;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pb-10">
       {header}
@@ -97,8 +109,8 @@ export function SpeedPage() {
         // While a new range loads, the last answer stays and dims after 150 ms, so a fast reload never shows.
         <div className={`flex flex-col gap-10 px-6 pt-2 text-[13px] transition-opacity ${reloading ? "opacity-40 delay-150" : ""}`}>
           <div className="flex flex-col gap-7">
-            <Savings usd={priced.length > 0 ? priced.reduce((total, usd) => total + usd, 0) : null} ownMs={ownMs} pricesReadOn={reports[0]?.pricesReadOn ?? null} days={days} />
-            <Facts ownMs={ownMs} githubMs={summary?.githubMachinesMs ?? null} typicalJobMs={overview.data?.p50Ms ?? null} typicalWaitMs={summary?.typicalWaitMs ?? null} />
+            <Savings usd={priced.length > 0 ? priced.reduce((total, usd) => total + usd, 0) : null} ownMs={ownMs} pricesReadOn={reports[0]?.pricesReadOn ?? null} days={days} reviewUsd={reviews?.usd ?? null} />
+            <Facts ownMs={ownMs} githubMs={summary?.githubMachinesMs ?? null} ownShare={ownShare} typicalJobMs={overview.data?.p50Ms ?? null} typicalWaitMs={summary?.typicalWaitMs ?? null} />
           </div>
           <Section title="Health, machine by machine" note={`last ${HEALTH_DAYS} days`}>
             <HealthRows
@@ -128,6 +140,11 @@ export function SpeedPage() {
               <p className="text-muted-foreground">{runs.isError ? "Couldn't read the job history." : "No jobs ran in this repository in this time."}</p>
             )}
           </Section>
+          {reports[0] && (priced.length > 0 || reviews) ? (
+            <Section title="What it costs" note={rangeWords(days)}>
+              <Costs machines={answered.map(({ report, ...machine }) => ({ ...machine, kinds: report.kinds }))} pricesReadOn={reports[0].pricesReadOn} reviews={reviews} />
+            </Section>
+          ) : null}
           <details>
             <summary className="cursor-default text-muted-foreground">All numbers</summary>
             <div className="pt-2">

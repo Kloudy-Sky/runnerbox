@@ -28,7 +28,8 @@ export function JobPanel({ trend, runs, repo, days }: { readonly trend: JobTrend
   const comparison = useRpcQuery(["stepComparison", repo, days, workflow, job], (client) =>
     client["history.stepComparison"]({ repo, days, by: "labels", job, ...(workflow ? { workflow } : {}) }),
   );
-  const column = comparison.data?.runnerTypes.includes(trend.runnerType) ? trend.runnerType : comparison.data?.runnerTypes[0];
+  // Only this runner's own steps: another runner's would show under this one's name.
+  const column = comparison.data?.runnerTypes.includes(trend.runnerType) ? trend.runnerType : undefined;
   const steps = (comparison.data?.steps ?? []).flatMap((step) => {
     const ms = column ? (step.p50MsByRunnerType[column] ?? null) : null;
     return ms ? [{ name: step.name, ms }] : [];
