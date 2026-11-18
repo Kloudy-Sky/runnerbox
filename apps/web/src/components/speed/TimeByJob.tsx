@@ -1,52 +1,60 @@
 import type { JobTrend } from "@runnerbox/contracts";
-import { formatDuration, jobName } from "../../lib/format.ts";
+import { jobName } from "../../lib/format.ts";
 import { cn } from "../../lib/utils.ts";
+import { hours } from "./words.ts";
 
 export const trendKey = (trend: JobTrend) => `${trend.workflow}\0${trend.job}\0${trend.runnerType}`;
 
-const th = "py-1.5 pr-4 font-normal text-muted-foreground";
+const ROW = "grid grid-cols-[minmax(0,1fr)_4rem_4rem] items-center gap-x-3 @lg:grid-cols-[minmax(0,13rem)_minmax(0,1fr)_4rem_4rem]";
 
-// Jobs ranked by the time they spent on runners, as bars, with their typical time and what it was
-// before when a job has become slower. Picking one opens its panel. A job on GitHub's machines says
-// so, since the same job can have a row on each. In a narrow column the bars go and the times stay.
+// How a job's typical time moved against the same stretch before the window, "+18%".
+function change(trend: JobTrend) {
+  if (trend.typicalMs === null || !trend.earlierTypicalMs) return null;
+  const share = Math.round(((trend.typicalMs - trend.earlierTypicalMs) / trend.earlierTypicalMs) * 100);
+  return `${share > 0 ? "+" : ""}${share}%`;
+}
+
+// Jobs ranked by the time they spent on runners, as bars, with how their typical time moved from
+// the period before. Picking one opens its steps. A job on GitHub's machines says so, since the
+// same job can have a row on each. In a narrow column the bars go and the hours stay.
 export function TimeByJob({ trends, picked, onPick }: { readonly trends: readonly JobTrend[]; readonly picked: string | null; readonly onPick: (key: string) => void }) {
   if (trends.length === 0) return <p className="text-muted-foreground">No jobs ran in this repository in this time.</p>;
   const most = Math.max(...trends.map((trend) => trend.runnerMs), 1);
   return (
-    <div className="@container">
-    <table className="w-full max-w-4xl border-collapse">
-      <thead className="text-left">
-        <tr>
-          <th className={th}>Job</th>
-          <th className={th}>Runs on</th>
-          <th className={`${th} @xl:w-1/3`}>Runner time</th>
-          <th className={`${th} text-right`}>Typical</th>
-          <th className={`${th} text-right`}>Ran</th>
-        </tr>
-      </thead>
-      <tbody>
-        {trends.map((trend) => (
-          <tr key={trendKey(trend)} onClick={() => onPick(trendKey(trend))} className={cn("cursor-default", picked === trendKey(trend) ? "bg-accent" : "hover:bg-surface")}>
-            <td className="py-1 pr-4 whitespace-nowrap">{jobName(trend)}</td>
-            <td className="py-1 pr-4 text-muted-foreground @xl:whitespace-nowrap">
-              {trend.runnerType}
-              {trend.hosted ? ", GitHub's" : ""}
-            </td>
-            <td className="py-1 pr-4">
-              <div className="flex items-center gap-2">
-                <div className="hidden h-2 rounded-xs bg-info @xl:block" style={{ width: `${(trend.runnerMs / most) * 100}%`, minWidth: 2 }} />
-                <span className="shrink-0 tabular-nums text-muted-foreground">{formatDuration(trend.runnerMs)}</span>
-              </div>
-            </td>
-            <td className="py-1 pr-4 text-right whitespace-nowrap tabular-nums">
-              {formatDuration(trend.typicalMs)}
-              {trend.slower ? <span className="text-warning">, was {formatDuration(trend.earlierTypicalMs)}</span> : null}
-            </td>
-            <td className="py-1 pr-4 text-right tabular-nums text-muted-foreground">{trend.runs}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="@container flex flex-col">
+      <div className={cn(ROW, "pb-1.5 text-xs text-muted-foreground")}>
+        <span>Job</span>
+        <span className="hidden @lg:block">Time on runners</span>
+        <span />
+        <span className="text-right" title="Typical time against the same stretch before">vs before</span>
+      </div>
+      {trends.map((trend) => {
+        const key = trendKey(trend);
+        const moved = change(trend);
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onPick(key)}
+            aria-pressed={picked === key}
+            className={cn(ROW, "-mx-2 rounded-sm px-2 py-1 text-left", picked === key ? "bg-accent" : "hover:bg-surface")}
+          >
+            <span className="min-w-0 truncate">
+              <span className="font-medium">{jobName(trend)}</span>
+              <span className="text-muted-foreground">
+                {" "}
+                {trend.runnerType}
+                {trend.hosted ? ", GitHub's" : ""}
+              </span>
+            </span>
+            <span className="hidden h-1.5 @lg:block">
+              <span className="block h-full rounded-r-xs bg-foreground/85" style={{ width: `${(trend.runnerMs / most) * 100}%`, minWidth: 2 }} />
+            </span>
+            <span className="text-right tabular-nums">{hours(trend.runnerMs)}</span>
+            <span className={cn("text-right tabular-nums", trend.slower ? "text-foreground" : "text-muted-foreground")}>{moved ?? "-"}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
