@@ -37,6 +37,7 @@ jobs:
     runs-on: [self-hosted, linux]
   windows:
     runs-on: windows-latest
+  flow: { runs-on: ubuntu-latest, steps: [{ run: docker pull postgres }] }
   called:
     uses: ./.github/workflows/release.yml`;
 
@@ -51,10 +52,11 @@ test("each job's runner is sorted into moves, patched or left, and Docker use is
     { job: "matrix", runsOn: "${{ matrix.os }}", state: "left", variable: null, docker: null },
     { job: "pinned", runsOn: "[self-hosted, linux]", state: "left", variable: null, docker: null },
     { job: "windows", runsOn: "windows-latest", state: "left", variable: null, docker: null },
+    { job: "flow", runsOn: "ubuntu-latest", state: "patched", variable: "LINUX_RUNNER", docker: "command" },
   ]);
 });
 
-test("the patch applies with git apply, changes only the runners, and keeps comments", async () => {
+test("the patch applies with git apply, changes only the runners, keeps comments, and quotes where YAML needs it", async () => {
   const scanned = workflowJobs(WORKFLOW);
   assert.ok(scanned);
   const path = ".github/workflows/ci.yml";
@@ -68,10 +70,15 @@ test("the patch applies with git apply, changes only the runners, and keeps comm
     const after = await readFile(join(dir, path), "utf8");
     assert.deepEqual(
       after.split("\n").filter((line, index) => line !== WORKFLOW.split("\n")[index]),
-      ["    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}  # keep this comment", "    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}", "    runs-on: ${{ vars.MAC_RUNNER || 'macos-15' }}"],
+      [
+        `    runs-on: "\${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}"  # keep this comment`,
+        "    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}",
+        "    runs-on: ${{ vars.MAC_RUNNER || 'macos-15' }}",
+        `  flow: { runs-on: "\${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}", steps: [{ run: docker pull postgres }] }`,
+      ],
     );
     // The patched file reads back as every job now moving, except the ones left alone.
-    assert.deepEqual(workflowJobs(after)?.jobs.map((job) => job.state), ["moves", "moves", "moves", "moves", "left", "left", "left"]);
+    assert.deepEqual(workflowJobs(after)?.jobs.map((job) => job.state), ["moves", "moves", "moves", "moves", "left", "left", "left", "moves"]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

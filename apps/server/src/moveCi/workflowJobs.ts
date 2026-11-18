@@ -16,7 +16,8 @@ const HOSTED: ReadonlyArray<readonly [RegExp, RunnerVariable]> = [
   [/^macos-[\w.-]+$/, "MAC_RUNNER"],
 ];
 const DOCKER_ACTION = /^docker(:\/\/|\/)/;
-const DOCKER_COMMAND = /\bdocker(\s+(build|buildx|compose|run)\b|-compose\b)/;
+// Any `docker` or `docker-compose` subcommand: a job that pulls, logs in or pushes needs a daemon as much as one that builds.
+const DOCKER_COMMAND = /\bdocker(-compose)?\s+[a-z]/;
 const MAX_SHOWN = 120;
 
 // The repository's own text, shown as one plain line.
@@ -67,8 +68,11 @@ export function workflowJobs(text: string): WorkflowJobs | null {
       continue;
     }
     const variable = hosted[1];
+    const expression = `\${{ vars.${variable} || '${label}' }}`;
+    // Inside a flow mapping, `{`, `}` and `,` end a plain value, so it's quoted there, and wherever the label already was.
+    const quoted = value.flow === true || node.type === "QUOTE_DOUBLE" || node.type === "QUOTE_SINGLE";
     found.push({ job, runsOn: written, state: "patched", variable, docker });
-    edits.push({ from: range[0], to: range[1], text: `\${{ vars.${variable} || '${label}' }}` });
+    edits.push({ from: range[0], to: range[1], text: quoted ? `"${expression}"` : expression });
   }
   return { jobs: found, edits };
 }

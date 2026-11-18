@@ -15,7 +15,9 @@ import { applyEdits, workflowJobs } from "./workflowJobs.ts";
 // Every repository the App is installed on, read for Move CI: the workflow files on its default
 // branch, through the Contents read the App has, each job's runner, and the patch for the jobs that
 // don't read a runner variable yet. GitHub is asked at most once a minute, with the last ETag for
-// each path, so files that haven't changed cost nothing against the owner's budget.
+// each path, so files that haven't changed cost nothing against the owner's budget. A 404 has no
+// ETag, so a repository without workflows is believed for ten minutes before it's asked again, and
+// once GitHub says to wait, nothing is asked until then and the last rows known stand in.
 
 const decodeListing = Schema.decodeUnknownOption(Schema.Array(Schema.Struct({ type: Schema.String, path: Schema.String })));
 const decodeFile = Schema.decodeUnknownOption(Schema.Struct({ encoding: Schema.String, content: Schema.String }));
@@ -24,6 +26,7 @@ const decodeFile = Schema.decodeUnknownOption(Schema.Struct({ encoding: Schema.S
 const WORKFLOW = /^\.github\/workflows\/[\w.-]+\.ya?ml$/;
 const MAX_WORKFLOWS = 50;
 const FRESH_MS = 60_000;
+const NO_WORKFLOWS_FRESH_MS = 10 * 60_000;
 const REPOS_AT_ONCE = 4;
 
 type Looked = { readonly at: number; readonly repos: string; readonly view: MoveCiView };
@@ -37,13 +40,28 @@ const make = Effect.gen(function* () {
   // One look at a time, so two clients asking together ask GitHub once, and a prune never drops what another look is using.
   const lock = yield* Semaphore.make(1);
   let looked: Looked | null = null;
+  // When each repository last answered that it has no workflows, and until when GitHub said to wait.
+  const noWorkflows = new Map<string, number>();
+  let waitUntil = 0;
 
   const get = (path: string, token: string) => Effect.promise(() => reader.get(path, token));
 
-  const readRepo = Effect.fn("MoveCi.readRepo")(function* (repo: string, token: string) {
-    const unread: CiRepo = { repo, jobs: [], patch: null, problem: `Couldn't read the workflows on ${repo}.` };
+  // Null when GitHub said to wait, before or during the read.
+  const readRepo = Effect.fn("MoveCi.readRepo")(function* (repo: string, token: string, now: number) {
+    const none: CiRepo = { repo, jobs: [], patch: null, problem: null };
+    const unread: CiRepo = { ...none, problem: `Couldn't read the workflows on ${repo}.` };
+    if (now < waitUntil) return null;
+    if (now - (noWorkflows.get(repo) ?? Number.NEGATIVE_INFINITY) < NO_WORKFLOWS_FRESH_MS) return none;
     const listed = yield* get(`repos/${repo}/contents/.github/workflows`, token);
-    if (listed.kind === "missing") return { repo, jobs: [], patch: null, problem: null } satisfies CiRepo;
+    if (listed.kind === "limited") {
+      waitUntil = Math.max(waitUntil, listed.untilMs);
+      return null;
+    }
+    if (listed.kind === "missing") {
+      noWorkflows.set(repo, now);
+      return none;
+    }
+    noWorkflows.delete(repo);
     const listing = listed.kind === "ok" ? decodeListing(listed.body) : Option.none();
     if (Option.isNone(listing)) return unread;
     const paths = listing.value.flatMap(({ type, path }) => (type === "file" && WORKFLOW.test(path) ? [path] : [])).toSorted();
@@ -52,6 +70,10 @@ const make = Effect.gen(function* () {
     const skipped: string[] = [];
     for (const path of paths.slice(0, MAX_WORKFLOWS)) {
       const reply = yield* get(`repos/${repo}/contents/${path}`, token);
+      if (reply.kind === "limited") {
+        waitUntil = Math.max(waitUntil, reply.untilMs);
+        return null;
+      }
       const file = reply.kind === "ok" ? decodeFile(reply.body) : Option.none();
       // A file over GitHub's 1 MB for this endpoint comes back with no content.
       const text = Option.isSome(file) && file.value.encoding === "base64" ? Buffer.from(file.value.content, "base64").toString("utf8") : null;
@@ -75,10 +97,15 @@ const make = Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
       const repos = reached.repos.join(" ");
       if (looked !== null && looked.repos === repos && now - looked.at < FRESH_MS) return looked.view;
-      const read = yield* Effect.forEach(reached.repos, (repo) => readRepo(repo, reached.token), { concurrency: REPOS_AT_ONCE });
-      reader.prune();
+      const read = yield* Effect.forEach(reached.repos, (repo) => readRepo(repo, reached.token, now), { concurrency: REPOS_AT_ONCE });
+      const waited = read.some((repo) => repo === null);
+      // A prune would drop the ETags of the repositories a wait kept from being asked.
+      if (!waited) reader.prune();
+      const before = new Map(looked?.view.repos.map((repo) => [repo.repo, repo]));
+      const repoRows = read.flatMap((repo, index) => (repo !== null ? [repo] : (before.get(reached.repos[index] ?? "") ?? [])));
       // A repository with no workflows has nothing to move.
-      const view: MoveCiView = { app: reached.app, repos: read.filter((repo) => repo.jobs.length > 0 || repo.problem !== null), problem: reached.problem };
+      const problem = waited ? "GitHub asked Runnerbox to wait, so some repositories are as they were last read." : reached.problem;
+      const view: MoveCiView = { app: reached.app, repos: repoRows.filter((repo) => repo.jobs.length > 0 || repo.problem !== null), problem };
       looked = { at: now, repos, view };
       return view;
     }),
