@@ -105,7 +105,7 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
         ) : null}
       </header>
       {shown.map((machine) => (
-        <MachineSection key={machine.key} machine={machine} onPick={several ? () => onPick(machine) : null} />
+        <MachineSection key={machine.key} machine={machine} running={queues.get(machine.environmentId)?.running ?? []} onPick={several ? () => onPick(machine) : null} />
       ))}
       {lanes.length > 0 ? (
         <section>

@@ -1,4 +1,4 @@
-import type { QueueView, WaitingJob } from "@runnerbox/contracts";
+import type { QueueView, RunningJob, WaitingJob } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -9,7 +9,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { createGitHubReader } from "../github/githubReader.ts";
 import { readReportToken } from "../github/reportToken.ts";
 import * as StateLogs from "../history/StateLogs.ts";
-import { afterPoll, type Outcome, reposToPoll, runIds, waitingJobs } from "./queueRules.ts";
+import { afterPoll, type Outcome, reposToPoll, runIds, runningJobs, usualTimes, waitingJobs } from "./queueRules.ts";
 import { QueueConfig } from "./QueueConfig.ts";
 import * as RunnerState from "./RunnerState.ts";
 import * as ToolReleases from "./ToolReleases.ts";
@@ -17,9 +17,9 @@ import * as ToolReleases from "./ToolReleases.ts";
 const DAY_MS = 86_400_000;
 // A repo counts as active by its newest job in this window, for choosing which to poll.
 const ACTIVE_DAYS = 14;
-const OFF: QueueView = { status: "off", reason: null, waiting: [], resumesAt: null, reposLeftOut: 0, runsLeftOut: 0, checkedAt: null };
+const OFF: QueueView = { status: "off", reason: null, waiting: [], running: [], resumesAt: null, reposLeftOut: 0, runsLeftOut: 0, checkedAt: null };
 
-// The jobs GitHub has queued for this machine's labels. It calls GitHub only while someone watches
+// The jobs GitHub has queued for this machine's labels, and the ones its runners are running. It calls GitHub only while someone watches
 // `changes`, and for a minute after the last one leaves, with the read-only token from report.env.
 export class RunnerQueue extends Context.Service<RunnerQueue, { readonly changes: Stream.Stream<QueueView> }>()("runnerbox/server/RunnerQueue") {}
 
@@ -36,14 +36,16 @@ const make = Effect.gen(function* () {
   const lastRefusal = yield* Ref.make<string | null>(null);
   const { timing } = config;
 
-  // The repos with job history, the most recently active first.
+  // The repos with job history, the most recently active first, and each job's usual time.
   const activity = Effect.gen(function* () {
     const since = (yield* Clock.currentTimeMillis) - ACTIVE_DAYS * DAY_MS;
     const repos = yield* logs.repos;
-    return yield* Effect.forEach(repos, (repo) =>
-      logs.jobs(repo, since).pipe(Effect.map((jobs) => ({ repo, lastAt: Math.max(0, ...jobs.map((job) => Date.parse(job.createdAt))) }))),
-    );
-  }).pipe(Effect.orElseSucceed(() => []));
+    const each = yield* Effect.forEach(repos, (repo) => logs.jobs(repo, since).pipe(Effect.map((jobs) => ({ repo, jobs }))));
+    return {
+      repos: each.map(({ repo, jobs }) => ({ repo, lastAt: Math.max(0, ...jobs.map((job) => Date.parse(job.createdAt))) })),
+      usual: usualTimes(each.flatMap(({ jobs }) => jobs)),
+    };
+  }).pipe(Effect.orElseSucceed(() => ({ repos: [], usual: new Map<string, number>() })));
 
   // One look at GitHub. Returns how long to wait before the next.
   const poll = Effect.gen(function* () {
@@ -56,11 +58,15 @@ const make = Effect.gen(function* () {
     }
     yield* Ref.set(lastRefusal, null);
     const installs = yield* runnerState.current.pipe(Effect.orElseSucceed(() => []));
-    const labels = new Set(installs.filter((install) => !install.stale).flatMap((install) => install.kinds.map((kind) => kind.label)));
-    const { repos, leftOut } = reposToPoll(yield* activity);
+    const live = installs.filter((install) => !install.stale);
+    const labels = new Set(live.flatMap((install) => install.kinds.map((kind) => kind.label)));
+    const runners = new Set(live.flatMap((install) => install.kinds.flatMap((kind) => kind.slots.flatMap((slot) => (slot.runner ? [slot.runner] : [])))));
+    const known = yield* activity;
+    const { repos, leftOut } = reposToPoll(known.repos);
 
     let outcome: Outcome = { kind: "ok", budget: null };
     const waiting: WaitingJob[] = [];
+    const running: RunningJob[] = [];
     let runsLeftOut = 0;
     let forbidden = 0;
     // A failed reply ends this look; the rest of the repos wait for the next. A repo that refuses the
@@ -92,6 +98,7 @@ const make = Effect.gen(function* () {
           if (reply.kind === "missing" || reply.kind === "forbidden") continue;
           if (reply.kind !== "ok") break polling;
           waiting.push(...waitingJobs(repo, reply.body, labels));
+          running.push(...runningJobs(repo, reply.body, runners, runs.refs.get(id) ?? null, known.usual));
         }
       }
       if (repos.length > 0 && forbidden === repos.length) outcome = { kind: "forbidden" };
@@ -113,6 +120,7 @@ const make = Effect.gen(function* () {
       resumesAt: next.resumesAt,
       // A failed look keeps the last list it had rather than showing nothing waiting.
       waiting: outcome.kind === "ok" ? waiting.toSorted((a, b) => Date.parse(a.since) - Date.parse(b.since)) : previous.waiting,
+      running: outcome.kind === "ok" ? running : (previous.running ?? []),
       reposLeftOut: leftOut,
       runsLeftOut: outcome.kind === "ok" ? runsLeftOut : previous.runsLeftOut,
       checkedAt: outcome.kind === "ok" ? new Date(now).toISOString() : previous.checkedAt,

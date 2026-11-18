@@ -60,6 +60,7 @@ export function tiles(install: InstallState): RunnerTile[] {
         job: phase === "busy" && slot.job ? jobText(slot.job) : null,
         why: phase === "waiting" || phase === "backoff" ? whyOf(slot.detail) : null,
         since: slot.since,
+        runner: slot.runner,
       };
     }),
   );

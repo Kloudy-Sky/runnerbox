@@ -21,6 +21,8 @@ export const RunnerTile = Schema.Struct({
   job: Schema.NullOr(Schema.String),
   why: Schema.NullOr(Schema.String),
   since: Schema.String,
+  // Its runner's name, which matches it with the job GitHub says that runner runs. Missing from an older server.
+  runner: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 export type RunnerTile = typeof RunnerTile.Type;
 

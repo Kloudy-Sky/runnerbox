@@ -12,6 +12,21 @@ export const WaitingJob = Schema.Struct({
 });
 export type WaitingJob = typeof WaitingJob.Type;
 
+// A job one of this machine's runners is running, as GitHub tells it. `ref` is the pull request,
+// "#482", or else the branch. `usualMs` is the job's typical time in this machine's job history,
+// or null when it has none.
+export const RunningJob = Schema.Struct({
+  runner: Schema.String,
+  repo: Schema.String,
+  workflow: Schema.NullOr(Schema.String),
+  job: Schema.String,
+  ref: Schema.NullOr(Schema.String),
+  since: Schema.String,
+  url: Schema.NullOr(Schema.String),
+  usualMs: Schema.NullOr(Schema.Number),
+});
+export type RunningJob = typeof RunningJob.Type;
+
 // What the queue poll knows. `off` hides it: no usable report.env, so no GitHub calls are made.
 // `slowed` and `paused` say the token's budget is getting short, and `reason` says why in words.
 export const QueueStatus = Schema.Literals(["off", "watching", "slowed", "paused"]);
@@ -21,6 +36,8 @@ export const QueueView = Schema.Struct({
   status: QueueStatus,
   reason: Schema.NullOr(Schema.String),
   waiting: Schema.Array(WaitingJob),
+  // Missing from an older server.
+  running: Schema.optionalKey(Schema.Array(RunningJob)),
   // When checking starts again, while paused.
   resumesAt: Schema.NullOr(Schema.String),
   // Repos with job history beyond the ones polled, which are the most recently active, and queued
