@@ -16,6 +16,7 @@ import * as DailyHealth from "../runners/DailyHealth.ts";
 import * as Monitors from "../monitors/Monitors.ts";
 import * as Proposals from "../proposals/Proposals.ts";
 import * as GitHub from "../github/GitHub.ts";
+import * as MoveCi from "../moveCi/MoveCi.ts";
 import * as ReviewRuns from "../reviews/ReviewRuns.ts";
 import * as Reviews from "../reviews/Reviews.ts";
 import * as ReviewWatch from "../reviews/ReviewWatch.ts";
@@ -51,6 +52,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       // The same scopes the server checks on monitors.save, so the switch is never offered when saving would be refused.
       const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
       const github = yield* GitHub.GitHub;
+      const moveCi = yield* MoveCi.MoveCi;
       const reviews = yield* Reviews.Reviews;
       const reviewRuns = yield* ReviewRuns.ReviewRuns;
       const reviewWatch = yield* ReviewWatch.ReviewWatch;
@@ -133,6 +135,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "github.signIn": () => github.signIn(mayReview),
         "github.cancelSignIn": () => github.cancelSignIn(mayReview),
         "github.signOut": () => github.signOut(mayReview),
+        "moveCi.status": () => moveCi.status,
         "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review, mayReview),
         "reviews.setModel": ({ model }) => reviews.setModel(model, mayReview),
         "reviews.read": ({ repo, number }) => reviewRuns.read(repo, number, mayReview.review),

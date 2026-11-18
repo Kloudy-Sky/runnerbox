@@ -44,6 +44,7 @@ import * as Reproduces from "./reproduce/Reproduces.ts";
 import * as PullChecks from "./reviews/PullChecks.ts";
 import * as ReviewRuns from "./reviews/ReviewRuns.ts";
 import * as Reviews from "./reviews/Reviews.ts";
+import * as MoveCi from "./moveCi/MoveCi.ts";
 import * as ReviewStore from "./reviews/ReviewStore.ts";
 import * as ReviewWatch from "./reviews/ReviewWatch.ts";
 import * as UpSocket from "./reproduce/UpSocket.ts";
@@ -100,7 +101,7 @@ export const layerCore = (input: ServicesInput) =>
     Layer.provide(LocalEndpoint.layer(input.host)),
     // The inbox counts the open pull requests a failing check blocks, from the reviews' list.
     Layer.provideMerge(Inbox.layer.pipe(Layer.provideMerge(InboxState.layer))),
-    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Reviews.layer.pipe(Layer.provide(PullChecks.layer), Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
+    Layer.provideMerge(Layer.mergeAll(JobHistory.layer, DailyTotals.layer, LauncherLogs.layer, RunnersExplained.layer, DailyHealth.layer, CloudLink.layer, RunnerQueue.layer, Layer.mergeAll(Reviews.layer.pipe(Layer.provide(PullChecks.layer)), MoveCi.layer).pipe(Layer.provideMerge(GitHub.layer), Layer.provideMerge(GitHubSignIn.layer)))),
     // Below the inbox, which shows the fix a rule proposed for an item.
     Layer.provideMerge(Proposals.layer.pipe(Layer.provideMerge(UpSocket.layer))),
     Layer.provideMerge(Layer.mergeAll(StateLogs.layer, RunnerState.layer, ReviewStore.layer)),

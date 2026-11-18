@@ -17,6 +17,7 @@ import { Account, AccountError, AccountId, EffortName, Harness, ModelName, SaveA
 import { Provider, ProviderAccount, SaveProviderAccount } from "./providers.ts";
 import { ApplyWhen, Proposal, ProposalError, ProposalList } from "./proposals.ts";
 import { MonitorError, MonitorSettings, MonitorStatus } from "./monitors.ts";
+import { MoveCiView } from "./moveCi.ts";
 import { PullNumber, PullReviews, Review, ReviewError, ReviewsView } from "./reviews.ts";
 import { ReleaseCheck, ReleaseVersion, ServerUpdateError, UpdateProgress, UpdateStatus } from "./update.ts";
 import { CreateThread, MAX_REFERENCES, MessageText, ThreadReference, ProviderStatus, ReproduceCheck, ReproduceError, ReproduceNetwork, ThreadDetail, ThreadError, ThreadEvent, ThreadSubject, ThreadSummary } from "./threads.ts";
@@ -133,6 +134,7 @@ export const RPC_METHODS = {
   githubSignIn: "github.signIn",
   githubCancelSignIn: "github.cancelSignIn",
   githubSignOut: "github.signOut",
+  moveCiStatus: "moveCi.status",
   reviewsStatus: "reviews.status",
   reviewsSetRepo: "reviews.setRepo",
   reviewsSetModel: "reviews.setModel",
@@ -294,6 +296,9 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.githubCancelSignIn, { success: GitHubStatus, error: GitHubFailure }),
   // Forgets the token. GitHub still lists the authorization until the owner revokes it there.
   Rpc.make(RPC_METHODS.githubSignOut, { success: GitHubStatus, error: GitHubFailure }),
+  // Where each job on the repositories the App is installed on picks its runner, and the patch
+  // that moves the ones that don't read a runner variable yet. Nothing is written to GitHub.
+  Rpc.make(RPC_METHODS.moveCiStatus, { success: MoveCiView, error: GitHubFailure }),
   // The repositories the App is installed on, and the open pull requests on the ones turned on.
   Rpc.make(RPC_METHODS.reviewsStatus, { success: ReviewsView, error: ReviewFailure }),
   Rpc.make(RPC_METHODS.reviewsSetRepo, { payload: { repo: RepoName, review: Schema.Boolean }, success: ReviewsView, error: ReviewFailure }),
@@ -420,6 +425,8 @@ export const RPC_SCOPES = {
   [RPC_METHODS.githubSignIn]: ACCESS,
   [RPC_METHODS.githubCancelSignIn]: ACCESS,
   [RPC_METHODS.githubSignOut]: ACCESS,
+  // Job names and their runners are history like a job's runs are.
+  [RPC_METHODS.moveCiStatus]: HISTORY,
   // Pull request titles, authors and branches are history like a job's are.
   [RPC_METHODS.reviewsStatus]: HISTORY,
   // Which repositories are read manages access.

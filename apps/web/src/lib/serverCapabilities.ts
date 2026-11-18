@@ -29,9 +29,11 @@ export type Capabilities = {
   readonly reviewRuns: boolean;
   // `github.status` and `github.signIn`: the server signs in to GitHub through the shared App.
   readonly github: boolean;
+  // `moveCi.status`: where each repository's jobs pick their runner, and the patch that moves them.
+  readonly moveCi: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false, moveCi: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -52,5 +54,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     reviews: has(RPC_METHODS.reviewsStatus),
     reviewRuns: has(RPC_METHODS.reviewsStart) && has(RPC_METHODS.reviewsRead),
     github: has(RPC_METHODS.githubStatus) && has(RPC_METHODS.githubSignIn),
+    moveCi: has(RPC_METHODS.moveCiStatus),
   };
 }

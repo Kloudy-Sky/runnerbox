@@ -18,4 +18,5 @@ export * from "./queue.ts";
 export * from "./update.ts";
 export * from "./github.ts";
 export * from "./reviews.ts";
+export * from "./moveCi.ts";
 export * from "./health.ts";

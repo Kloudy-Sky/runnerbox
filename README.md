@@ -205,7 +205,7 @@ A workflow only names a label:
 runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}
 ```
 
-Your project never imports runnerbox code, so changing that variable moves your CI on or off it. A Mac job works the same way: `runs-on: ${{ vars.MAC_RUNNER || 'macos-15' }}`. Containers never get the VM's Docker socket. Jobs that use `services:`, `container:`, Docker actions or `docker build` need a runner kind with `"docker": true` and an image built `FROM runnerbox-base-docker`, which gives each job its own Docker daemon under the sysbox runtime that VM setup installs. The base image is minimal, so anything else a job expects from `ubuntu-24.04` goes in your image layer.
+Your project never imports runnerbox code, so changing that variable moves your CI on or off it. Once the server is signed in to GitHub, the Runners page reads each repository's workflows and shows the patch that makes a job naming a GitHub label read the variable, for you to copy and commit. A Mac job works the same way: `runs-on: ${{ vars.MAC_RUNNER || 'macos-15' }}`. Containers never get the VM's Docker socket. Jobs that use `services:`, `container:`, Docker actions or `docker build` need a runner kind with `"docker": true` and an image built `FROM runnerbox-base-docker`, which gives each job its own Docker daemon under the sysbox runtime that VM setup installs. The base image is minimal, so anything else a job expects from `ubuntu-24.04` goes in your image layer.
 
 | runnerbox owns | Your project owns |
 | --- | --- |
