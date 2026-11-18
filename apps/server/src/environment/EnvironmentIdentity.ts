@@ -45,7 +45,7 @@ const make = (label: string | undefined) =>
     // there already, so of two servers starting at once only one creates it and the other reads
     // the winner's, and no reader ever sees half a file.
     const create = (path: string, text: string) => {
-      // Its own name, not just the process's: one server builds this layer more than once at start.
+      // Its own name, not just the process's: one process may build this layer more than once, as tests do.
       const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
       return fs.writeFileString(temporary, text, { mode: 0o600 }).pipe(
         Effect.andThen(fs.link(temporary, path)),
@@ -53,23 +53,26 @@ const make = (label: string | undefined) =>
         Effect.ensuring(fs.remove(temporary).pipe(Effect.ignore)),
       );
     };
-    // A file that's there but holds nothing usable is removed first, so `create` can replace it. A
-    // missing one isn't touched, so a server never removes the file another just created.
-    const replace = (path: string, text: string) =>
+    // A file that's there but holds nothing usable is removed first, so `create` can replace it.
+    // It's read again just before, since another server may have created it since this one looked,
+    // and that file is kept.
+    const replace = (path: string, text: string, usable: (text: string) => boolean) =>
       fs.exists(path).pipe(
         Effect.orElseSucceed(() => false),
-        Effect.flatMap((exists) => (exists ? fs.remove(path).pipe(Effect.ignore) : Effect.void)),
+        Effect.flatMap((exists) => (exists ? readOrEmpty(path) : Effect.succeed(null))),
+        Effect.flatMap((now) => (now !== null && !usable(now) ? fs.remove(path).pipe(Effect.ignore) : Effect.void)),
         Effect.andThen(create(path, text)),
       );
+    const isId = (text: string) => UUID.test(text.trim());
 
     const idPath = join(serverDir, "environment-id");
     let environmentId = (yield* readOrEmpty(idPath)).trim();
-    if (!UUID.test(environmentId)) {
+    if (!isId(environmentId)) {
       // An ID that isn't one can't have been handed to a client, so it's safe to replace.
-      yield* replace(idPath, `${randomUUID()}\n`);
+      yield* replace(idPath, `${randomUUID()}\n`, isId);
       environmentId = (yield* readOrEmpty(idPath)).trim();
     }
-    if (!UUID.test(environmentId)) return yield* new EnvironmentIdError({ cause: new Error("ID file unreadable") });
+    if (!isId(environmentId)) return yield* new EnvironmentIdError({ cause: new Error("ID file unreadable") });
 
     const keyPath = join(serverDir, "environment-key.json");
     let keyText = yield* readOrEmpty(keyPath);
@@ -78,7 +81,7 @@ const make = (label: string | undefined) =>
     // those pins, so that stops the server instead.
     if (keyText.trim() === "") {
       const pair = generateKeyPairSync("ed25519", { publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
-      yield* replace(keyPath, JSON.stringify(pair));
+      yield* replace(keyPath, JSON.stringify(pair), (text) => text.trim() !== "");
       keyText = yield* readOrEmpty(keyPath);
     }
     const key = decodeKey(keyText);

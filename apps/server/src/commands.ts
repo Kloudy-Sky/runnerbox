@@ -150,11 +150,7 @@ export function runServerCommand(args: string[]) {
     const code = yield* store.createPairingCode(ALL_SCOPES);
     console.log(`Pairing code: ${code.code} (expires ${code.expiresAt})`);
   });
-  const server = layerServer({ host: values.host, port, stateDir: dir, ...(values.label ? { label: values.label } : {}) });
-  const startup = Layer.effectDiscard(announce).pipe(
-    Layer.provide(Layer.mergeAll(AuthStore.layer, EnvironmentIdentity.layer(values.label)).pipe(Layer.provideMerge(paths), Layer.provideMerge(NodeServices.layer))),
-  );
-  NodeRuntime.runMain(Layer.launch(Layer.merge(server, startup)));
+  NodeRuntime.runMain(Layer.launch(layerServer({ host: values.host, port, stateDir: dir, ...(values.label ? { label: values.label } : {}) }, announce)));
 }
 
 // Runs `codex login` or `codex logout` against Runnerbox's own Codex home, with the same
