@@ -5,7 +5,7 @@ import { capabilitiesOf, NO_CAPABILITIES } from "./serverCapabilities.ts";
 
 test("a server older than the question offers none of the newer controls, and a current one all of them", () => {
   assert.deepEqual(capabilitiesOf(null), NO_CAPABILITIES);
-  assert.deepEqual(capabilitiesOf(Object.values(RPC_METHODS)), { models: true, attachments: true, references: true, queue: true, deleteThread: true, providers: true, jobResources: true, waitingJobs: true, serverUpdate: true, speed: true, checkRelease: true, restartRunners: true, reviews: true, reviewRuns: true, github: true, moveCi: true });
+  assert.deepEqual(capabilitiesOf(Object.values(RPC_METHODS)), { models: true, attachments: true, references: true, queue: true, deleteThread: true, providers: true, jobResources: true, waitingJobs: true, serverUpdate: true, speed: true, checkRelease: true, restartRunners: true, reviews: true, reviewRuns: true, github: true, moveCi: true, moveCiSwitch: true });
   // A server that answers but leaves one out: that control alone goes.
   const withoutQueue = Object.values(RPC_METHODS).filter((method) => method !== RPC_METHODS.threadsQueueTurn);
   assert.equal(capabilitiesOf(withoutQueue).queue, false);

@@ -49,6 +49,8 @@ export const SlotStateFile = type({
     // Where its jobs run, which says whether they're sampled: only containers in the install's VM
     // are. A file from an older `up` doesn't say.
     "runsIn?": "'container' | 'job_vm' | 'host'",
+    // Whether each job gets its own Docker daemon. A file from an older `up` doesn't say.
+    "docker?": "boolean",
     // The kind's own floor, only when it sets one.
     "memoryFloor?": Floor,
     slots: Slot.array(),
@@ -57,7 +59,7 @@ export const SlotStateFile = type({
 export type SlotStateFile = typeof SlotStateFile.infer;
 
 export type RunsIn = "container" | "job_vm" | "host";
-type Kind = { name: string; label: string; slots: number; image?: string | { rebuildDays?: number }; runsIn?: RunsIn; memoryFloor?: Floor };
+type Kind = { name: string; label: string; slots: number; image?: string | { rebuildDays?: number }; runsIn?: RunsIn; docker?: boolean; memoryFloor?: Floor };
 
 // Keeps the file in step with every report. Writes go to a temporary file renamed over the old,
 // so a reader never sees half of one, and reports that arrive mid-write are folded into the next.
@@ -72,7 +74,7 @@ export function createSlotState(path: string, install: string, kinds: readonly K
     updatedAt: iso(),
     stopping: false,
     ...(memoryFloor ? { memoryFloor } : {}),
-    kinds: kinds.map(({ name, label, slots, image, runsIn, memoryFloor: ownFloor }) => ({
+    kinds: kinds.map(({ name, label, slots, image, runsIn, docker, memoryFloor: ownFloor }) => ({
       name,
       label,
       image: null,
@@ -83,6 +85,7 @@ export function createSlotState(path: string, install: string, kinds: readonly K
       builtAt: null,
       tools: null,
       ...(runsIn ? { runsIn } : {}),
+      docker: docker === true,
       ...(ownFloor ? { memoryFloor: ownFloor } : {}),
       slots: Array.from({ length: slots }, (_, index) => ({ slot: index + 1, phase: "minting" as const, since: iso(), runner: null, detail: null, job: null })),
     })),

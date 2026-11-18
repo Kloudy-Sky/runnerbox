@@ -53,6 +53,8 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
       const canConfigureMonitors = RPC_SCOPES[RPC_METHODS.monitorsSave].every((scope) => session.scopes.includes(scope));
       const github = yield* GitHub.GitHub;
       const moveCi = yield* MoveCi.MoveCi;
+      // The same scopes the server checks on moveCi.setRunner, so the switch is never offered when it would be refused.
+      const mayMove = { switch: RPC_SCOPES[RPC_METHODS.moveCiSetRunner].every((scope) => session.scopes.includes(scope)) };
       const reviews = yield* Reviews.Reviews;
       const reviewRuns = yield* ReviewRuns.ReviewRuns;
       const reviewWatch = yield* ReviewWatch.ReviewWatch;
@@ -135,7 +137,8 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "github.signIn": () => github.signIn(mayReview),
         "github.cancelSignIn": () => github.cancelSignIn(mayReview),
         "github.signOut": () => github.signOut(mayReview),
-        "moveCi.status": () => moveCi.status,
+        "moveCi.status": () => moveCi.status(mayMove),
+        "moveCi.setRunner": ({ repo, variable, label }) => moveCi.setRunner(repo, variable, label, mayMove),
         "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review, mayReview),
         "reviews.setModel": ({ model }) => reviews.setModel(model, mayReview),
         "reviews.read": ({ repo, number }) => reviewRuns.read(repo, number, mayReview.review),
