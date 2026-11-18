@@ -26,6 +26,7 @@ const Runs = Schema.Struct({
       id: Schema.Number,
       created_at: Schema.String,
       head_branch: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      head_repository: Schema.optionalKey(Schema.NullOr(Schema.Struct({ full_name: Schema.String }))),
       pull_requests: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.Struct({ number: Schema.Number })))),
     }),
   ),
@@ -48,13 +49,20 @@ const Jobs = Schema.Struct({
 // The runs to look inside, at most MAX_RUNS_PER_REPO: queued runs first, the longest waiting first,
 // since those are where jobs wait, then the newest in-progress runs, whose later jobs may still be
 // queued. `leftOut` counts the queued runs that didn't fit. `refs` names each run's pull request,
-// "#482", or else its branch.
-export function runIds(queued: unknown, inProgress: unknown) {
+// "#482", or else its branch. GitHub lists no pull request for one from a fork, so a fork's branch
+// is named as GitHub writes it, "someone:main", and never reads as one of `repo`'s own.
+export function runIds(repo: string, queued: unknown, inProgress: unknown) {
   const runs = (body: unknown) => Option.match(Schema.decodeUnknownOption(Runs)(body), { onNone: () => [], onSome: (decoded) => decoded.workflow_runs });
   const waiting = runs(queued).toSorted((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
   const running = runs(inProgress).toSorted((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const ids = [...new Set([...waiting, ...running].map((run) => run.id))];
-  const refs = new Map([...waiting, ...running].map((run) => [run.id, run.pull_requests?.[0] ? `#${run.pull_requests[0].number}` : run.head_branch ? cut(run.head_branch) : null]));
+  const refOf = (run: (typeof waiting)[number]) => {
+    if (run.pull_requests?.[0]) return `#${run.pull_requests[0].number}`;
+    if (!run.head_branch) return null;
+    const from = run.head_repository?.full_name;
+    return cut(from && from !== repo ? `${from.split("/")[0]}:${run.head_branch}` : run.head_branch);
+  };
+  const refs = new Map([...waiting, ...running].map((run) => [run.id, refOf(run)]));
   return { ids: ids.slice(0, MAX_RUNS_PER_REPO), leftOut: Math.max(0, waiting.length - MAX_RUNS_PER_REPO), refs };
 }
 

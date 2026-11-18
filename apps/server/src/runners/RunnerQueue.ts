@@ -91,7 +91,7 @@ const make = Effect.gen(function* () {
         const inProgress = yield* fetch(`repos/${repo}/actions/runs?status=in_progress&per_page=20`);
         if (inProgress.kind === "missing" || inProgress.kind === "forbidden") continue;
         if (inProgress.kind !== "ok") break polling;
-        const runs = runIds(queued.body, inProgress.body);
+        const runs = runIds(repo, queued.body, inProgress.body);
         runsLeftOut += runs.leftOut;
         for (const id of runs.ids) {
           const reply = yield* fetch(`repos/${repo}/actions/runs/${id}/jobs?filter=latest&per_page=100`);
