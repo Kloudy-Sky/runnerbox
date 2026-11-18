@@ -166,14 +166,15 @@ export const layerApp = (input: {
   layerListeners(input).pipe(Layer.provideMerge(layerServices(input)));
 
 // `serve`: the listeners, with the tunnel one on the port the link chose, and for a linked
-// environment its connector, all over one set of services.
-export const layerServer = ({ host, port, stateDir, label }: ServeOptions) =>
+// environment its connector, all over one set of services. `announce` runs over the same ones,
+// so the environment's identity is read or made once.
+export const layerServer = <E>({ host, port, stateDir, label }: ServeOptions, announce: Effect.Effect<void, E, AuthStore.AuthStore | EnvironmentIdentity.EnvironmentIdentity>) =>
   Layer.unwrap(
     Effect.gen(function* () {
       const link = yield* CloudLink.CloudLink;
       const state = yield* link.state.pipe(Effect.orElseSucceed(() => null));
       const tunnelPort = state?.tunnelPort ?? null;
-      return Layer.mergeAll(layerListeners({ host, port, tunnelPort }), Connector.layer, layerReady(tunnelPort !== null));
+      return Layer.mergeAll(layerListeners({ host, port, tunnelPort }), Connector.layer, layerReady(tunnelPort !== null), Layer.effectDiscard(announce));
     }),
   ).pipe(Layer.provide(layerServices({ stateDir, host, port, label, codex: CodexAdapter.layer })));
 
