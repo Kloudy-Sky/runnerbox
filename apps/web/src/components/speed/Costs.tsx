@@ -1,7 +1,8 @@
 import type { KindUsage } from "@runnerbox/contracts";
 import { cents, dollars, hours } from "./words.ts";
 
-export type ReviewSpend = { readonly reviews: number; readonly usd: number };
+// Every repository's reviews, and the picked one's when other repositories spent too.
+export type ReviewSpend = { readonly reviews: number; readonly usd: number; readonly repo: { readonly name: string; readonly reviews: number; readonly usd: number } | null };
 
 const LINE = "flex justify-between gap-4 py-0.5";
 
@@ -48,6 +49,14 @@ export function Costs({ machines: answers, pricesReadOn, reviews }: { readonly m
             </span>
             <span className="tabular-nums">{cents(reviews.usd)}</span>
           </div>
+          {reviews.repo ? (
+            <div className={LINE}>
+              <span>
+                {reviews.repo.name}, {reviews.repo.reviews} review{reviews.repo.reviews === 1 ? "" : "s"}
+              </span>
+              <span className="tabular-nums">{cents(reviews.repo.usd)}</span>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

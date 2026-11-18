@@ -171,8 +171,8 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.historyKindUsage, { payload: { days: Days }, success: KindUsageReport, error: ReadError }),
   // Each job of one repo: typical time per day, and whether it has become slower.
   Rpc.make(RPC_METHODS.historyJobTrends, { payload: Window, success: Schema.Array(JobTrend), error: ReadError }),
-  // One row per UTC date the window touches, oldest first.
-  Rpc.make(RPC_METHODS.historyDailyTotals, { payload: { days: Days }, success: Schema.Array(DayTotals), error: ReadError }),
+  // One row per UTC date the window touches, oldest first, over every repo or the one named.
+  Rpc.make(RPC_METHODS.historyDailyTotals, { payload: { days: Days, repo: Schema.optionalKey(RepoName) }, success: Schema.Array(DayTotals), error: ReadError }),
   Rpc.make(RPC_METHODS.historyRuns, {
     payload: { ...Window, limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5000 })) },
     success: Schema.Array(JobRun),

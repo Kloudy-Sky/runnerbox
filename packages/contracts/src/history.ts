@@ -114,8 +114,9 @@ export const Overview = Schema.Struct({
 });
 export type Overview = typeof Overview.Type;
 
-// One UTC date's totals over every repo with a job log, for the Overview's charts. A date with
-// nothing on it is all zeros, and its typical times are null, since nothing ran to have one.
+// One UTC date's totals over every repo with a job log, or the one asked for, for the Overview's
+// charts. A date with nothing on it is all zeros, and its typical times are null, since nothing ran
+// to have one.
 export const DayTotals = Schema.Struct({
   // "2026-06-15"
   day: Schema.String,

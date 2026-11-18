@@ -6,6 +6,7 @@ import { OverviewTotals } from "../components/overview/OverviewTotals.tsx";
 import { PullsNow } from "../components/overview/PullsNow.tsx";
 import { RANGE_WORDS } from "../components/overview/rangeWords.ts";
 import { ReviewsEachDay } from "../components/overview/ReviewsEachDay.tsx";
+import { RepoFilter } from "../components/overview/RepoFilter.tsx";
 import { ReviewTime } from "../components/overview/ReviewTime.tsx";
 import { RunnersNow } from "../components/overview/RunnersNow.tsx";
 import { WaitEachDay } from "../components/overview/WaitEachDay.tsx";
@@ -22,7 +23,7 @@ import type { RootSearch } from "../lib/search.ts";
 export function OverviewPage() {
   const navigate = useNavigate();
   const { range, days: length } = useRange();
-  const { runners, picked, machines, shownRunners, pulls, pullsLoaded, inbox } = useOverview();
+  const { runners, picked, machines, shownRunners, repo, repos, pulls, pullsLoaded, inbox } = useOverview();
   const words = RANGE_WORDS[range];
   const all = addMachines(machines.map((machine) => machine.days));
   const current = rangeDays(all, length);
@@ -43,6 +44,7 @@ export function OverviewPage() {
           <PageHeader.Spacer />
           <div className="flex flex-wrap items-center gap-1.5">
             {runners.length > 1 ? <MachineFilter machines={runners} picked={picked?.key ?? null} onPick={(machine) => void navigate({ to: ".", search: (previous: RootSearch) => ({ ...previous, machine: machine?.key }) })} /> : null}
+            {repos.length > 1 || repo ? <RepoFilter repos={repos} picked={repo} onPick={(picked) => void navigate({ to: ".", search: (previous: RootSearch) => ({ ...previous, repo: picked ?? undefined }) })} /> : null}
             <OverviewRange />
           </div>
         </PageHeader.Root>
