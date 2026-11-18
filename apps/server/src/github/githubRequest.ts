@@ -2,8 +2,8 @@ import { githubHeaders } from "runnerbox/src/github/github-client.ts";
 
 export type GitHubReply =
   | { readonly kind: "ok"; readonly body: unknown }
-  // GitHub didn't take the token, or says there's nothing there for it.
-  | { readonly kind: "refused" }
+  // GitHub didn't take the token (401), or says there's nothing there for it (404).
+  | { readonly kind: "refused"; readonly status: 401 | 404 }
   // `status` is GitHub's, or null when no answer came.
   | { readonly kind: "error"; readonly message: string; readonly status: number | null };
 
@@ -22,7 +22,7 @@ export async function githubRequest(apiBase: string, method: "GET" | "POST" | "P
     });
     // A 204, as a variable written or deleted answers, has no body.
     if (response.ok) return { kind: "ok", body: await response.json().catch(() => null) };
-    if (response.status === 401 || response.status === 404) return { kind: "refused" };
+    if (response.status === 401 || response.status === 404) return { kind: "refused", status: response.status };
     return { kind: "error", message: `GitHub answered ${response.status}`, status: response.status };
   } catch (error) {
     return { kind: "error", message: error instanceof Error ? error.name : "the request failed", status: null };

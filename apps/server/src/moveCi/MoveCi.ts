@@ -122,7 +122,7 @@ const make = Effect.gen(function* () {
       waitUntil = Math.max(waitUntil, variables.untilMs);
       return null;
     }
-    if (variables.kind === "refused") return { ...read, switch: "refused" } satisfies CiRepo;
+    if (variables.kind !== "read") return { ...read, switch: variables.kind } satisfies CiRepo;
     return { ...read, switch: "ready", variables: variables.variables } satisfies CiRepo;
   });
 
@@ -168,7 +168,9 @@ const make = Effect.gen(function* () {
     const reading = row?.jobs.filter((job) => job.state === "moves" && job.variable === variable) ?? [];
     if (row === undefined || reading.length === 0) return yield* new MoveCiError({ reason: "not_read" });
     if (label === null) {
-      // With the repository's deleted, the organization's value would name the runner instead.
+      // With the repository's deleted, the organization's value would name the runner instead, so
+      // a delete waits for a clean read that says it sets none.
+      if (row.switch !== "ready") return yield* new MoveCiError({ reason: "org_unknown" });
       if (row.variables.some((each) => each.name === variable && each.org !== null)) return yield* new MoveCiError({ reason: "org_sets" });
     } else {
       const runner = view.runners.find((each) => each.label === label && each.mac === (variable === "MAC_RUNNER"));

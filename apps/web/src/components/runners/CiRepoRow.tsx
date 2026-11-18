@@ -56,6 +56,13 @@ export function CiRepoRow({ repo, runners, canSwitch, setRunner }: { repo: CiRep
       )
       .finally(() => setMoving(false));
   };
+  // Undo writes back what was there, which the server takes only when it's a runner here that fits,
+  // or a delete the organization's value wouldn't override.
+  const undoable =
+    moved !== null &&
+    (moved.from === null
+      ? !repo.variables.some((each) => each.name === moved.variable && each.org !== null)
+      : choicesFor(repo, moved.variable, runners).some((choice) => choice.label === moved.from && choice.unfit === null));
   const opens = repo.patch !== null || repo.jobs.some((job) => job.docker !== null || job.state === "left");
   const line = summary(repo, runners);
   const owner = repo.repo.split("/")[0];
@@ -98,10 +105,15 @@ export function CiRepoRow({ repo, runners, canSwitch, setRunner }: { repo: CiRep
         {moving ? <p className="text-muted-foreground">Moving</p> : null}
         {moved !== null && !moving ? (
           <p className="text-muted-foreground">
-            <span className="text-foreground">Moved to {moved.to ?? "GitHub"}.</span> New runs start there; jobs already waiting stay put.{" "}
-            <button type="button" className="text-foreground underline-offset-2 hover:underline" onClick={() => choose(moved.variable, moved.to, moved.from)}>
-              Undo
-            </button>
+            <span className="text-foreground">Moved to {moved.to ?? "GitHub"}.</span> New runs start there; jobs already waiting stay put.
+            {undoable ? (
+              <>
+                {" "}
+                <button type="button" className="text-foreground underline-offset-2 hover:underline" onClick={() => choose(moved.variable, moved.to, moved.from)}>
+                  Undo
+                </button>
+              </>
+            ) : null}
           </p>
         ) : null}
         {error !== null ? <p className="text-destructive">{error}</p> : null}
@@ -115,6 +127,7 @@ export function CiRepoRow({ repo, runners, canSwitch, setRunner }: { repo: CiRep
             ) : null}
           </p>
         ) : null}
+        {repo.switch === "unread" ? <p className="text-muted-foreground">GitHub didn't answer for this repository's variables. This tries again within a minute.</p> : null}
         {repo.switch === "refused" ? <p className="text-muted-foreground">GitHub won't show this repository's variables to you. Switching needs write access to it.</p> : null}
         {repo.switch === "ready" && !canSwitch ? <p className="text-muted-foreground">This device can't move CI.</p> : null}
       </div>

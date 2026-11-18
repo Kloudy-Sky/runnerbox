@@ -55,9 +55,9 @@ export type CiVariable = typeof CiVariable.Type;
 
 // Whether a repository's runner can be switched from here. `ready`: its variables were read.
 // `approve`: its install's owner hasn't accepted the Variables permission on GitHub. `refused`:
-// GitHub wouldn't say, which a user without write access to the repository gets. `nothing`: no
-// job reads a runner variable yet.
-export const CiSwitch = Schema.Literals(["ready", "approve", "refused", "nothing"]);
+// GitHub wouldn't say, which a user without write access to the repository gets. `unread`: GitHub
+// didn't answer cleanly, so the next look tries again. `nothing`: no job reads a runner variable yet.
+export const CiSwitch = Schema.Literals(["ready", "approve", "refused", "unread", "nothing"]);
 export type CiSwitch = typeof CiSwitch.Type;
 
 export const CiRepo = Schema.Struct({
@@ -90,7 +90,7 @@ export const MoveCiView = Schema.Struct({
 export type MoveCiView = typeof MoveCiView.Type;
 
 export class MoveCiError extends Schema.TaggedError<MoveCiError>()("MoveCiError", {
-  reason: Schema.Literals(["not_signed_in", "not_installed", "not_read", "unknown_label", "needs_docker", "org_sets", "refused", "github_unreachable"]),
+  reason: Schema.Literals(["not_signed_in", "not_installed", "not_read", "unknown_label", "needs_docker", "org_sets", "org_unknown", "refused", "github_unreachable"]),
 }) {
   override get message() {
     switch (this.reason) {
@@ -106,6 +106,8 @@ export class MoveCiError extends Schema.TaggedError<MoveCiError>()("MoveCiError"
         return "A job that reads that variable needs Docker, and that runner doesn't have it.";
       case "org_sets":
         return "The organization sets that variable, so deleting the repository's wouldn't move the jobs to GitHub.";
+      case "org_unknown":
+        return "GitHub didn't say whether the organization sets that variable, so the repository's isn't deleted. Try again in a minute.";
       case "refused":
         return "GitHub refused. The install must accept the Variables permission on GitHub, and you need write access to the repository.";
       case "github_unreachable":

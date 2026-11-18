@@ -122,13 +122,15 @@ test("Move CI keeps to the owner's budget: a repository without workflows waits 
 
 const MOVING = "jobs:\n  build:\n    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}\n  e2e:\n    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}\n    services:\n      db:\n        image: postgres\n";
 
-// A stand-in for GitHub's variables. The App's install on owner has accepted Variables, on owner/name
-// and owner/third, where the organization sets LINUX_RUNNER; the one on example, with example/tools,
-// hasn't, so GitHub refuses its variables. Every repository's jobs read LINUX_RUNNER, and e2e needs
-// Docker. `writes` is every write, as GitHub would see it.
+// A stand-in for GitHub's variables. The App's install on owner has accepted Variables, on owner/name,
+// owner/third, where the organization sets LINUX_RUNNER, and owner/fourth, whose organization's
+// variables GitHub fails to list; the one on example, with example/tools, hasn't, so GitHub refuses
+// its variables. Every repository's jobs read LINUX_RUNNER, and e2e needs Docker. `writes` is every
+// write, as GitHub would see it, and `rejectToken` answers them as GitHub does a revoked token.
 async function fakeVariables() {
   const writes: string[] = [];
-  const own = new Map<string, Map<string, string>>([["owner/name", new Map()], ["owner/third", new Map()]]);
+  const script = { rejectToken: false };
+  const own = new Map<string, Map<string, string>>([["owner/name", new Map()], ["owner/third", new Map()], ["owner/fourth", new Map()]]);
   const org = new Map([["owner/third", new Map([["LINUX_RUNNER", "elsewhere"]])]]);
   const listed = (values: ReadonlyMap<string, string> | undefined) => ({ total_count: values?.size ?? 0, variables: [...(values ?? new Map())].map(([name, value]) => ({ name, value })) });
   const server = createServer((request, response) => {
@@ -145,7 +147,7 @@ async function fakeVariables() {
             { id: 12, repository_selection: "selected", account: { login: "example" }, html_url: "https://github.com/organizations/example/settings/installations/12", permissions: { contents: "read" } },
           ],
         });
-      if (path === "/user/installations/11/repositories?per_page=100&page=1") return send(200, { total_count: 2, repositories: [{ full_name: "owner/name" }, { full_name: "owner/third" }] });
+      if (path === "/user/installations/11/repositories?per_page=100&page=1") return send(200, { total_count: 3, repositories: [{ full_name: "owner/fourth" }, { full_name: "owner/name" }, { full_name: "owner/third" }] });
       if (path === "/user/installations/12/repositories?per_page=100&page=1") return send(200, { total_count: 1, repositories: [{ full_name: "example/tools" }] });
       const match = /^\/repos\/([\w-]+\/[\w-]+)\/(.+)$/.exec(path);
       const repo = match?.[1] ?? "";
@@ -153,10 +155,11 @@ async function fakeVariables() {
       if (rest === "contents/.github/workflows") return send(200, [{ type: "file", path: ".github/workflows/ci.yml" }]);
       if (rest === "contents/.github/workflows/ci.yml") return send(200, { encoding: "base64", content: base64(MOVING) });
       const values = own.get(repo);
-      if (rest.startsWith("actions/organization-variables?")) return send(200, listed(org.get(repo)));
+      if (rest.startsWith("actions/organization-variables?")) return repo === "owner/fourth" ? send(502, {}) : send(200, listed(org.get(repo)));
       if (request.method === "GET" && rest.startsWith("actions/variables?")) return values ? send(200, listed(values)) : send(403, {});
       if (request.method === "GET") return send(404, {});
       writes.push(`${request.method} ${path} ${text}`.trim());
+      if (script.rejectToken) return send(401, {});
       if (values === undefined) return send(403, {});
       const name = /^actions\/variables\/(\w+)$/.exec(rest)?.[1];
       if (request.method === "POST" && rest === "actions/variables") {
@@ -173,7 +176,7 @@ async function fakeVariables() {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, writes, own, close: () => new Promise((resolve) => server.close(resolve)) };
+  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, writes, script, own, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 test("the switch writes only a runner this machine has that every job can run on, and says why a repository can't be switched", async () => {
@@ -196,16 +199,19 @@ test("the switch writes only a runner this machine has that every job can run on
     assert.deepEqual(view.value.runners, [{ label: "example-docker", docker: true, mac: false }, { label: "example-linux", docker: false, mac: false }]);
     assert.deepEqual(view.value.repos.map(({ repo, switch: state, variables, approveUrl }) => ({ repo, state, variables, approveUrl })), [
       { repo: "example/tools", state: "approve", variables: [], approveUrl: "https://github.com/organizations/example/settings/installations/12" },
+      { repo: "owner/fourth", state: "unread", variables: [], approveUrl: null },
       { repo: "owner/name", state: "ready", variables: [{ name: "LINUX_RUNNER", value: null, org: null }], approveUrl: null },
       { repo: "owner/third", state: "ready", variables: [{ name: "LINUX_RUNNER", value: null, org: "elsewhere" }], approveUrl: null },
     ]);
 
     // Refused before anything is written: e2e needs Docker, the label isn't here, no job reads MAC_RUNNER,
-    // and with the repository's deleted, owner/third's jobs would still follow the organization's.
+    // with the repository's deleted, owner/third's jobs would still follow the organization's, and
+    // owner/fourth's organization might set one too, since GitHub didn't say.
     refused(await set("owner/name", "example-linux"), /needs Docker/);
     refused(await set("owner/name", "somewhere-else"), /isn't a runner on this machine/);
     refused(await set("owner/name", "example-docker", "MAC_RUNNER"), /No job on that repository reads that variable/);
     refused(await set("owner/third", null), /organization sets that variable/);
+    refused(await set("owner/fourth", null), /didn't say whether the organization sets that variable/);
     refused(await session(["history:read"], (client) => client["moveCi.setRunner"]({ repo: "owner/name", variable: "LINUX_RUNNER", label: "example-docker" })), /access:write/);
     assert.deepEqual(github.writes, []);
 
@@ -214,6 +220,13 @@ test("the switch writes only a runner this machine has that every job can run on
     assert.ok(Exit.isSuccess(moved));
     assert.deepEqual(moved.value.repos.find(({ repo }) => repo === "owner/name")?.variables, [{ name: "LINUX_RUNNER", value: "example-docker", org: null }]);
     assert.ok(Exit.isSuccess(await set("owner/name", "example-docker")));
+    // A token GitHub won't take isn't a variable already deleted: the row still says where the jobs run.
+    github.script.rejectToken = true;
+    refused(await set("owner/name", null), /GitHub refused/);
+    const still = await session(ALL_SCOPES, (client) => client["moveCi.status"]());
+    assert.ok(Exit.isSuccess(still));
+    assert.equal(still.value.repos.find(({ repo }) => repo === "owner/name")?.variables[0]?.value, "example-docker");
+    github.script.rejectToken = false;
     const back = await set("owner/name", null);
     assert.ok(Exit.isSuccess(back));
     assert.equal(back.value.repos.find(({ repo }) => repo === "owner/name")?.variables[0]?.value, null);
@@ -223,6 +236,7 @@ test("the switch writes only a runner this machine has that every job can run on
       'PATCH /repos/owner/name/actions/variables/LINUX_RUNNER {"name":"LINUX_RUNNER","value":"example-docker"}',
       'POST /repos/owner/name/actions/variables {"name":"LINUX_RUNNER","value":"example-docker"}',
       'PATCH /repos/owner/name/actions/variables/LINUX_RUNNER {"name":"LINUX_RUNNER","value":"example-docker"}',
+      "DELETE /repos/owner/name/actions/variables/LINUX_RUNNER",
       "DELETE /repos/owner/name/actions/variables/LINUX_RUNNER",
       'PATCH /repos/example/tools/actions/variables/LINUX_RUNNER {"name":"LINUX_RUNNER","value":"example-docker"}',
     ]);
