@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
 import { ALL_SCOPES, type ThreadEvent } from "@runnerbox/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
@@ -73,12 +74,16 @@ test("Stop doesn't send the waiting question: the stream hands its text back", a
         const thread = yield* newThread(client);
         yield* client["threads.startTurn"]({ id: thread.id, text: "Why?" });
         yield* Effect.sleep(50);
+        // Stop is sent only once the stream is open, so the event it publishes can't go out before.
+        const subscribed = yield* Deferred.make<void>();
         const watching = yield* client["threads.subscribe"]({ id: thread.id }).pipe(
+          Stream.tap((event) => (event._tag === "Snapshot" ? Deferred.succeed(subscribed, undefined) : Effect.void)),
           Stream.filter((event) => event._tag !== "AgentTextDelta"),
           Stream.takeUntil((event) => event._tag === "TurnEnded"),
           Stream.runCollect,
           Effect.forkChild,
         );
+        yield* Deferred.await(subscribed);
         yield* client["threads.queueTurn"]({ id: thread.id, text: "Keep this" });
         yield* client["threads.interrupt"]({ id: thread.id });
         const events = [...(yield* Fiber.join(watching))];
