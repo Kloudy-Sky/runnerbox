@@ -43,7 +43,8 @@ export function SpeedPage() {
   const usage = useRpcQueryEverywhere(["kindUsage", days], (client) => client["history.kindUsage"]({ days }));
   const health = useRpcQueryEverywhere(["health", HEALTH_DAYS], (client) => client["runners.health"]({ days: HEALTH_DAYS }));
   // Each machine runs its own reviews on its own Claude account, so their cost adds up across machines.
-  const totals = useRpcQueryEverywhere(["dailyTotals", days], (client) => client["history.dailyTotals"]({ days }));
+  const totals = useRpcQueryEverywhere(["dailyTotals", days, null], (client) => client["history.dailyTotals"]({ days }));
+  const repoTotals = useRpcQueryEverywhere(["dailyTotals", days, repo ?? null], (client) => client["history.dailyTotals"]({ days, repo: repo! }), { enabled: repo !== undefined });
   // Carries its repo, so a range change keeps it on screen while the next loads but another repo's
   // jobs never show under this repo's name.
   const trendsQuery = useRpcQuery(
@@ -98,10 +99,13 @@ export function SpeedPage() {
   // share compares the two sides of the same history rather than mixing the scopes.
   const historyMs = summary ? summary.ownMachinesMs + summary.githubMachinesMs : 0;
   const ownShare = summary && historyMs > 0 ? summary.ownMachinesMs / historyMs : null;
-  const reviewDays = totals.flatMap((answer) => (answer.data && shown(answer.environment.environmentId) ? answer.data : []));
-  const reviewCount = reviewDays.reduce((total, day) => total + day.reviews, 0);
-  const reviewUsd = reviewDays.reduce((total, day) => total + day.reviewCostUsd, 0);
-  const reviews = reviewCount > 0 || reviewUsd > 0 ? { reviews: reviewCount, usd: reviewUsd } : null;
+  const spend = (answers: typeof totals) => {
+    const reviewDays = answers.flatMap((answer) => (answer.data && shown(answer.environment.environmentId) ? answer.data : []));
+    return { reviews: reviewDays.reduce((total, day) => total + day.reviews, 0), usd: reviewDays.reduce((total, day) => total + day.reviewCostUsd, 0) };
+  };
+  const allSpend = spend(totals);
+  const repoSpend = spend(repoTotals);
+  const reviews = allSpend.reviews > 0 || allSpend.usd > 0 ? { ...allSpend, repo: repo && repoTotals.some((answer) => answer.data) && repoSpend.usd !== allSpend.usd ? { name: repo, ...repoSpend } : null } : null;
   return (
     <div className="min-h-0 flex-1 overflow-y-auto pb-10">
       {header}

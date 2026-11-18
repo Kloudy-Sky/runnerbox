@@ -19,7 +19,7 @@ function Total({ label, value, under }: { label: string; value: number | string;
 // cost over the last seven days come from every machine's daily totals, which cover every
 // repository whatever the filters say. A server older than those totals adds nothing to them.
 export function PullTotals({ pulls }: { pulls: ReadonlyArray<PullRequest> }) {
-  const week = useRpcQueryEverywhere(["dailyTotals", 7], (client) => client["history.dailyTotals"]({ days: 7 }), { refetchEvery: 60_000 }).flatMap(({ data }) => data ?? []);
+  const week = useRpcQueryEverywhere(["dailyTotals", 7, null], (client) => client["history.dailyTotals"]({ days: 7 }), { refetchEvery: 60_000 }).flatMap(({ data }) => data ?? []);
   const reviews = week.reduce((sum, day) => sum + day.reviews, 0);
   const cost = week.reduce((sum, day) => sum + day.reviewCostUsd, 0);
   const byStanding = Map.groupBy(pulls, standingOf);
