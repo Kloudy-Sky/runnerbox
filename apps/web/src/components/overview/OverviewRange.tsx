@@ -21,7 +21,7 @@ export function OverviewRange() {
       <MenuPopup align="end" className="min-w-36">
         <MenuRadioGroup value={range} onValueChange={(value) => isRange(value) && void navigate({ to: ".", search: (previous: RootSearch) => ({ ...previous, range: value }) })}>
           {Object.keys(RANGES).filter(isRange).map((option) => (
-            <MenuRadioItem key={option} value={option}>
+            <MenuRadioItem key={option} value={option} closeOnClick>
               {RANGE_WORDS[option].now}
             </MenuRadioItem>
           ))}

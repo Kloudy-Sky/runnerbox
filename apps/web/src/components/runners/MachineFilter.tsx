@@ -16,9 +16,9 @@ export function MachineFilter({ machines, picked, onPick }: { machines: Readonly
       </MenuTrigger>
       <MenuPopup align="end" className="min-w-44">
         <MenuRadioGroup value={current?.key ?? ALL} onValueChange={(key) => onPick(machines.find((machine) => machine.key === key) ?? null)}>
-          <MenuRadioItem value={ALL}>All machines</MenuRadioItem>
+          <MenuRadioItem value={ALL} closeOnClick>All machines</MenuRadioItem>
           {machines.map((machine) => (
-            <MenuRadioItem key={machine.key} value={machine.key}>
+            <MenuRadioItem key={machine.key} value={machine.key} closeOnClick>
               {machine.name}
             </MenuRadioItem>
           ))}
