@@ -24,20 +24,25 @@ const ON: MonitorSettings = { enabled: true, dailyLimit: 5, accountId: null, mod
 
 // The monitor on a fake clock, over the real services and fixture logs, so its 15-minute schedule
 // runs only when the test moves the clock. Each 15-minute wait is counted as it begins: a pass
-// reads and writes real files, so only then has it finished and is the clock safe to move.
+// reads and writes real files, so only then has it finished and is the clock safe to move. It's
+// counted again as it ends, which the clock does before `advance` returns.
 async function start() {
   const stateDir = await mkdtemp(join(tmpdir(), "runnerbox-schedule-test-"));
   await writeFixtures(stateDir, Date.now());
   const fake = makeFakeProvider({ turns: [[{ text: "Looked." }], [{ text: "Looked again." }]] });
   let waits = 0;
+  let woken = 0;
   const clock = Layer.effectContext(
     Layer.build(TestClock.layer()).pipe(
       Effect.map((context) => {
         const test = Context.get(context, Clock.Clock);
-        const sleep = (duration: Duration.Duration) =>
-          Effect.sync(() => {
-            if (Duration.toMillis(duration) === Duration.toMillis(Monitors.CHECK_EVERY)) waits += 1;
-          }).pipe(Effect.andThen(test.sleep(duration)));
+        const sleep = (duration: Duration.Duration) => {
+          if (Duration.toMillis(duration) !== Duration.toMillis(Monitors.CHECK_EVERY)) return test.sleep(duration);
+          return Effect.sync(() => void (waits += 1)).pipe(
+            Effect.andThen(test.sleep(duration)),
+            Effect.andThen(Effect.sync(() => void (woken += 1))),
+          );
+        };
         return Context.add(context, Clock.Clock, { ...test, sleep });
       }),
     ),
@@ -53,6 +58,7 @@ async function start() {
     status: () => run(monitors.status(true)),
     advance: (minutes: number) => run(TestClock.adjust(`${minutes} minutes`)),
     waits: () => waits,
+    woken: () => woken,
     // As though these items had just appeared.
     arrive: async (ids: ReadonlyArray<string>) => {
       const path = join(stateDir, ".server", "monitor.json");
@@ -87,7 +93,7 @@ test("while monitors are on, a pass runs every 15 minutes", async () => {
     assert.equal(monitor.fake.inputs.length, 1);
     await monitor.arrive([SLOT]);
     await monitor.advance(14);
-    assert.equal(monitor.waits(), 2, "no pass before 15 minutes have gone by");
+    assert.equal(monitor.woken(), 1, "no pass before 15 minutes have gone by");
     await monitor.advance(1);
     await waiting(monitor, 3);
     assert.equal(monitor.fake.inputs.length, 2);
