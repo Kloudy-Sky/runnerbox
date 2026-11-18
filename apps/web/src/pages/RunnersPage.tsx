@@ -5,11 +5,13 @@ import { Episodes } from "../components/runners/Episodes.tsx";
 import { LastHour, lastHourNote } from "../components/runners/LastHour.tsx";
 import { MachineFilter } from "../components/runners/MachineFilter.tsx";
 import { MachineSection } from "../components/runners/MachineSection.tsx";
+import { MoveCi } from "../components/runners/MoveCi.tsx";
 import { SectionTitle } from "../components/runners/SectionTitle.tsx";
 import { WaitingJobs } from "../components/runners/WaitingJobs.tsx";
 import { ThreadColumn } from "../components/ThreadColumn.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
+import { useMoveCi } from "../hooks/useMoveCi.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { type RunnerMachine, useRunnerMachines } from "../hooks/useRunnerMachines.ts";
 import { useRunnerQueueEverywhere } from "../hooks/useRunnerQueueEverywhere.ts";
@@ -55,6 +57,8 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
   const { days } = useRange();
   const environments = useStore(runtime.store, (state) => state.environments);
   const queues = useRunnerQueueEverywhere();
+  // From the window's own environment, whose sign-in to GitHub reads the workflows.
+  const moveCi = useMoveCi();
   const shown = picked ? [picked] : machines;
   const several = shown.length > 1;
   const answered = shown.flatMap((machine) => (machine.install ? [{ ...machine, install: machine.install }] : []));
@@ -104,6 +108,7 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
           </dl>
         ) : null}
       </header>
+      {moveCi !== null && moveCi.repos.length > 0 ? <MoveCi view={moveCi} /> : null}
       {shown.map((machine) => (
         <MachineSection key={machine.key} machine={machine} running={queues.get(machine.environmentId)?.running ?? []} onPick={several ? () => onPick(machine) : null} />
       ))}

@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 // holding a job for example-linux and one for example-docker, and one job for a hosted label. It
 // answers with ETags like GitHub, so a repeated look is a 304. It also answers as GitHub with the
 // App installed on owner/name and owner/other, with three pull requests open on owner/name, the
-// second with a run going, to any token, and signs a server in as octocat a few seconds after it
+// second with a run going, and owner/name's workflows for Move CI, to any token, and signs a server in as octocat a few seconds after it
 // asks for a code.
 // `code` is the first pull request's real commits and diff, from reviewFixture.ts, so it can be reviewed.
 export async function startFakeGitHub(now: number, code?: { readonly baseSha: string; readonly headSha: string; readonly diff: string }) {
@@ -20,6 +20,7 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     html_url: `https://github.com/owner/name/actions/runs/${run}/job/${(jobs += 1)}`,
   });
   const pull = (number: number, title: string, branch: string, opened: number, changed: number, draft = false) => ({ number, title, draft, user: { login: "someone" }, head: { ref: branch, sha: String(number % 10).repeat(40), repo: { full_name: "owner/name" } }, base: { ref: "main" }, created_at: ago(opened), updated_at: ago(changed) });
+  const workflow = (text: string) => ({ encoding: "base64", content: Buffer.from(text).toString("base64") });
   const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha, repo: { full_name: "owner/name" } } } : {}) };
   const replies: Record<string, unknown> = {
     "/user": { login: "octocat" },
@@ -44,6 +45,12 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
         { run_id: 9, run_attempt: 1, workflow_name: "ci", name: "e2e", status: "in_progress", conclusion: null, started_at: ago(4), completed_at: null },
       ],
     },
+    // Move CI: build reads the runner variable, e2e and lint don't yet, and release picks from a matrix.
+    "/repos/owner/name/contents/.github/workflows": [{ type: "file", path: ".github/workflows/ci.yml" }, { type: "file", path: ".github/workflows/release.yml" }],
+    "/repos/owner/name/contents/.github/workflows/ci.yml": workflow(
+      "jobs:\n  build:\n    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}\n    steps:\n      - run: make\n  e2e:\n    runs-on: ubuntu-latest\n    services:\n      db:\n        image: postgres\n    steps:\n      - run: make e2e\n  lint:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: make lint\n",
+    ),
+    "/repos/owner/name/contents/.github/workflows/release.yml": workflow("jobs:\n  release:\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-15]\n    runs-on: ${{ matrix.os }}\n    steps:\n      - run: make release\n"),
     // The fixtures' gh is 2.45.0, well behind; their runner is the newest.
     "/repos/cli/cli/releases/latest": { tag_name: "v2.83.0", published_at: new Date(now - 14 * 86_400_000).toISOString() },
     "/repos/cli/cli/releases/tags/v2.45.0": { tag_name: "v2.45.0", published_at: "2024-02-07T00:00:00Z" },
