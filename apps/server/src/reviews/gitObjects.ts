@@ -35,6 +35,9 @@ type Ran = { readonly code: number | "timeout" | "missing" | "too_big"; readonly
 type GitOptions = { readonly signal?: AbortSignal | undefined; readonly env?: Record<string, string>; readonly timeoutMs?: number; readonly maxBytes?: number };
 const git = (cwd: string, args: ReadonlyArray<string>, options: GitOptions = {}) =>
   new Promise<Ran>((resolve) => {
+    // Node still starts a process for a signal that has already fired, and kills it a moment
+    // later, so a slow machine could let that git run. A stopped review starts none.
+    if (options.signal?.aborted) return resolve({ code: -1, stdout: "", stderr: "" });
     execFile("git", args, { cwd, env: { ...baseEnv(), ...options.env }, timeout: options.timeoutMs ?? READ_TIMEOUT_MS, maxBuffer: options.maxBytes ?? MAX_FILE_BYTES, encoding: "utf8", ...(options.signal ? { signal: options.signal } : {}) }, (error, stdout, stderr) => {
       if (error === null) return resolve({ code: 0, stdout, stderr });
       if (error.code === "ENOENT") return resolve({ code: "missing", stdout, stderr });
