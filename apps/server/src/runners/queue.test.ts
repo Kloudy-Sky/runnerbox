@@ -11,7 +11,8 @@ import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import { startTestServer } from "../testing/testServer.ts";
 import { createGitHubReader } from "../github/githubReader.ts";
-import { afterPoll, reposToPoll, runIds, waitingJobs } from "./queueRules.ts";
+import type { JobRecord } from "runnerbox/src/tracking/job-record.ts";
+import { afterPoll, reposToPoll, runIds, runningJobs, usualTimes, waitingJobs } from "./queueRules.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "runnerbox-queue-"));
 after(() => rm(dir, { recursive: true, force: true }));
@@ -252,11 +253,26 @@ test("queued runs come first, the longest waiting first, and the queued runs tha
   const run = (id: number, minute: number) => ({ id, created_at: `2026-11-15T12:${String(minute).padStart(2, "0")}:00Z` });
   const queued = { workflow_runs: Array.from({ length: 12 }, (_, index) => run(100 + index, 50 - index)) };
   const inProgress = { workflow_runs: [run(1, 59)] };
-  const { ids, leftOut } = runIds(queued, inProgress);
+  const { ids, leftOut } = runIds("owner/name", queued, inProgress);
   assert.equal(ids.length, 10);
   assert.equal(ids[0], 111, "the oldest queued run first");
   assert.ok(!ids.includes(1), "in-progress runs only fill what's left");
   assert.equal(leftOut, 2);
+});
+
+test("a job this machine's runner is running carries its pull request or branch, and its usual time from runs that passed", () => {
+  const ran = (minutes: number, conclusion: string): JobRecord => ({
+    v: 1, repo: "owner/name", workflow: "ci", job: "test", jobId: minutes, runId: minutes, attempt: 1, branch: "main", conclusion, runner: "example-linux-1", labels: ["example-linux"],
+    createdAt: "2026-11-15T10:00:00Z", startedAt: "2026-11-15T10:00:00Z", completedAt: new Date(Date.parse("2026-11-15T10:00:00Z") + minutes * 60_000).toISOString(), steps: [],
+  });
+  const usual = usualTimes([ran(4, "success"), ran(6, "success"), ran(8, "success"), ran(1, "failure")]);
+  const run = (id: number, branch: string, from: string, pulls: { number: number }[]) => ({ id, created_at: "2026-11-15T12:00:00Z", head_branch: branch, head_repository: { full_name: from }, pull_requests: pulls });
+  const { refs } = runIds("owner/name", { workflow_runs: [run(7, "fix", "owner/name", [{ number: 482 }])] }, { workflow_runs: [run(8, "main", "owner/name", []), run(9, "main", "someone/name", []), run(10, "b".repeat(300), "owner/name", [])] });
+  assert.deepEqual([refs.get(7), refs.get(8), refs.get(9), refs.get(10)?.length], ["#482", "main", "someone:main", 100], "a fork's branch never reads as the repo's own");
+  const job = (name: string, runner: string | null, url: string) => ({ name, workflow_name: "ci", status: "in_progress", labels: ["example-linux"], created_at: "2026-11-15T12:00:00Z", started_at: "2026-11-15T12:01:00Z", runner_name: runner, html_url: url });
+  const body = { jobs: [job("test", "example-linux-1", "https://example.com/phish"), job("build", "someone-else-1", ""), job("lint", null, "")] };
+  const running = runningJobs("owner/name", body, new Set(["example-linux-1"]), "#482", usual);
+  assert.deepEqual(running.map(({ runner, job, ref, since, url, usualMs }) => [runner, job, ref, since, url, usualMs]), [["example-linux-1", "test", "#482", "2026-11-15T12:01:00Z", null, 6 * 60_000]]);
 });
 
 test("a job's names are cut short and its link kept only for a github.com page", () => {

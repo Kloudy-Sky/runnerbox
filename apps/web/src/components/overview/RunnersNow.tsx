@@ -30,7 +30,9 @@ export function RunnersNow({ runners, machines }: { runners: ReadonlyArray<Runne
                 <span className="truncate font-semibold">{runner.name}</span>
                 {trouble ? <span className={TONE[trouble.tone]}>{trouble.note}</span> : runner.note ? <span className="text-muted-foreground">{runner.note}</span> : null}
               </div>
-              {runner.install ? <RunnerBays runners={runner.install.runners} now={runner.now} small /> : null}
+              {runner.install ? (
+                <RunnerBays runners={runner.install.runners} running={machines.find((machine) => machine.environmentId === runner.environmentId)?.queue?.running ?? []} now={runner.now} small />
+              ) : null}
             </div>
           );
         })}
