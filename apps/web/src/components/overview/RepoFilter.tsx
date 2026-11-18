@@ -14,9 +14,9 @@ export function RepoFilter({ repos, picked, onPick }: { repos: ReadonlyArray<str
       </MenuTrigger>
       <MenuPopup align="end" className="min-w-44">
         <MenuRadioGroup value={picked ?? ALL} onValueChange={(value) => onPick(value === ALL ? null : value)}>
-          <MenuRadioItem value={ALL}>All repositories</MenuRadioItem>
+          <MenuRadioItem value={ALL} closeOnClick>All repositories</MenuRadioItem>
           {repos.map((repo) => (
-            <MenuRadioItem key={repo} value={repo}>
+            <MenuRadioItem key={repo} value={repo} closeOnClick>
               {repo}
             </MenuRadioItem>
           ))}
