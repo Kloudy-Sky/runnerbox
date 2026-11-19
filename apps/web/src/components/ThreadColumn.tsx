@@ -18,7 +18,7 @@ const END_SLACK_PX = 24;
 // A subject's reading column with its agent thread under it and one composer at the bottom, as in
 // T3 Code's chat column. `children` gets the thread, so its primary action can start a turn. Files
 // dragged anywhere over the column are attached to the composer's draft, on a server that takes them.
-export function ThreadColumn(props: { subject: ThreadSubject; placeholder: string; children: (thread: Thread) => ReactNode }) {
+export function ThreadColumn(props: { subject: ThreadSubject | null; placeholder: string; children: (thread: Thread) => ReactNode }) {
   const { days } = useRange();
   const thread = useThread(props.subject, days);
   const attachments = useComposerAttachments(thread.environmentId, thread.draftKey);

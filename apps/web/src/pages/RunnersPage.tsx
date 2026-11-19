@@ -43,10 +43,12 @@ export function RunnersPage() {
   };
   const view = (ask: Ask) => <Runners machines={machines} picked={picked} onPick={pick} ask={ask} />;
   const install = picked?.install;
-  if (picked && install && picked.environmentId === active?.environmentId) {
+  // Keyed by the machine and mounted before its install answers, so the page keeps its place as
+  // answers land; the thread attaches once the install is known.
+  if (picked && picked.environmentId === active?.environmentId) {
     return (
-      <ThreadColumn key={picked.key} subject={{ _tag: "runners", install: install.install }} placeholder="Ask about these runners">
-        {(thread) => view(thread.view.items.length === 0 && thread.permitted && thread.provider?.available ? { send: () => void thread.send(RUNNERS_QUESTION) } : null)}
+      <ThreadColumn key={picked.environmentId} subject={install ? { _tag: "runners", install: install.install } : null} placeholder="Ask about these runners">
+        {(thread) => view(thread.ready && thread.view.items.length === 0 && thread.permitted && thread.provider?.available ? { send: () => void thread.send(RUNNERS_QUESTION) } : null)}
       </ThreadColumn>
     );
   }

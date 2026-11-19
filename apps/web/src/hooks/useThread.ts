@@ -19,14 +19,16 @@ type SendOptions = {
 const errorText = (error: unknown) => (error instanceof Error ? error.message : "That didn't work.");
 
 // The latest thread on a subject, live, and what the dock can do with it. A subject with no thread
-// gets one on the first question.
-export function useThread(subject: ThreadSubject, days: number) {
+// gets one on the first question. A null subject is one the page doesn't know yet, as the Runners
+// page before its install answers: nothing is asked or sent until it's known, so the column around
+// it can stay in place instead of mounting again.
+export function useThread(subject: ThreadSubject | null, days: number) {
   const { environment, connection } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
   const connected = connection?.status === "connected" ? connection.since : null;
-  const key = subjectKey(subject);
+  const key = subject === null ? null : subjectKey(subject);
   const queryClient = useQueryClient();
-  const draftKey = draftKeyOf(environmentId, key);
+  const draftKey = draftKeyOf(environmentId, key ?? "");
 
   // The server decides whether this session may run threads: the scopes saved at pairing can be
   // older than what it grants now.
@@ -37,14 +39,15 @@ export function useThread(subject: ThreadSubject, days: number) {
     retry: false,
   });
   const permitted = !Predicate.isTagged(provider.error, "AuthorizationError");
-  const enabled = provider.isSuccess && connected !== null;
+  const enabled = provider.isSuccess && connected !== null && subject !== null;
   const latest = useQuery({
     queryKey: [environmentId, "threads", key],
-    queryFn: () => runtime.run(environmentId, (client) => client["threads.list"]({ subject })),
+    // `enabled` waits for the subject, so the empty answer is never asked for.
+    queryFn: async () => (subject === null ? [] : await runtime.run(environmentId, (client) => client["threads.list"]({ subject }))),
     enabled,
   });
   // Set when the user starts a thread here, or asks for a fresh one (null).
-  const [chosen, setChosen] = useState<{ key: string; id: string | null } | undefined>();
+  const [chosen, setChosen] = useState<{ key: string | null; id: string | null } | undefined>();
   const threadId = chosen?.key === key ? chosen.id : (latest.data?.[0]?.id ?? null);
 
   const [view, setView] = useState<{ id: string; value: ThreadView } | undefined>();
@@ -101,6 +104,7 @@ export function useThread(subject: ThreadSubject, days: number) {
   // one of that model's levels; without them, the defaults. `attachments` are files this session staged, which the turn takes into the
   // thread, and `references` other threads and runs it brings in as data.
   const send = async (text: string, { accountId, model, effort, attachments = [], references = [] }: SendOptions = {}) => {
+    if (subject === null) return false;
     setError(null);
     try {
       let id = threadId;
@@ -186,6 +190,8 @@ export function useThread(subject: ThreadSubject, days: number) {
     environmentId,
     // Where the composer keeps this subject's unsent question.
     draftKey,
+    // Whether the subject is known, so a question can be sent.
+    ready: subject !== null,
     permitted,
     provider: provider.data,
     view: current,

@@ -142,6 +142,7 @@
     "apps/server/src/update": {"relation":"follows","upstream":["apps/server/src/serviceLauncher.ts","apps/server/src/cli/serviceLauncher.ts","apps/server/src/cloud/serviceProtocol.ts","apps/server/src/cloud/servicePreflight.ts","apps/server/src/cloud/selfUpdate.ts","apps/server/src/cloud/updateHandoff.ts"],"commit":"4a3be943c9179b7dffe21e4f9e817a318e3736d1"},
     "apps/web/src/components/AppShell.tsx": {"relation":"follows","upstream":"apps/web/src/components/AppSidebarLayout.tsx","commit":"4ae66e2e86deb303cc1728cece1b5a68f1073721"},
     "apps/web/src/components/CommandPalette.tsx": {"relation":"follows","commit":"4ae66e2e86deb303cc1728cece1b5a68f1073721"},
+    "apps/web/src/components/GhostBar.tsx": {"relation":"follows","upstream":"apps/web/src/components/pullRequest/PullRequestGhosts.tsx","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/components/Reading.tsx": {"relation":"follows","upstream":"apps/web/src/components/chat/ComposerBanner.tsx","commit":"4ae66e2e86deb303cc1728cece1b5a68f1073721"},
     "apps/web/src/components/ThreadColumn.tsx": {"relation":"follows","upstream":"apps/web/src/components/chat/useTimelineFollow.ts","commit":"4ae66e2e86deb303cc1728cece1b5a68f1073721"},
     "apps/web/src/components/inbox/CustomSnoozeDialog.tsx": {"relation":"follows","upstream":"apps/web/src/components/CustomSnoozeDialog.tsx"},
