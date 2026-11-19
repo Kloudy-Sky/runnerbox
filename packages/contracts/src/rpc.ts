@@ -139,6 +139,7 @@ export const RPC_METHODS = {
   moveCiSetRunner: "moveCi.setRunner",
   moveCiSubscribe: "moveCi.subscribe",
   reviewsStatus: "reviews.status",
+  reviewsSubscribe: "reviews.subscribe",
   reviewsSetRepo: "reviews.setRepo",
   reviewsSetModel: "reviews.setModel",
   reviewsRead: "reviews.read",
@@ -315,6 +316,9 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   }),
   // The repositories the App is installed on, and the open pull requests on the ones turned on.
   Rpc.make(RPC_METHODS.reviewsStatus, { success: ReviewsView, error: ReviewFailure }),
+  // The same view, now and whenever it changes: as a review is queued, starts or ends, a setting is
+  // saved, or the server reads GitHub.
+  Rpc.make(RPC_METHODS.reviewsSubscribe, { success: ReviewsView, error: ReviewFailure, stream: true }),
   Rpc.make(RPC_METHODS.reviewsSetRepo, { payload: { repo: RepoName, review: Schema.Boolean }, success: ReviewsView, error: ReviewFailure }),
   Rpc.make(RPC_METHODS.reviewsSetModel, { payload: { model: Schema.String.check(Schema.isMaxLength(60)) }, success: ReviewsView, error: ReviewFailure }),
   // A pull request's reviews as the server keeps them. Nothing here is posted to GitHub.
@@ -447,6 +451,7 @@ export const RPC_SCOPES = {
   [RPC_METHODS.moveCiSetRunner]: ACCESS,
   // Pull request titles, authors and branches are history like a job's are.
   [RPC_METHODS.reviewsStatus]: HISTORY,
+  [RPC_METHODS.reviewsSubscribe]: HISTORY,
   // Which repositories are read manages access.
   [RPC_METHODS.reviewsSetRepo]: ACCESS,
   [RPC_METHODS.reviewsSetModel]: ACCESS,

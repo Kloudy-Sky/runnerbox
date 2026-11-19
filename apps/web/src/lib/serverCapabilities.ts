@@ -37,9 +37,11 @@ export type Capabilities = {
   readonly whereRan: boolean;
   // `moveCi.subscribe`: the server pushes Move CI's view when it changes, rather than being asked.
   readonly moveCiPush: boolean;
+  // `reviews.subscribe`: the server pushes the reviews view when it changes, rather than being asked.
+  readonly reviewsPush: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false, moveCi: false, moveCiSwitch: false, whereRan: false, moveCiPush: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false, moveCi: false, moveCiSwitch: false, whereRan: false, moveCiPush: false, reviewsPush: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -64,5 +66,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     moveCiSwitch: has(RPC_METHODS.moveCiSetRunner),
     whereRan: has(RPC_METHODS.historyWhereRan),
     moveCiPush: has(RPC_METHODS.moveCiSubscribe),
+    reviewsPush: has(RPC_METHODS.reviewsSubscribe),
   };
 }

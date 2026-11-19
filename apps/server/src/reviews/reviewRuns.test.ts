@@ -8,8 +8,11 @@ import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
 import { ALL_SCOPES, type AuthScope, type Review } from "@runnerbox/contracts";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 import { type FakeStep, makeFakeProvider } from "../testing/FakeProvider.ts";
 import { mcpSession } from "../testing/mcpClient.ts";
 import { TEST_APP, USER_TOKEN, writeGitHubSession } from "../testing/githubSession.ts";
@@ -187,6 +190,37 @@ test("the review's tools answer only a review's own turn", async () => {
       assert.equal(body.result.isError, true, name);
       assert.match(body.result.content[0].text, /Only a review's own turn/);
     }
+  } finally {
+    await close();
+  }
+});
+
+test("a client watching reviews sees a review start and stop as each happens, without asking again", async () => {
+  const { session, close } = await start([{ hang: true }]);
+  try {
+    // All of it well inside the 20 seconds a watcher waits before asking on its own.
+    const states = await session(ALL_SCOPES, (client) =>
+      Effect.gen(function* () {
+        const listed = yield* Deferred.make<void>();
+        const running = yield* Deferred.make<void>();
+        const watching = yield* client["reviews.subscribe"]().pipe(
+          Stream.map((view) => view.pulls.find((pull) => pull.number === 7)?.review?.state ?? "none"),
+          Stream.changes,
+          Stream.tap((state) => Deferred.succeed(state === "running" ? running : listed, undefined)),
+          Stream.takeUntil((state) => state === "stopped"),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Deferred.await(listed);
+        yield* client["reviews.start"]({ repo: "owner/name", number: 7 });
+        yield* Deferred.await(running);
+        yield* client["reviews.stop"]({ repo: "owner/name", number: 7 });
+        return yield* Fiber.join(watching);
+      }).pipe(Effect.timeout("5 seconds")),
+    );
+    assert.ok(Exit.isSuccess(states));
+    assert.equal(states.value[0], "none");
+    assert.deepEqual(states.value.slice(-2), ["running", "stopped"]);
   } finally {
     await close();
   }

@@ -134,6 +134,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "monitors.save": (settings) => monitors.save(settings),
         "monitors.markRead": ({ itemId }) => monitors.markRead(itemId),
         "reviews.status": () => reviewWatch.status(mayReview),
+        "reviews.subscribe": () => reviewWatch.changes(mayReview),
         "github.status": () => github.status(mayReview),
         "github.signIn": () => github.signIn(mayReview),
         "github.cancelSignIn": () => github.cancelSignIn(mayReview),
