@@ -18,7 +18,7 @@ const LICENCES = [
   ["T3 Code, whose components, layout and settings this app follows (see THIRD_PARTY_NOTICES.md)", "MIT"],
   ["React", "MIT"],
   ["Base UI", "MIT"],
-  ["TanStack Query and Router", "MIT"],
+  ["TanStack Router", "MIT"],
   ["Effect", "MIT"],
   ["Zustand", "MIT"],
   ["Tailwind CSS", "MIT"],
