@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
-import { ALL_SCOPES, type AuthScope } from "@runnerbox/contracts";
+import { ALL_SCOPES, type AuthScope, type MoveCiView } from "@runnerbox/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
@@ -48,7 +50,7 @@ async function fakeGitHub() {
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
-  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, asked, script, close: () => new Promise((resolve) => server.close(resolve)) };
+  return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, asked, script, replies, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
 test("Move CI reads only the workflows on each installed repository, drafts the patch, and asks GitHub once a minute", async () => {
@@ -179,6 +181,42 @@ async function fakeVariables() {
   return { apiBase: `http://127.0.0.1:${typeof address === "object" && address ? address.port : 0}`, writes, script, own, close: () => new Promise((resolve) => server.close(resolve)) };
 }
 
+test("a look one watcher's minute makes is pushed to every watcher as it lands", async () => {
+  const github = await fakeGitHub();
+  const reach = { app: TEST_APP, token: USER_TOKEN, installations: [], repos: ["owner/name"], grants: new Map(), problem: null };
+  const signedIn = Layer.succeed(GitHub.GitHub, GitHub.GitHub.of({ reach: Effect.succeed(reach), status: () => Effect.die("unused"), signIn: () => Effect.die("unused"), cancelSignIn: () => Effect.die("unused"), signOut: () => Effect.die("unused") }));
+  const queue = QueueConfig.layerTest({ apiBase: github.apiBase, reportEnvPath: "/nonexistent/report.env", timing: TIMING });
+  const noRunners = Layer.succeed(RunnerState.RunnerState, RunnerState.RunnerState.of({ current: Effect.succeed([]), changes: Stream.empty }));
+  const context = await Effect.runPromise(Layer.build(Layer.mergeAll(MoveCi.layer.pipe(Layer.provide(Layer.mergeAll(signedIn, queue, noRunners))), TestClock.layer())).pipe(Effect.scoped));
+  const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect.pipe(Effect.provide(context)));
+  const watch = () => run(Context.get(context, MoveCi.MoveCi).changes({ switch: false }).pipe(Stream.take(2), Stream.runCollect, Effect.forkDetach));
+  // The GitHub stand-in answers on real sockets, so each step waits a moment for it.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 300));
+  const jobs = (views: ReadonlyArray<MoveCiView>) => views.map((view) => view.repos.flatMap((repo) => repo.jobs.map((job) => job.job)));
+  const watchers: Array<Awaited<ReturnType<typeof watch>>> = [];
+  try {
+    const first = await watch();
+    watchers.push(first);
+    await settle();
+    // The second watcher joins half a minute in, so its own minute ends half a minute after the first's.
+    await run(TestClock.adjust("30 seconds"));
+    const second = await watch();
+    watchers.push(second);
+    await settle();
+    github.replies["/repos/owner/name/contents/.github/workflows/ci.yml"] = { encoding: "base64", content: base64(CI.replace("build:", "test:")) };
+    // The first watcher's minute makes a new look, which reaches the second at once.
+    await run(TestClock.adjust("31 seconds"));
+    await settle();
+    const heard = second.pollUnsafe();
+    assert.ok(heard !== undefined && Exit.isSuccess(heard), "the second watcher heard the new look before its own minute");
+    assert.deepEqual(jobs(heard.value), [["build"], ["test"]]);
+    assert.deepEqual(jobs(await run(Fiber.join(first))), [["build"], ["test"]]);
+  } finally {
+    await run(Fiber.interruptAll(watchers));
+    await github.close();
+  }
+});
+
 test("the switch writes only a runner this machine has that every job can run on, and says why a repository can't be switched", async () => {
   const github = await fakeVariables();
   const server = await startTestServer({ prepare: writeGitHubSession, queue: { apiBase: github.apiBase, app: TEST_APP, reportEnvPath: "/nonexistent/report.env", timing: TIMING } });
@@ -244,6 +282,32 @@ test("the switch writes only a runner this machine has that every job can run on
 
     const reader = await session(["history:read"], (client) => client["moveCi.status"]());
     assert.ok(Exit.isSuccess(reader) && reader.value.canSwitch === false);
+  } finally {
+    await Promise.all([server.close(), github.close()]);
+  }
+});
+
+test("a client watching Move CI gets the view at once, and a switch's move without waiting for the next look", async () => {
+  const github = await fakeVariables();
+  const server = await startTestServer({ prepare: writeGitHubSession, queue: { apiBase: github.apiBase, app: TEST_APP, reportEnvPath: "/nonexistent/report.env", timing: TIMING } });
+  try {
+    const { code } = await server.createPairingCode(ALL_SCOPES);
+    const { token } = await Effect.runPromise(pairWithCode(server.baseUrl, code, "app"));
+    const views = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flatMap(openSession(server.baseUrl, token), ({ client }) =>
+          Effect.gen(function* () {
+            const first = yield* Deferred.make<void>();
+            const watching = yield* client["moveCi.subscribe"]().pipe(Stream.tap(() => Deferred.succeed(first, undefined)), Stream.take(2), Stream.runCollect, Effect.forkChild);
+            yield* Deferred.await(first);
+            yield* client["moveCi.setRunner"]({ repo: "owner/name", variable: "LINUX_RUNNER", label: "example-docker" });
+            return yield* Fiber.join(watching).pipe(Effect.timeout("5 seconds"));
+          }),
+        ),
+      ),
+    );
+    const runsOn = (view: (typeof views)[number]) => view.repos.find(({ repo }) => repo === "owner/name")?.variables[0]?.value;
+    assert.deepEqual(views.map(runsOn), [null, "example-docker"]);
   } finally {
     await Promise.all([server.close(), github.close()]);
   }

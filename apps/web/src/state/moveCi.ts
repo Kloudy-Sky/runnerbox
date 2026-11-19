@@ -1,4 +1,5 @@
 import type { MoveCiView } from "@runnerbox/contracts";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { polled } from "../lib/polled.ts";
@@ -6,16 +7,20 @@ import { capabilitiesAtom, connectedAtom } from "./connections.ts";
 import { runnersRangeAtom } from "./runners.ts";
 
 // Where each job on a machine's installed repositories picks its runner, as atoms. The server asks
-// GitHub no more than once a minute, so asking it more often would only repeat its last answer.
+// GitHub no more than once a minute, so hearing from it more often would only repeat its last answer.
 
 // How long the view outlives the last page that read it, so coming back to Runners shows it at once.
 const KEPT = "5 minutes";
 
-// The view as the server last answered it, on a server that has Move CI.
+// The view as the server last sent it, on a server that has Move CI: pushed whenever it changes,
+// or, from a server older than the push, asked every minute. A pushed stream that fails is followed
+// again a minute later, as a failed ask is asked again.
 const askedAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
     const connection = get(connectedAtom(environmentId));
-    if (connection === null || !get(capabilitiesAtom(environmentId)).moveCi) return Stream.never;
+    const capabilities = get(capabilitiesAtom(environmentId));
+    if (connection === null || !capabilities.moveCi) return Stream.never;
+    if (capabilities.moveCiPush) return connection.client["moveCi.subscribe"]().pipe(Stream.retry(Schedule.spaced("60 seconds")));
     return polled(connection.client["moveCi.status"](), "60 seconds");
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
