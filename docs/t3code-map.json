@@ -212,6 +212,7 @@
     "apps/web/src/pages/settings/ProvidersSettings.tsx": {"relation":"follows","upstream":"apps/web/src/components/settings/ProviderSettingsPanel.tsx","commit":"3ee426272bd69f5214a1693d9728180e6986867d"},
     "apps/web/src/state/connections.ts": {"relation":"follows","upstream":"apps/web/src/connection/runtime.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/github.ts": {"relation":"follows","upstream":"apps/web/src/cloud/cloudLinkState.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
+    "apps/web/src/state/inbox.ts": {"relation":"follows","upstream":"apps/web/src/cloud/cloudLinkState.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/moveCi.ts": {"relation":"follows","upstream":"apps/web/src/cloud/cloudLinkState.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/reviews.ts": {"relation":"follows","upstream":"apps/web/src/cloud/cloudLinkState.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/runnerMachines.ts": {"relation":"follows","upstream":"apps/web/src/state/pullRequests.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},

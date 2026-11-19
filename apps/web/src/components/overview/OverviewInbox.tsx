@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import type { InboxMachine } from "../../hooks/useInboxEverywhere.ts";
+import type { InboxMachine } from "../../state/inbox.ts";
 import type { InboxRows } from "../../lib/inboxRows.ts";
 import { itemMeta, reviewMeta, STATUS_WORDS } from "../../lib/inboxWords.ts";
 import type { RootSearch } from "../../lib/search.ts";
