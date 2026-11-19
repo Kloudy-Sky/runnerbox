@@ -219,6 +219,7 @@
     "apps/web/src/state/reviews.ts": {"relation":"follows","upstream":"apps/web/src/cloud/cloudLinkState.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/runnerMachines.ts": {"relation":"follows","upstream":"apps/web/src/state/pullRequests.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/runners.ts": {"relation":"follows","upstream":"apps/web/src/state/pullRequests.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
+    "apps/web/src/state/serverStatus.ts": {"relation":"follows","upstream":"apps/web/src/cloud/cloudLinkState.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/speed.ts": {"relation":"follows","upstream":"apps/web/src/cloud/cloudLinkState.ts","commit":"4c8cb0445da6c84fa799edee057af355d1e992aa"},
     "apps/web/src/state/updateEverything.ts": {"relation":"follows","upstream":"apps/web/src/components/sidebar/updateEverythingRun.tsx","commit":"295a0a7332aa1b0cc2f737dae71bd5e607a6ebb9"},
     "infra/relay/src/reaper.ts": {"relation":"follows","upstream":"infra/relay/src/environments/ManagedEndpointReaper.ts","commit":"3a8c250cb0c8056f2f563091fd412fe5db809fa1"},

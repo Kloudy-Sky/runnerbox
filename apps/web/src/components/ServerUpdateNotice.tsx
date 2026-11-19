@@ -1,12 +1,15 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { SavedEnvironment } from "@runnerbox/client-runtime";
 import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
 import { useStore } from "zustand";
-import { useRpcQuery } from "../hooks/useRpcQuery.ts";
+import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { useServerCapabilityState } from "../hooks/useServerCapabilities.ts";
+import { answerOf } from "../lib/answer.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { BLOCKED_WORDS, isUnderway, needsCommand, serverVersionWords, SIGNATURE_WORDS, underwayLine, type UpdateRun } from "../lib/serverUpdate.ts";
 import { runtime } from "../runtime.ts";
+import { releaseSignatureAtom, updateStatusAtom } from "../state/serverStatus.ts";
 import { dismissUpdate, startUpdate, useServerUpdates } from "../state/serverUpdates.ts";
 import { ServerUpdateCommand } from "./ServerUpdateCommand.tsx";
 import { Button } from "./ui/button.tsx";
@@ -30,10 +33,12 @@ export function useUpdateAccess(environment: SavedEnvironment) {
 // server that doesn't check signatures.
 export function useReleaseSignature(appVersion: string, enabled: boolean) {
   const { capabilities } = useServerCapabilityState();
+  const environmentId = useActiveEnvironment().environment?.environmentId ?? "";
   const asking = enabled && capabilities.checkRelease;
-  const check = useRpcQuery(["server.checkRelease", appVersion], (client) => client["server.checkRelease"]({ version: appVersion }), { enabled: asking });
+  // Not asking reads no machine, which never asks.
+  const check = answerOf(useAtomValue(releaseSignatureAtom({ environmentId: asking ? environmentId : "", version: appVersion })));
   const signature = check.data?.signature;
-  if (asking && check.isPending) return "pending" as const;
+  if (asking && check.data === undefined && !check.isError) return "pending" as const;
   return signature === "missing" || signature === "invalid" ? signature : null;
 }
 
@@ -102,7 +107,7 @@ export function UpdateRunNotice({ environment, run, appVersion }: { environment:
 export function ServerBehindNotice({ environment, serverVersion, appVersion }: { environment: SavedEnvironment; serverVersion: string; appVersion: string }) {
   const { capabilities, known } = useServerCapabilityState();
   const denied = useUpdateAccess(environment);
-  const status = useRpcQuery(["server.updateStatus"], (client) => client["server.updateStatus"](), { enabled: capabilities.serverUpdate && denied === null });
+  const status = answerOf(useAtomValue(updateStatusAtom(denied === null ? environment.environmentId : "")));
   const unsigned = useReleaseSignature(appVersion, capabilities.serverUpdate && denied === null);
   const running = `The server on ${environment.label} runs ${serverVersionWords(serverVersion)}`;
   const behind = `${running}, older than this app (${appVersion}).`;

@@ -6,7 +6,9 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "../../compo
 import { UpdatesGroup } from "../../components/settings/UpdatesGroup.tsx";
 import { useDesktopUpdates } from "../../hooks/useDesktopUpdates.ts";
 import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
-import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
+import { useAtomValue } from "@effect/atom-react";
+import { answerOf } from "../../lib/answer.ts";
+import { aboutAtom } from "../../state/serverStatus.ts";
 import { serverIsBehind } from "../../lib/serverUpdate.ts";
 import { cn } from "../../lib/utils.ts";
 
@@ -28,7 +30,7 @@ const LICENCES = [
 // After T3 Code's about panel: which versions are talking, what "incompatible" means, and licences.
 export function AboutSettings() {
   const { environment, connection } = useActiveEnvironment();
-  const about = useRpcQuery(["about"], (client) => client["server.about"]());
+  const about = answerOf(useAtomValue(aboutAtom(environment?.environmentId ?? "")));
   const incompatible = connection?.status === "disconnected" && connection.reason === "incompatible";
   const updates = useDesktopUpdates();
   const appVersion = packageJson.version;
