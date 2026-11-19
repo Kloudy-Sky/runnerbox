@@ -27,7 +27,8 @@ export function AccessSettings() {
   const { environment } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
   const canManage = environment?.scopes.includes("access:write") ?? false;
-  const sessions = answerOf(useAtomValue(sessionsAtom(environmentId)));
+  // A session that can't manage access reads no machine, which never asks: the server would refuse.
+  const sessions = answerOf(useAtomValue(sessionsAtom(canManage ? environmentId : "")));
   const [scopes, setScopes] = useState<ReadonlySet<AuthScope>>(new Set<AuthScope>(["history:read", "runners:read"]));
   const [code, setCode] = useState<PairingCode | null>(null);
   const refresh = () => appAtomRegistry.refresh(sessionsAtom(environmentId));
