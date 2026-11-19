@@ -26,7 +26,7 @@ An **environment** is one server and the machine it owns. Clients reach it over 
 
 ## Code
 
-- TypeScript run by Node 22.18+. `pnpm typecheck`, `pnpm test` and `pnpm build` must pass; the first two cover the whole workspace.
+- TypeScript run by Node 22.19+. `pnpm typecheck`, `pnpm test` and `pnpm build` must pass; the first two cover the whole workspace.
 - **arktype** in `src/`, at every boundary that reads outside input. The core stays promise-based.
 - **Effect** in `apps/*` and `packages/*`, with Effect Schema for everything on the wire and every file the server owns. Server features are `Context.Service`s; an RPC handler or MCP tool decodes, calls one service method and maps its error, nothing else. Follow T3 Code's [Effect service conventions](https://github.com/pingdotgg/t3code/blob/main/docs/internals/effect-services.md). The one exception is `apps/server/src/update/supervisor`, which imports only Node's own modules on purpose: it's what `serve` runs before any server code loads, and an update can't replace it.
 - Types come from inference. Write `any` nowhere, and no functions that only cast.

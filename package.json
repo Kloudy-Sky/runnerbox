@@ -5,7 +5,7 @@
   "description": "Throwaway GitHub Actions runners on your own hardware, with job tracking.",
   "license": "MIT",
   "type": "module",
-  "engines": { "node": ">=22.18" },
+  "engines": { "node": ">=22.19" },
   "packageManager": "pnpm@10.28.1",
   "scripts": {
     "runnerbox": "node src/main.ts",

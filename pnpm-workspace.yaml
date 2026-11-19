@@ -12,6 +12,6 @@ ignoredBuiltDependencies:
   # Windows installer tooling pulled in by electron-builder; no Windows target is built.
   - electron-winstaller
   - esbuild
-# @effect/platform-node 4.0.5 accepts any 4.x of this, and newer ones need a newer effect.
+# @effect/platform-node 4.1.2 accepts any 4.x of this, and newer ones need a newer effect.
 overrides:
-  "@effect/platform-node-shared": 4.0.5
+  "@effect/platform-node-shared": 4.1.2

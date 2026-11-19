@@ -138,7 +138,7 @@
     "apps/web/src/shortcuts/dispatcher.ts": {"relation":"stand-in"},
     "apps/web/src/state/entities.ts": {"relation":"stand-in"},
     "apps/web/src/state/server.ts": {"relation":"stand-in"},
-    "apps/web/src/t3tools/atom-react.ts": {"relation":"stand-in","upstream":null,"note":"mapped to @effect/atom-react, which needs Effect 4.1; runnerbox is on 4.0"},
+    "apps/web/src/t3tools/atom-react.ts": {"relation":"stand-in","upstream":null,"note":"mapped to @effect/atom-react; replaced once the client's state moves to atoms"},
     "apps/web/src/t3tools/client-runtime/composerModelMentions.ts": {"relation":"stand-in","upstream":"packages/client-runtime/src/composerModelMentions.ts"},
     "apps/web/src/t3tools/client-runtime/providerSkills.ts": {"relation":"stand-in","upstream":"packages/client-runtime/src/providerSkills.ts"},
     "apps/web/src/t3tools/client-runtime/state/threads.ts": {"relation":"stand-in","upstream":"packages/client-runtime/src/state/threads.ts"},

@@ -21,7 +21,9 @@ await build({
   format: "esm",
   target: "node22",
   outfile: process.argv[2] ?? "dist/runnerbox.js",
-  banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
+  // Bundled CommonJS calls `require`, which an ES module lacks. The import gets its own name, since
+  // bundled code such as @effect/platform-node imports `createRequire` at the top level too.
+  banner: { js: "import { createRequire as runnerboxCreateRequire } from 'node:module'; const require = runnerboxCreateRequire(import.meta.url);" },
   define: {
     RUNNERBOX_RELEASE_KEYS: JSON.stringify(readReleaseKeys()),
     ...(repository === "" ? {} : { RUNNERBOX_RELEASE_REPO: JSON.stringify(repository) }),
