@@ -1,6 +1,7 @@
 import { opensInBrowser } from "@runnerbox/client-runtime";
 import type { CiRepo, CiRunner, CiVariable, RepoRuns, RunnerVariable } from "@runnerbox/contracts";
 import { type ReactNode, useState } from "react";
+import { patchLanded } from "../../lib/patchLanded.ts";
 import { MoveCiSteps } from "./MoveCiSteps.tsx";
 import { RunOn, type RunOnChoice } from "./RunOn.tsx";
 import { RunsBar } from "./RunsBar.tsx";
@@ -36,10 +37,10 @@ function choicesFor(repo: CiRepo, name: RunnerVariable, runners: ReadonlyArray<C
 type Moved = { readonly variable: RunnerVariable; readonly from: string | null; readonly to: string | null };
 
 // A repository on one line: its name, where its jobs ran over the page's range (`runs` is null on a
-// server too old to say), and a switch for each runner variable they read. The line under it says
-// what's in the way, if anything, and opens the setup steps in the row, where the switch moves to.
-// After a move it says where new runs go, with Undo.
-export function CiRepoRow({ repo, runners, runs, canSwitch, setRunner }: { repo: CiRepo; runners: ReadonlyArray<CiRunner>; runs: RepoRuns | undefined | null; canSwitch: boolean; setRunner: ((repo: string, variable: RunnerVariable, label: string | null) => Promise<void>) | null }) {
+// server too old to say, and "unknown" before it has), and a switch for each runner variable they
+// read. The line under it says what's in the way, if anything, and opens the setup steps in the
+// row, where the switch moves to. After a move it says where new runs go, with Undo.
+export function CiRepoRow({ repo, runners, runs, canSwitch, setRunner }: { repo: CiRepo; runners: ReadonlyArray<CiRunner>; runs: RepoRuns | "unknown" | null; canSwitch: boolean; setRunner: ((repo: string, variable: RunnerVariable, label: string | null) => Promise<void>) | null }) {
   const [open, setOpen] = useState(false);
   const [moving, setMoving] = useState(false);
   const [moved, setMoved] = useState<Moved | null>(null);
@@ -47,7 +48,7 @@ export function CiRepoRow({ repo, runners, runs, canSwitch, setRunner }: { repo:
   // Once a patch this row showed is gone, it's on the default branch, and the steps tick.
   const [sawPatch, setSawPatch] = useState(false);
   if (repo.patch !== null && !sawPatch) setSawPatch(true);
-  const landed = sawPatch && repo.patch === null;
+  const landed = sawPatch && patchLanded(repo);
   const choose = (variable: RunnerVariable, from: string | null, to: string | null) => {
     if (setRunner === null) return;
     setMoving(true);
@@ -88,6 +89,8 @@ export function CiRepoRow({ repo, runners, runs, canSwitch, setRunner }: { repo:
       </a>
     ) : null;
   const opens = repo.patch !== null || repo.jobs.some((job) => job.docker !== null || job.state === "left");
+  // While the steps are shown, the third holds the switch, so the row shows Hide in its place.
+  const stepsShown = open && (repo.patch !== null || landed);
   const toggle = repo.patch !== null ? (repo.jobs.some((job) => job.state === "moves") ? "Set them up" : "Set it up") : "Details";
   const said: ReactNode[] = [];
   const say = (key: string, node: ReactNode) => said.push(<span key={key}>{node} </span>);
@@ -116,6 +119,13 @@ export function CiRepoRow({ repo, runners, runs, canSwitch, setRunner }: { repo:
         {toggle}
       </button>,
     );
+  if (open && !stepsShown)
+    say(
+      "hide",
+      <button type="button" className={link} onClick={() => setOpen(false)}>
+        Hide
+      </button>,
+    );
   return (
     <div className="col-span-full grid grid-cols-subgrid items-center gap-y-0.5 py-2">
       <span className="truncate font-medium">{repo.repo}</span>
@@ -124,7 +134,7 @@ export function CiRepoRow({ repo, runners, runs, canSwitch, setRunner }: { repo:
           <RunsBar runs={runs} />
         </div>
       ) : null}
-      {open ? (
+      {stepsShown ? (
         <button type="button" className="justify-self-end text-muted-foreground text-xs hover:text-foreground" onClick={() => setOpen(false)}>
           Hide
         </button>

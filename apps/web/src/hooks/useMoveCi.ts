@@ -11,7 +11,7 @@ import { useActiveEnvironment } from "./useEnvironment.ts";
 // Where each job on the active environment's installed repositories picks its runner, the patch
 // that moves the rest, and the switch that sets their runner variable. `canSet` is false on a
 // server older than the switch. `runs` is where each repository's jobs ran over the page's range,
-// by repository, or null on a server too old to say.
+// by repository: null on a server too old to say, and "unknown" until it has answered.
 export function useMoveCi() {
   const { environment } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
@@ -24,7 +24,7 @@ export function useMoveCi() {
   return {
     view: Option.getOrNull(AsyncResult.value(status)),
     canSet: capabilities.moveCiSwitch,
-    runs: capabilities.whereRan ? new Map<string, RepoRuns>(runs?.map((each) => [each.repo, each])) : null,
+    runs: !capabilities.whereRan ? null : runs === null ? ("unknown" as const) : new Map<string, RepoRuns>(runs.map((each) => [each.repo, each])),
     // The row shows the move from the switch's own answer, without asking again.
     setRunner: (repo: string, variable: RunnerVariable, label: string | null) => runtime.run(environmentId, (client) => client["moveCi.setRunner"]({ repo, variable, label })).then(write),
   };

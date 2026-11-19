@@ -23,6 +23,8 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
   });
   const pull = (number: number, title: string, branch: string, opened: number, changed: number, draft = false) => ({ number, title, draft, user: { login: "someone" }, head: { ref: branch, sha: String(number % 10).repeat(40), repo: { full_name: "owner/name" } }, base: { ref: "main" }, created_at: ago(opened), updated_at: ago(changed) });
   const workflow = (text: string) => ({ encoding: "base64", content: Buffer.from(text).toString("base64") });
+  // owner/other's one job, which needs Docker for its database.
+  const otherCi = (runsOn: string) => `jobs:\n  test:\n    runs-on: ${runsOn}\n    services:\n      db:\n        image: postgres\n    steps:\n      - run: make test\n`;
   const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha, repo: { full_name: "owner/name" } } } : {}) };
   const replies: Record<string, unknown> = {
     "/user": { login: "octocat" },
@@ -54,7 +56,7 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     ),
     "/repos/owner/name/contents/.github/workflows/release.yml": workflow("jobs:\n  release:\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-15]\n    runs-on: ${{ matrix.os }}\n    steps:\n      - run: make release\n"),
     "/repos/owner/other/contents/.github/workflows": [{ type: "file", path: ".github/workflows/ci.yml" }],
-    "/repos/owner/other/contents/.github/workflows/ci.yml": workflow("jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make test\n"),
+    "/repos/owner/other/contents/.github/workflows/ci.yml": workflow(otherCi("ubuntu-latest")),
     // The fixtures' gh is 2.45.0, well behind; their runner is the newest.
     "/repos/cli/cli/releases/latest": { tag_name: "v2.83.0", published_at: new Date(now - 14 * 86_400_000).toISOString() },
     "/repos/cli/cli/releases/tags/v2.45.0": { tag_name: "v2.45.0", published_at: "2024-02-07T00:00:00Z" },
@@ -77,7 +79,7 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     }
     if (path === "/fake/commit" && request.method === "POST") {
       committed = !committed;
-      replies["/repos/owner/other/contents/.github/workflows/ci.yml"] = workflow(`jobs:\n  test:\n    runs-on: ${committed ? "${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}" : "ubuntu-latest"}\n    steps:\n      - run: make test\n`);
+      replies["/repos/owner/other/contents/.github/workflows/ci.yml"] = workflow(otherCi(committed ? "${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}" : "ubuntu-latest"));
       return json({ committed });
     }
     if (path === "/login/oauth/access_token") return json((polls += 1) < 2 ? { error: "authorization_pending" } : { access_token: "not-a-real-user-token", expires_in: 28_800, refresh_token: "not-a-real-refresh-token", refresh_token_expires_in: 15_897_600 });
