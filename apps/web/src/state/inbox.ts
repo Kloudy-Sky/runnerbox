@@ -2,7 +2,7 @@ import type { MonitorStatus } from "@runnerbox/contracts";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { polled, polledOrFailed } from "../lib/polled.ts";
+import { latest, polled, polledOrFailed } from "../lib/polled.ts";
 import { connectedAtom, environmentsAtom } from "./connections.ts";
 import { accountAtom } from "./github.ts";
 import { reviewsAtom } from "./reviews.ts";
@@ -19,16 +19,15 @@ const valueOf = <A, E>(result: AsyncResult.AsyncResult<A, E>) => Option.getOrUnd
 export const inboxWrittenAtom = Atom.family((_environmentId: string) => Atom.make(0));
 
 // A machine's items over the last `days`, asked every minute, since items come and go as jobs run.
-// A failed ask is tried once more, then the failure shows beside what it last answered, so a page
-// that waits for the items, such as Speed and cost, goes on without them. A write, a new range or
-// a reconnect asks again.
+// A failure shows beside what it last answered until an ask answers, so a page that waits for the
+// items, such as Speed and cost, goes on without them. A write asks again at once.
 export const inboxAtom = Atom.family(({ environmentId, days }: { readonly environmentId: string; readonly days: number }) =>
   Atom.make((get) => {
     get(inboxWrittenAtom(environmentId));
     const connection = get(connectedAtom(environmentId));
     if (connection === null) return Stream.never;
     return polledOrFailed(connection.client["inbox.list"]({ days }), "60 seconds");
-  }).pipe(Atom.setIdleTTL(KEPT)),
+  }).pipe(latest, Atom.setIdleTTL(KEPT)),
 );
 
 // A machine's monitor as the server last answered: its settings, today's looks, recent runs and the

@@ -53,7 +53,7 @@ export function SpeedPage() {
     (client) => client["history.jobTrends"]({ repo: repo!, days }).pipe(Effect.map((trends) => ({ trends, repo }))),
     { keepPrevious: true, enabled: speed && repo !== undefined },
   );
-  // The same call, and so the same cache, as the run list.
+  // The same runs atom All runs reads.
   const runs = useRuns(repo, days);
   const overview = useRpcQuery(["overview", days], (client) => client["history.overview"]({ days }), { keepPrevious: true, enabled: speed });
   const inbox = useInbox();
