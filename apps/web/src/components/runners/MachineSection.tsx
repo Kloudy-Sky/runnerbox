@@ -4,6 +4,7 @@ import { machineTrouble } from "../../lib/machineTrouble.ts";
 import { cn } from "../../lib/utils.ts";
 import { ImageFacts } from "../ImageFacts.tsx";
 import { FreeMemoryChart } from "./FreeMemoryChart.tsx";
+import { MachineGhost } from "./MachineGhost.tsx";
 import { RunnerBays } from "./RunnerBays.tsx";
 import { SectionTitle } from "./SectionTitle.tsx";
 
@@ -45,7 +46,9 @@ export function MachineSection({ machine, running, onPick }: { machine: RunnerMa
         </div>
       ) : machine.note ? (
         <p className="text-muted-foreground">{machine.note}</p>
-      ) : null}
+      ) : (
+        <MachineGhost />
+      )}
     </section>
   );
 }
