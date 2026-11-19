@@ -1,5 +1,5 @@
 import type { RunningJob } from "@runnerbox/contracts";
-import type { RunnerMachine } from "../../hooks/useRunnerMachines.ts";
+import type { RunnerMachine } from "../../state/runnerMachines.ts";
 import { machineTrouble } from "../../lib/machineTrouble.ts";
 import { cn } from "../../lib/utils.ts";
 import { ImageFacts } from "../ImageFacts.tsx";

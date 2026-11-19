@@ -9,8 +9,9 @@ import { useInboxEverywhere } from "./useInboxEverywhere.ts";
 import { usePullRequestsEverywhere } from "./usePullRequestsEverywhere.ts";
 import { useRange } from "./useRange.ts";
 import { useRpcQueryEverywhere } from "./useRpcQueryEverywhere.ts";
+import { useAtomValue } from "@effect/atom-react";
+import { runnerQueueEverywhereAtom } from "../state/runnerMachines.ts";
 import { useRunnerMachines } from "./useRunnerMachines.ts";
-import { useRunnerQueueEverywhere } from "./useRunnerQueueEverywhere.ts";
 
 // What Overview reads from every connected machine, through the hooks the Inbox, Runners and Pull
 // requests use, narrowed to the machine in the URL's `machine` when there is one, as on Runners,
@@ -27,7 +28,7 @@ export function useOverview() {
   const repoLists = useRpcQueryEverywhere(["repos"], (client) => client["history.repos"]());
   const pulls = usePullRequestsEverywhere();
   const runners = useRunnerMachines(days);
-  const queues = useRunnerQueueEverywhere();
+  const queues = useAtomValue(runnerQueueEverywhereAtom);
   const picked = runners.find((runner) => runner.key === key) ?? null;
   const shows = ({ environmentId }: { readonly environmentId: string }) => picked === null || picked.environmentId === environmentId;
   const narrow = <Answers extends MachineAnswers>(answers: Answers) => (repo ? answersForRepo(answers, repo) : answers);

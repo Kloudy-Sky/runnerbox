@@ -19,7 +19,6 @@ export default defineConfig({
       { find: /^@t3tools\/shared\/(.*)$/, replacement: `${src("t3tools/shared")}/$1` },
       { find: /^@t3tools\/client-runtime\/composer-model-mentions$/, replacement: src("t3tools/client-runtime/composerModelMentions.ts") },
       { find: /^@t3tools\/client-runtime\/(.*)$/, replacement: `${src("t3tools/client-runtime")}/$1` },
-      { find: /^@effect\/atom-react$/, replacement: src("t3tools/atom-react.ts") },
     ],
   },
   plugins: [react({ compiler: { logDiagnostics: true } }), tailwindcss()],
