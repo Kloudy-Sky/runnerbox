@@ -1,16 +1,17 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useAtomValue } from "@effect/atom-react";
+import { answerOf } from "../lib/answer.ts";
+import { appAtomRegistry } from "../rpc/atomRegistry.ts";
+import { accountsAtom } from "../state/providers.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
-import { useRpcQuery } from "./useRpcQuery.ts";
 
-// The accounts agent turns can run as, and a way to refresh them after a change.
+// The accounts agent turns can run as, and a way to ask again after a change.
 export function useAccounts() {
-  const { environment } = useActiveEnvironment();
-  const queryClient = useQueryClient();
-  const accounts = useRpcQuery(["accounts"], (client) => client["accounts.list"]());
+  const environmentId = useActiveEnvironment().environment?.environmentId ?? "";
+  const accounts = answerOf(useAtomValue(accountsAtom(environmentId)));
   return {
     accounts: accounts.data ?? [],
     loaded: accounts.isSuccess,
     error: accounts.error,
-    refresh: () => queryClient.invalidateQueries({ queryKey: [environment?.environmentId ?? "", "accounts"] }),
+    refresh: () => appAtomRegistry.refresh(accountsAtom(environmentId)),
   };
 }

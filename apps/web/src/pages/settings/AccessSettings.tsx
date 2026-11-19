@@ -1,5 +1,5 @@
 import { ALL_SCOPES, type AuthScope, type PairingCode } from "@runnerbox/contracts";
-import { useQueryClient } from "@tanstack/react-query";
+import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { SettingsIntro } from "../../components/settings/SettingsIntro.tsx";
 import { SettingsPageContainer, SettingsRow, SettingsSection, SettingsUnavailableGroup } from "../../components/settings/settingsLayout.tsx";
@@ -7,7 +7,9 @@ import { Button } from "../../components/ui/button.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
 import { toastManager } from "../../components/ui/toast.tsx";
 import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
-import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
+import { answerOf } from "../../lib/answer.ts";
+import { appAtomRegistry } from "../../rpc/atomRegistry.ts";
+import { sessionsAtom } from "../../state/access.ts";
 import { formatAge } from "../../lib/format.ts";
 import { SCOPE_WORDS } from "../../lib/vocabulary.ts";
 import { runtime } from "../../runtime.ts";
@@ -25,11 +27,11 @@ export function AccessSettings() {
   const { environment } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
   const canManage = environment?.scopes.includes("access:write") ?? false;
-  const queryClient = useQueryClient();
-  const sessions = useRpcQuery(["sessions"], (client) => client["access.sessions"]());
+  // A session that can't manage access reads no machine, which never asks: the server would refuse.
+  const sessions = answerOf(useAtomValue(sessionsAtom(canManage ? environmentId : "")));
   const [scopes, setScopes] = useState<ReadonlySet<AuthScope>>(new Set<AuthScope>(["history:read", "runners:read"]));
   const [code, setCode] = useState<PairingCode | null>(null);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: [environmentId, "sessions"] });
+  const refresh = () => appAtomRegistry.refresh(sessionsAtom(environmentId));
   if (!canManage) {
     return (
       <SettingsPageContainer>
