@@ -50,13 +50,30 @@ export const reviewsEverywhereAtom = Atom.readable((get) =>
   }),
 );
 
-// One pull request's reviews as the machine that ran them keeps them, the newest first. Asked again
-// every few seconds while the newest is still going, and not after: a finished review never
-// changes. A failure shows, beside what it last answered.
-export const pullReviewsAtom = Atom.family(({ environmentId, repo, number }: { readonly environmentId: string; readonly repo: string; readonly number: number }) =>
+type PullKey = { readonly environmentId: string; readonly repo: string; readonly number: number };
+
+// One pull request's newest review as its machine's view lists it, as one string, so its reviews
+// are asked again when a review starts or finishes there, and not on every answer.
+const newestListedAtom = Atom.family(({ environmentId, repo, number }: PullKey) =>
+  Atom.readable((get) => {
+    const view = Option.getOrUndefined(AsyncResult.value(get(reviewsAtom(environmentId))));
+    const review = view?.pulls.find((pull) => pull.repo === repo && pull.number === number)?.review;
+    return review === undefined ? "" : `${review.id} ${review.state}`;
+  }),
+);
+
+// One pull request's reviews as the machine that ran them keeps them, the newest first. Asked
+// again when the machine's view lists a new review or state for it, and every few seconds while
+// the newest is still going: a finished review never changes. A failed ask is tried twice more
+// before the failure shows, beside what it last answered.
+export const pullReviewsAtom = Atom.family((key: PullKey) =>
   Atom.make((get) => {
-    const connection = get(connectedAtom(environmentId));
+    get(newestListedAtom(key));
+    const connection = get(connectedAtom(key.environmentId));
     if (connection === null) return Stream.never;
-    return Stream.fromEffectSchedule(connection.client["reviews.read"]({ repo, number }), Schedule.spaced("3 seconds")).pipe(Stream.takeUntil((kept) => !going(kept.reviews[0])));
+    return Stream.fromEffectSchedule(connection.client["reviews.read"]({ repo: key.repo, number: key.number }), Schedule.spaced("3 seconds")).pipe(
+      Stream.takeUntil((kept) => !going(kept.reviews[0])),
+      Stream.retry(Schedule.max([Schedule.spaced("3 seconds"), Schedule.recurs(2)])),
+    );
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
