@@ -104,7 +104,7 @@ export function Composer({ thread, attachments, capabilities, placeholder }: { t
 
   // A question needs words; files wait until every one has finished uploading.
   const sending = withReferences(draft.trim());
-  const canSend = thread.ready && sending.text !== "" && !attachments.busy && !sending.tooMany;
+  const canSend = sending.text !== "" && !attachments.busy && !sending.tooMany;
   // While the agent works, a question waits for it instead, one at a time, on a server that can.
   const queueing = view.running;
   const canQueue = capabilities.queue && canSend && view.queued === null;

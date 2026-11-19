@@ -7,6 +7,7 @@ import { useRange } from "../hooks/useRange.ts";
 import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 import { useThread } from "../hooks/useThread.ts";
 import { ScrollToEndButton } from "./chat/TimelineOverlays.tsx";
+import { GhostBar } from "./GhostBar.tsx";
 import { Composer } from "./thread/Composer.tsx";
 import { ThreadMessages } from "./thread/ThreadMessages.tsx";
 
@@ -18,6 +19,7 @@ const END_SLACK_PX = 24;
 // A subject's reading column with its agent thread under it and one composer at the bottom, as in
 // T3 Code's chat column. `children` gets the thread, so its primary action can start a turn. Files
 // dragged anywhere over the column are attached to the composer's draft, on a server that takes them.
+// A null subject is one the page is still waiting on: the column keeps its shape, with no composer.
 export function ThreadColumn(props: { subject: ThreadSubject | null; placeholder: string; children: (thread: Thread) => ReactNode }) {
   const { days } = useRange();
   const thread = useThread(props.subject, days);
@@ -61,7 +63,7 @@ export function ThreadColumn(props: { subject: ThreadSubject | null; placeholder
     <div
       className={cn("flex min-h-0 flex-1 flex-col rounded-2xl", dragging && "bg-accent/45 ring-1 ring-inset ring-primary/70")}
       onDragOver={(event) => {
-        if (!carriesFiles(event) || !thread.permitted || !capabilities.attachments) return;
+        if (!carriesFiles(event) || !thread.ready || !thread.permitted || !capabilities.attachments) return;
         event.preventDefault();
         setDragging(true);
       }}
@@ -70,7 +72,7 @@ export function ThreadColumn(props: { subject: ThreadSubject | null; placeholder
         if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setDragging(false);
       }}
       onDrop={(event) => {
-        if (!carriesFiles(event) || !capabilities.attachments) return;
+        if (!carriesFiles(event) || !thread.ready || !capabilities.attachments) return;
         event.preventDefault();
         setDragging(false);
         attachments.add([...event.dataTransfer.files]);
@@ -103,7 +105,8 @@ export function ThreadColumn(props: { subject: ThreadSubject | null; placeholder
         ) : null}
       </div>
       <div className="mx-auto w-full max-w-(--reading-width) px-6 pt-2 pb-4">
-        <Composer thread={thread} attachments={attachments} capabilities={capabilities} placeholder={props.placeholder} />
+        {/* Until the subject is known there's no draft to write to, so a ghost holds the composer's place. */}
+        {thread.ready ? <Composer thread={thread} attachments={attachments} capabilities={capabilities} placeholder={props.placeholder} /> : <GhostBar className="h-24 rounded-2xl" />}
       </div>
     </div>
   );

@@ -43,11 +43,13 @@ export function RunnersPage() {
   };
   const view = (ask: Ask) => <Runners machines={machines} picked={picked} onPick={pick} ask={ask} />;
   const install = picked?.install;
-  // Keyed by the machine and mounted before its install answers, so the page keeps its place as
-  // answers land; the thread attaches once the install is known.
-  if (picked && picked.environmentId === active?.environmentId) {
+  // Mounted while the install's first answer is still coming, so the page has its shape from the
+  // start, and keyed by the install once known, so another install gets its own composer. A machine
+  // that won't have one (an older server, no runners, not connected) gets no thread at all.
+  const coming = picked !== null && picked.install === null && picked.note === null && picked.connection === "connected";
+  if (picked && picked.environmentId === active?.environmentId && (install || coming)) {
     return (
-      <ThreadColumn key={picked.environmentId} subject={install ? { _tag: "runners", install: install.install } : null} placeholder="Ask about these runners">
+      <ThreadColumn key={install ? picked.key : picked.environmentId} subject={install ? { _tag: "runners", install: install.install } : null} placeholder="Ask about these runners">
         {(thread) => view(thread.ready && thread.view.items.length === 0 && thread.permitted && thread.provider?.available ? { send: () => void thread.send(RUNNERS_QUESTION) } : null)}
       </ThreadColumn>
     );
