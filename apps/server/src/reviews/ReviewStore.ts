@@ -7,6 +7,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 
@@ -29,6 +31,8 @@ export class ReviewStore extends Context.Service<
     readonly put: (review: Review) => Effect.Effect<void, ReviewError>;
     // Marks a review as one a fiber in this process is working on, until the effect it wraps ends.
     readonly live: <A, E, R>(id: string, work: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+    // Counts up after each put, as a review is queued, starts, ends or stops, now and as it changes.
+    readonly changed: Stream.Stream<number>;
   }
 >()("runnerbox/server/reviews/ReviewStore") {}
 
@@ -38,6 +42,7 @@ const make = Effect.gen(function* () {
   const unreadable = () => new ReviewError({ reason: "unreadable" });
   const lock = yield* Semaphore.make(1);
   const working = new Set<string>();
+  const puts = yield* SubscriptionRef.make(0);
   // `repo` has passed RepoName, so its two parts are safe as directory names.
   const dirOf = (repo: string) => join(serverDir, "reviews", ...repo.split("/"));
   const pathOf = (repo: string, number: number) => join(dirOf(repo), `${number}.json`);
@@ -81,6 +86,7 @@ const make = Effect.gen(function* () {
           Effect.andThen(writeFileAtomic(fs, pathOf(review.repo, review.number), `${JSON.stringify({ v: 1, reviews })}\n`)),
           Effect.mapError(unreadable),
         );
+        yield* SubscriptionRef.update(puts, (count) => count + 1);
       }),
     );
 
@@ -91,7 +97,7 @@ const make = Effect.gen(function* () {
       () => Effect.sync(() => working.delete(id)),
     );
 
-  return ReviewStore.of({ list, all, put, live });
+  return ReviewStore.of({ list, all, put, live, changed: SubscriptionRef.changes(puts) });
 });
 
 export const layer = Layer.effect(ReviewStore, make);

@@ -17,14 +17,18 @@ const KEPT = "5 minutes";
 
 const reviewing = (view: ReviewsView) => view.pulls.some((pull) => going(pull.review));
 
-// The view as the server last answered it, on a server that has reviews. Asked every half minute,
-// since pull requests change on GitHub's own time, every few seconds while a review runs, and at
-// once when the machine signs in to GitHub as someone else, since that's what it reads through.
+// The view as the server last sent it, on a server that has reviews: pushed whenever it changes,
+// or, from a server older than the push, asked every half minute, since pull requests change on
+// GitHub's own time, and every few seconds while a review runs. Either way it's asked again at once
+// when the machine signs in to GitHub as someone else, since that's what it reads through. A pushed
+// stream that fails is followed again half a minute later.
 const askedAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
     get(accountAtom(environmentId));
     const connection = get(connectedAtom(environmentId));
-    if (connection === null || !get(capabilitiesAtom(environmentId)).reviews) return Stream.never;
+    const capabilities = get(capabilitiesAtom(environmentId));
+    if (connection === null || !capabilities.reviews) return Stream.never;
+    if (capabilities.reviewsPush) return connection.client["reviews.subscribe"]().pipe(Stream.retry(Schedule.spaced("30 seconds")));
     return polled(connection.client["reviews.status"](), "30 seconds", { every: "3 seconds", when: reviewing });
   }).pipe(Atom.setIdleTTL(KEPT)),
 );

@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import { autoBudget, wantsReview } from "./autoReview.ts";
@@ -32,6 +33,10 @@ export class ReviewWatch extends Context.Service<
     readonly check: Effect.Effect<void>;
     // The reviews view, with whether the day's limit has paused the pass.
     readonly status: (may: Reviews.May) => Effect.Effect<ReviewsView, ReviewError>;
+    // The view for a client that keeps it on screen: now, and again whenever it may have changed,
+    // as a review is queued, starts or ends, a setting is saved, or a look reads GitHub, so every
+    // client watching sees each as it lands. A change that leaves the view as it was pushes nothing.
+    readonly changes: (may: Reviews.May) => Stream.Stream<ReviewsView, ReviewError>;
   }
 >()("runnerbox/server/reviews/ReviewWatch") {}
 
@@ -71,8 +76,16 @@ const make = Effect.gen(function* () {
 
   const status = (may: Reviews.May) => Effect.all([reviews.status(may), budget]).pipe(Effect.map(([view, { room }]) => ({ ...view, autoPaused: !room })));
 
+  // Each watcher also asks on its own, as often as the view's pull requests stay fresh, so its ask
+  // reads GitHub once the last look has gone stale.
+  const changes = (may: Reviews.May) =>
+    Stream.merge(store.changed, reviews.changed).pipe(
+      Stream.switchMap(() => Stream.fromEffectSchedule(status(may), Schedule.spaced(Reviews.PULLS_FRESH_MS))),
+      Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+    );
+
   yield* Effect.forkScoped(check.pipe(Effect.repeat(Schedule.spaced(CHECK_EVERY))));
-  return ReviewWatch.of({ check, status });
+  return ReviewWatch.of({ check, status, changes });
 });
 
 export const layer = Layer.effect(ReviewWatch, make);

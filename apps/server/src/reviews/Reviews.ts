@@ -8,6 +8,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import * as GitHub from "../github/GitHub.ts";
@@ -33,7 +35,7 @@ const NONE: SettingsFile = { v: 1, repos: [] };
 const PULLS_PER_REPO = 50;
 // GitHub is asked for the lists at most this often, however often clients ask: an app polls faster
 // while a review runs, and nothing stops a client asking in a loop.
-const PULLS_FRESH_MS = 20_000;
+export const PULLS_FRESH_MS = 20_000;
 type Looked = { readonly at: number; readonly repos: string; readonly pulls: ReadonlyArray<ListedPull>; readonly problem: string | null };
 
 export type May = { readonly configure: boolean; readonly review: boolean };
@@ -58,6 +60,8 @@ export class Reviews extends Context.Service<
     // repository, and a repository whose list may be cut short is left out. For the inbox, which
     // counts the pull requests a failing check blocks.
     readonly heads: Effect.Effect<ReadonlyMap<string, ReadonlyArray<string>> | null, ReviewError>;
+    // Counts up when the view may have changed here: a setting saved, or a look that read GitHub.
+    readonly changed: Stream.Stream<number>;
   }
 >()("runnerbox/server/reviews/Reviews") {}
 
@@ -73,6 +77,8 @@ const make = Effect.gen(function* () {
   const path = join(serverDir, "reviews.json");
   const unreadable = () => new ReviewError({ reason: "unreadable" });
   const lock = yield* Semaphore.make(1);
+  const changed = yield* SubscriptionRef.make(0);
+  const bump = SubscriptionRef.update(changed, (count) => count + 1);
 
   const read = fs.readFileString(path).pipe(
     Effect.map(Option.some),
@@ -124,6 +130,7 @@ const make = Effect.gen(function* () {
     }
     reader.prune();
     looked = { at: now, repos, pulls: pulls.toSorted((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)), problem };
+    yield* bump;
     return looked;
   });
 
@@ -162,12 +169,14 @@ const make = Effect.gen(function* () {
         yield* write({ ...file, repos: review ? [...others, repo].toSorted() : others, since: review ? { ...since, [repo]: file.repos.includes(repo) && was !== undefined ? was : now } : since });
       }),
     );
+    yield* bump;
     return yield* status(may);
   });
 
   const setModel = Effect.fn("Reviews.setModel")(function* (model: string, may: May) {
     if (!offersReviewModel(model)) return yield* new ReviewError({ reason: "model_not_offered" });
     yield* lock.withPermits(1)(read.pipe(Effect.flatMap((file) => write({ ...file, model }))));
+    yield* bump;
     return yield* status(may);
   });
 
@@ -204,7 +213,7 @@ const make = Effect.gen(function* () {
     return new Map(listedOn.filter(([, heads]) => heads.length < PULLS_PER_REPO));
   });
 
-  return Reviews.of({ status, setRepo, setModel, settings, open, heads });
+  return Reviews.of({ status, setRepo, setModel, settings, open, heads, changed: SubscriptionRef.changes(changed) });
 });
 
 export const layer = Layer.effect(Reviews, make);
