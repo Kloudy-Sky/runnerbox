@@ -77,7 +77,8 @@ const make = Effect.gen(function* () {
   const looking = yield* Semaphore.make(1);
   let cache: (Installed & { readonly at: number; readonly epoch: number }) | null = null;
   let failed: { readonly at: number; readonly epoch: number; readonly problem: string } | null = null;
-  // Counted up by every read of the installations, so a read one watcher's ask made reaches them all.
+  // Counted up by every read of the installations once its answer is kept, so a read one watcher's
+  // ask made reaches them all. A read cut short kept nothing, so it counts nothing.
   const read = yield* SubscriptionRef.make(0);
 
   const ask = (path: string, token: string) => Effect.promise(() => githubRequest(apiBase, "GET", path, token));
@@ -133,13 +134,15 @@ const make = Effect.gen(function* () {
         if (known !== null && now - known.at < freshMs) return { ...last, app, token, problem: null };
         // The last lists are shown while GitHub can't be asked, with why they weren't refreshed.
         if (failed !== null && failed.epoch === epoch && now - failed.at < RETRY_AFTER_MS) return { ...last, app, token, problem: failed.problem };
-        const fetched = yield* fetchInstalled(token).pipe(Effect.ensuring(SubscriptionRef.update(read, (count) => count + 1)));
+        const fetched = yield* fetchInstalled(token);
         if ("installed" in fetched) {
           cache = { ...fetched.installed, at: now, epoch };
           failed = null;
+          yield* SubscriptionRef.update(read, (count) => count + 1);
           return { ...fetched.installed, app, token, problem: null };
         }
         failed = { at: now, epoch, problem: fetched.problem };
+        yield* SubscriptionRef.update(read, (count) => count + 1);
         return { ...last, app, token, problem: fetched.problem };
       }),
     );
@@ -154,7 +157,8 @@ const make = Effect.gen(function* () {
 
   // Each watcher also asks on its own, and that ask reads GitHub once the last read has gone stale.
   const changes = (may: May) =>
-    Stream.merge(signedIn.changed, SubscriptionRef.changes(read)).pipe(
+    // The sign-in's count starts the watcher; the read's own starting count would only start it again.
+    Stream.merge(signedIn.changed, SubscriptionRef.changes(read).pipe(Stream.drop(1))).pipe(
       Stream.switchMap(() => Stream.fromEffectSchedule(status(may), Schedule.spaced(WATCH_EVERY_MS))),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
