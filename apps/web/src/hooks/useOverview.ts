@@ -8,9 +8,8 @@ import { runtime } from "../runtime.ts";
 import { useInboxEverywhere } from "./useInboxEverywhere.ts";
 import { usePullRequestsEverywhere } from "./usePullRequestsEverywhere.ts";
 import { useRange } from "./useRange.ts";
-import { useRpcQueryEverywhere } from "./useRpcQueryEverywhere.ts";
 import { useAtomValue } from "@effect/atom-react";
-import { reposEverywhereAtom } from "../state/history.ts";
+import { dailyTotalsEverywhereAtom, reposEverywhereAtom } from "../state/history.ts";
 import { runnerQueueEverywhereAtom } from "../state/runnerMachines.ts";
 import { useRunnerMachines } from "./useRunnerMachines.ts";
 
@@ -25,7 +24,7 @@ export function useOverview() {
   const environments = useStore(runtime.store, (state) => state.environments);
   const connections = useStore(runtime.store, (state) => state.connections);
   const inbox = useInboxEverywhere();
-  const totals = useRpcQueryEverywhere(["dailyTotals", days * 2, repo ?? null], (client) => client["history.dailyTotals"]({ days: days * 2, ...(repo ? { repo } : {}) }), { refetchEvery: 60_000 });
+  const totals = useAtomValue(dailyTotalsEverywhereAtom({ days: days * 2, repo: repo ?? null }));
   const repoLists = useAtomValue(reposEverywhereAtom);
   const pulls = usePullRequestsEverywhere();
   const runners = useRunnerMachines(days);

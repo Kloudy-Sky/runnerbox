@@ -4,6 +4,7 @@ import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { latest, polledOrFailed } from "../lib/polled.ts";
 import { capabilitiesAtom, connectedAtom, environmentsAtom } from "./connections.ts";
+import { everywhere } from "./everywhere.ts";
 
 // Each machine's job history as atoms: the repositories it has logs for, a repository's runs over a
 // range, and one job attempt's steps, memory and CPU.
@@ -46,3 +47,16 @@ export const jobResourcesAtom = Atom.family(({ environmentId, repo, jobId }: Job
     return connection === null || !get(capabilitiesAtom(environmentId)).jobResources ? Effect.never : connection.client["history.jobResources"]({ repo, jobId });
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
+
+type Totals = { readonly environmentId: string; readonly days: number; readonly repo: string | null };
+
+// A machine's jobs, time and reviews each day over the last `days`, for one repository or all of
+// them, asked every minute. A failure shows beside the last answer until an ask answers, which on a
+// server older than daily totals is never.
+export const dailyTotalsAtom = Atom.family(({ environmentId, days, repo }: Totals) =>
+  Atom.make((get) => {
+    const connection = get(connectedAtom(environmentId));
+    return connection === null ? Stream.never : polledOrFailed(connection.client["history.dailyTotals"]({ days, ...(repo === null ? {} : { repo }) }), "60 seconds");
+  }).pipe(latest, Atom.setIdleTTL(KEPT)),
+);
+export const dailyTotalsEverywhereAtom = Atom.family(({ days, repo }: { readonly days: number; readonly repo: string | null }) => everywhere((environmentId) => dailyTotalsAtom({ environmentId, days, repo })));

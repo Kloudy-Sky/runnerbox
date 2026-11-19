@@ -1,8 +1,11 @@
 import type { JobRun, JobTrend } from "@runnerbox/contracts";
 import { Link } from "@tanstack/react-router";
-import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
+import { useAtomValue } from "@effect/atom-react";
+import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
+import { answerOf } from "../../lib/answer.ts";
 import { formatDuration, jobName } from "../../lib/format.ts";
 import type { RootSearch } from "../../lib/search.ts";
+import { stepComparisonAtom } from "../../state/speed.ts";
 import { StepBar } from "./StepBar.tsx";
 
 // Runs within this share of the typical time count as typical.
@@ -25,9 +28,8 @@ function typicalRun(runs: readonly JobRun[], trend: JobTrend) {
 export function JobPanel({ trend, runs, repo, days }: { readonly trend: JobTrend; readonly runs: readonly JobRun[] | undefined; readonly repo: string; readonly days: number }) {
   const workflow = trend.workflow;
   const job = trend.job;
-  const comparison = useRpcQuery(["stepComparison", repo, days, workflow, job], (client) =>
-    client["history.stepComparison"]({ repo, days, by: "labels", job, ...(workflow ? { workflow } : {}) }),
-  );
+  const environmentId = useActiveEnvironment().environment?.environmentId ?? "";
+  const comparison = answerOf(useAtomValue(stepComparisonAtom({ environmentId, repo, days, by: "labels", workflow, job })));
   // Only this runner's own steps: another runner's would show under this one's name.
   const column = comparison.data?.runnerTypes.includes(trend.runnerType) ? trend.runnerType : undefined;
   const steps = (comparison.data?.steps ?? []).flatMap((step) => {

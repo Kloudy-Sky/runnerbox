@@ -1,8 +1,11 @@
 import type { GroupBy, JobSummary } from "@runnerbox/contracts";
-import * as Effect from "effect/Effect";
+import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
-import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
+import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
+import { useKept } from "../../hooks/useKept.ts";
+import { answerOf } from "../../lib/answer.ts";
 import { formatDuration, formatMiB, jobName } from "../../lib/format.ts";
+import { samplesAtom, stepComparisonAtom, weeklySummaryAtom } from "../../state/speed.ts";
 import { Heading } from "../Heading.tsx";
 import { HeadroomChart } from "../HeadroomChart.tsx";
 import { Button } from "../ui/button.tsx";
@@ -18,12 +21,9 @@ export function AllNumbers({ repo, days }: { readonly repo: string; readonly day
   const [picked, setPicked] = useState<JobSummary | null>(null);
   // Each answer carries the repo it's for: a range or grouping change keeps the last answer on
   // screen while the next loads, but another repo's jobs never show under this repo's name.
-  const summaryQuery = useRpcQuery(
-    ["weekly", repo, days, by],
-    (client) => client["history.weeklySummary"]({ repo, days, by }).pipe(Effect.map((answer) => ({ ...answer, repo }))),
-    { keepPrevious: true },
-  );
-  const samples = useRpcQuery(["samples", days], (client) => client["runners.samples"]({ days, maxPoints: 600 }), { keepPrevious: true });
+  const environmentId = useActiveEnvironment().environment?.environmentId ?? "";
+  const summaryQuery = useKept(answerOf(useAtomValue(weeklySummaryAtom({ environmentId, repo, days, by }))));
+  const samples = useKept(answerOf(useAtomValue(samplesAtom({ environmentId, days, maxPoints: 600 }))));
   const summary = summaryQuery.data?.repo === repo ? summaryQuery.data : undefined;
   const jobs = summary?.jobs ?? [];
   const selected = jobs.find((row) => row.job === picked?.job && row.workflow === picked.workflow) ?? jobs[0];
@@ -33,13 +33,10 @@ export function AllNumbers({ repo, days }: { readonly repo: string; readonly day
   const workflow = selected?.workflow ?? null;
   // Carries the job it answers for, so while another job's steps load the heading still names the
   // job whose steps are shown.
-  const stepsQuery = useRpcQuery(
-    ["steps", repo, days, by, workflow, job],
-    (client) =>
-      client["history.stepComparison"]({ repo, days, by, job, ...(workflow ? { workflow } : {}) }).pipe(Effect.map((comparison) => ({ ...comparison, of: selected, repo }))),
-    { keepPrevious: true },
-  );
-  const steps = stepsQuery.data?.repo === repo && !(stepsQuery.isPlaceholderData && stepsQuery.data.of === undefined) ? stepsQuery.data : undefined;
+  const stepsQuery = useKept(answerOf(useAtomValue(stepComparisonAtom({ environmentId, repo, days, by, workflow, job }))));
+  const comparison = stepsQuery.data?.repo === repo ? stepsQuery.data : undefined;
+  const of = comparison && jobs.find((row) => row.job === comparison.job && row.workflow === comparison.workflow);
+  const steps = comparison && !(stepsQuery.isPlaceholderData && of === undefined) ? { ...comparison, of } : undefined;
   // The three calls answer at different times. Drawn as each arrived, the headroom chart showed
   // under an empty table and was pushed down twice, so the page waits until each has answered
   // once, or failed, so one failure doesn't hide the other two.

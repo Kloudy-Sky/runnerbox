@@ -1,6 +1,7 @@
 import type { PullRequest } from "@runnerbox/contracts";
-import { useRpcQueryEverywhere } from "../../hooks/useRpcQueryEverywhere.ts";
+import { useAtomValue } from "@effect/atom-react";
 import { type Standing, standingOf } from "../../lib/pullStanding.ts";
+import { dailyTotalsEverywhereAtom } from "../../state/history.ts";
 import { StandingBar } from "./StandingBar.tsx";
 
 const usd = (value: number) => `$${value.toFixed(2)}`;
@@ -19,7 +20,7 @@ function Total({ label, value, under }: { label: string; value: number | string;
 // cost over the last seven days come from every machine's daily totals, which cover every
 // repository whatever the filters say. A server older than those totals adds nothing to them.
 export function PullTotals({ pulls }: { pulls: ReadonlyArray<PullRequest> }) {
-  const week = useRpcQueryEverywhere(["dailyTotals", 7, null], (client) => client["history.dailyTotals"]({ days: 7 }), { refetchEvery: 60_000 }).flatMap(({ data }) => data ?? []);
+  const week = useAtomValue(dailyTotalsEverywhereAtom({ days: 7, repo: null })).flatMap(({ data }) => data ?? []);
   const reviews = week.reduce((sum, day) => sum + day.reviews, 0);
   const cost = week.reduce((sum, day) => sum + day.reviewCostUsd, 0);
   const byStanding = Map.groupBy(pulls, standingOf);
