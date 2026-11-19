@@ -143,7 +143,7 @@ async function fakeVariables() {
       if (path === "/user/installations?per_page=100")
         return send(200, {
           installations: [
-            { id: 11, repository_selection: "selected", account: { login: "owner" }, html_url: "https://github.com/settings/installations/11", permissions: { contents: "read", variables: "write" } },
+            { id: 11, repository_selection: "selected", account: { login: "owner" }, html_url: "https://github.com/settings/installations/11", permissions: { contents: "read", actions_variables: "write" } },
             { id: 12, repository_selection: "selected", account: { login: "example" }, html_url: "https://github.com/organizations/example/settings/installations/12", permissions: { contents: "read" } },
           ],
         });

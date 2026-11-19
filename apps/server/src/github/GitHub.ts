@@ -84,7 +84,8 @@ const make = Effect.gen(function* () {
     const grants = new Map<string, RepoGrant>();
     for (const { id, repository_selection, account, html_url, permissions } of found.value.installations) {
       const manageUrl = html_url !== undefined && MANAGE_URL.test(html_url) ? html_url : null;
-      const grant: RepoGrant = { variablesWrite: permissions?.variables === "write", manageUrl };
+      // GitHub names the Variables permission `actions_variables` in an installation's permissions.
+      const grant: RepoGrant = { variablesWrite: permissions?.actions_variables === "write", manageUrl };
       let total = 0;
       for (let page = 1; page <= MAX_REPO_PAGES; page += 1) {
         const reply = yield* ask(`user/installations/${id}/repositories?per_page=${REPOS_PER_PAGE}&page=${page}`, token);

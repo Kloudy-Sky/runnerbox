@@ -24,7 +24,7 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
   const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha, repo: { full_name: "owner/name" } } } : {}) };
   const replies: Record<string, unknown> = {
     "/user": { login: "octocat" },
-    "/user/installations?per_page=100": { installations: [{ id: 1, repository_selection: "selected", account: { login: "owner" }, html_url: "https://github.com/settings/installations/1", permissions: { contents: "read", variables: "write" } }] },
+    "/user/installations?per_page=100": { installations: [{ id: 1, repository_selection: "selected", account: { login: "owner" }, html_url: "https://github.com/settings/installations/1", permissions: { contents: "read", actions_variables: "write" } }] },
     "/user/installations/1/repositories?per_page=100&page=1": { total_count: 2, repositories: [{ full_name: "owner/name" }, { full_name: "owner/other" }] },
     "/repos/owner/name/pulls?state=open&sort=updated&direction=desc&per_page=50": [
       first,
