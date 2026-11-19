@@ -1,13 +1,15 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { SavedEnvironment } from "@runnerbox/client-runtime";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { UpdateOutcome } from "@runnerbox/contracts";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard.ts";
-import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
 import { useRunnerState } from "../../hooks/useRunnerState.ts";
 import { useServerCapabilityState } from "../../hooks/useServerCapabilities.ts";
+import { answerOf } from "../../lib/answer.ts";
 import { BLOCKED_WORDS, isUnderway, needsCommand, RESTART_WORDS, restartCommand, restartedInstalls, serverIsBehind, SIGNATURE_WORDS, staleInstalls, underwayLine } from "../../lib/serverUpdate.ts";
+import { appAtomRegistry } from "../../rpc/atomRegistry.ts";
 import { runtime } from "../../runtime.ts";
+import { restartStatusAtom, updateStatusAtom } from "../../state/serverStatus.ts";
 import { startUpdate } from "../../state/serverUpdates.ts";
 import { ServerUpdateCommand } from "../ServerUpdateCommand.tsx";
 import { useReleaseSignature, useUpdateAccess, useUpdateRun } from "../ServerUpdateNotice.tsx";
@@ -19,7 +21,7 @@ const clock = (iso: string) => new Date(iso).toLocaleString([], { month: "short"
 const useUpdateStatus = (environment: SavedEnvironment) => {
   const { capabilities, known } = useServerCapabilityState();
   const denied = useUpdateAccess(environment);
-  const status = useRpcQuery(["server.updateStatus"], (client) => client["server.updateStatus"](), { enabled: capabilities.serverUpdate && denied === null });
+  const status = answerOf(useAtomValue(updateStatusAtom(denied === null ? environment.environmentId : "")));
   return { capable: capabilities.serverUpdate, known, denied, status };
 };
 
@@ -95,8 +97,9 @@ function RestartControl({ environment, install, version, updatedAt }: { environm
   const { capabilities } = useServerCapabilityState();
   const denied = useUpdateAccess(environment);
   const asking = capabilities.restartRunners && denied === null;
-  const status = useRpcQuery(["runners.restartStatus", install], (client) => client["runners.restartStatus"]({ install }), { enabled: asking, refetchEvery: 30_000 });
-  const queryClient = useQueryClient();
+  // Not asking reads no machine, which never asks.
+  const statusAtom = restartStatusAtom({ environmentId: asking ? environment.environmentId : "", install });
+  const status = answerOf(useAtomValue(statusAtom));
   const [refused, setRefused] = useState<string | null>(null);
   const command = <CopyCommand command={restartCommand(install)} />;
   const restart = status.data;
@@ -111,7 +114,7 @@ function RestartControl({ environment, install, version, updatedAt }: { environm
   if (restart.waiting) return <span className="max-w-md text-right text-muted-foreground text-xs">{RESTART_WORDS.waiting(version)}</span>;
   const ask = () =>
     void runtime.run(environment.environmentId, (client) => client["runners.restartWhenIdle"]({ install })).then(
-      () => queryClient.invalidateQueries({ queryKey: [environment.environmentId, "runners.restartStatus", install] }),
+      () => appAtomRegistry.refresh(statusAtom),
       (error: unknown) => setRefused(error instanceof Error ? error.message : "That didn't work."),
     );
   // Only a restart asked for since this update counts; an older one was for another version.

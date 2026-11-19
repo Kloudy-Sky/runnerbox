@@ -1,12 +1,14 @@
 import { Link } from "@tanstack/react-router";
 import packageJson from "../../package.json" with { type: "json" };
-import { useRpcQuery } from "../hooks/useRpcQuery.ts";
+import { useAtomValue } from "@effect/atom-react";
 import { isUnderway, serverIsBehind } from "../lib/serverUpdate.ts";
 import { ServerUpdateCommand } from "./ServerUpdateCommand.tsx";
 import { ServerBehindNotice, UpdateRunNotice, useUpdateRun } from "./ServerUpdateNotice.tsx";
 import { Button } from "./ui/button.tsx";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
-import { queryClient, runtime } from "../runtime.ts";
+import { answerOf } from "../lib/answer.ts";
+import { runtime } from "../runtime.ts";
+import { aboutAtom } from "../state/serverStatus.ts";
 import type { RootSearch } from "../lib/search.ts";
 
 const APP_VERSION = packageJson.version;
@@ -17,7 +19,7 @@ const APP_VERSION = packageJson.version;
 export function ConnectionNotice() {
   const { environment, connection } = useActiveEnvironment();
   const run = useUpdateRun(environment?.environmentId ?? "");
-  const about = useRpcQuery(["about"], (client) => client["server.about"]());
+  const about = answerOf(useAtomValue(aboutAtom(environment?.environmentId ?? "")));
   const serverVersion = about.data?.serverVersion ?? null;
   // A finished run's line gives way to the offline one, which has the reason and Retry.
   if (environment && run && (isUnderway(run) || connection?.status === "connected")) return <UpdateRunNotice environment={environment} run={run} appVersion={APP_VERSION} />;
@@ -25,7 +27,8 @@ export function ConnectionNotice() {
     return <ServerBehindNotice environment={environment} serverVersion={serverVersion} appVersion={APP_VERSION} />;
   }
   if (!environment || connection?.status !== "disconnected") return null;
-  const cached = queryClient.getQueryCache().findAll({ queryKey: [environment.environmentId] }).some((query) => query.state.data !== undefined);
+  // A server that answered About before the drop answered the pages too, and they keep it.
+  const cached = about.data !== undefined;
   return (
     <div className="mx-3 flex shrink-0 flex-col gap-1.5 rounded-lg bg-surface px-3 py-1.5">
       <div className="flex items-center gap-3">
