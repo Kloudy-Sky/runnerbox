@@ -53,34 +53,33 @@ export const runnerQueueEverywhereAtom = Atom.readable(
     ),
 );
 
-// Every saved machine's runners, one entry per install. A machine with several installs gets one
-// entry each; one with none, or no answer, gets a single entry with no install, so it still shows.
-export const runnerMachinesAtom = Atom.family((days: number) =>
-  Atom.readable((get) => {
-    const { connections } = get(clientStateAtom);
-    const live = get(runnerStateEverywhereAtom);
-    return get(environmentsAtom).flatMap((environment): RunnerMachine[] => {
-      const { environmentId } = environment;
-      const explained = get(runnersExplainedAtom(days, environmentId));
-      const data = valueOf(explained);
-      const base = { environmentId, connection: connections[environmentId]?.status, note: null, now: 0, live: undefined, memory: null, typicalBuildMs: () => null };
-      const alone = { ...base, key: environmentId, name: environment.label, install: null };
-      if (!data && AsyncResult.isFailure(explained)) return [{ ...alone, note: "It didn't answer. Its server may be older than this page." }];
-      if (!data) return [{ ...alone, note: base.connection === "connected" ? null : "Not connected." }];
-      const now = Date.parse(data.at);
-      if (data.installs.length === 0) return [{ ...alone, now, note: "Runnerbox doesn't report any runners here." }];
-      const samples = valueOf(get(runnerSamplesAtom(environmentId))) ?? [];
-      const events = valueOf(get(launcherEventsAtom(days, environmentId))) ?? [];
-      return data.installs.map((install) => ({
-        ...base,
-        key: `${environmentId}/${install.install}`,
-        name: data.installs.length > 1 ? `${environment.label} · ${install.install}` : environment.label,
-        install,
-        now,
-        live: live.get(environmentId)?.find((each) => each.install === install.install),
-        memory: freeMemory(samples, install, now),
-        typicalBuildMs: (kind: string) => typicalBuildMs(events, install.install, kind),
-      }));
-    });
-  }),
-);
+// Every saved machine's runners over the range in `runnersRangeAtom`, one entry per install. A
+// machine with several installs gets one entry each; one with none, or no answer, gets a single
+// entry with no install, so it still shows.
+export const runnerMachinesAtom = Atom.readable((get) => {
+  const { connections } = get(clientStateAtom);
+  const live = get(runnerStateEverywhereAtom);
+  return get(environmentsAtom).flatMap((environment): RunnerMachine[] => {
+    const { environmentId } = environment;
+    const explained = get(runnersExplainedAtom(environmentId));
+    const data = valueOf(explained);
+    const base = { environmentId, connection: connections[environmentId]?.status, note: null, now: 0, live: undefined, memory: null, typicalBuildMs: () => null };
+    const alone = { ...base, key: environmentId, name: environment.label, install: null };
+    if (!data && AsyncResult.isFailure(explained)) return [{ ...alone, note: "It didn't answer. Its server may be older than this page." }];
+    if (!data) return [{ ...alone, note: base.connection === "connected" ? null : "Not connected." }];
+    const now = Date.parse(data.at);
+    if (data.installs.length === 0) return [{ ...alone, now, note: "Runnerbox doesn't report any runners here." }];
+    const samples = valueOf(get(runnerSamplesAtom(environmentId))) ?? [];
+    const events = valueOf(get(launcherEventsAtom(environmentId))) ?? [];
+    return data.installs.map((install) => ({
+      ...base,
+      key: `${environmentId}/${install.install}`,
+      name: data.installs.length > 1 ? `${environment.label} · ${install.install}` : environment.label,
+      install,
+      now,
+      live: live.get(environmentId)?.find((each) => each.install === install.install),
+      memory: freeMemory(samples, install, now),
+      typicalBuildMs: (kind: string) => typicalBuildMs(events, install.install, kind),
+    }));
+  });
+});

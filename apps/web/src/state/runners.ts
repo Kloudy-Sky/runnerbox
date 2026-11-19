@@ -2,9 +2,9 @@ import type { RunnerboxClient } from "@runnerbox/client-runtime";
 import type { InstallState } from "@runnerbox/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { polled } from "../lib/polled.ts";
 import { capabilitiesOf } from "../lib/serverCapabilities.ts";
 import { connectedAtom, serverMethodsAtom } from "./connections.ts";
 
@@ -14,14 +14,14 @@ import { connectedAtom, serverMethodsAtom } from "./connections.ts";
 // so a page reading these never empties while they refresh. A machine whose connection drops
 // keeps what it last heard; its stream waits for the connection rather than ending.
 
-// `Atom.family` holds what it returns only weakly, so a family of families would lose an inner one
-// to the garbage collector and hand out a new atom, with none of the old one's value, for the same
-// machine. An atom keyed by days and machine takes both in one key instead.
-const byDays = (days: number, environmentId: string) => `${days}\u0000${environmentId}`;
-const fromKey = (key: string) => {
-  const [days = "", environmentId = ""] = key.split("\u0000");
-  return { days: Number(days), environmentId };
-};
+// How long an answer outlives the last view that read it, as React Query's cache kept them, so
+// coming back to a page shows it at once.
+const KEPT = "5 minutes";
+
+// The range in days the runner views ask about, which the page sets from its URL. Every machine's
+// answers follow it, so a new range runs the same atoms again, and they keep the last range's
+// answer until the new one lands.
+export const runnersRangeAtom = Atom.make(7).pipe(Atom.keepAlive);
 
 // One stream per machine, opened on its live connection.
 const sinceConnected = <A, E>(open: (client: RunnerboxClient) => Stream.Stream<A, E>) =>
@@ -45,31 +45,34 @@ const phasesAtom = Atom.family((environmentId: string) =>
   ),
 );
 
-// The server's sentences about each install over the last `days`, asked again when a runner
-// changes phase and every 30 seconds besides.
-const runnersExplainedFamily = Atom.family((key: string) =>
+// The server's sentences about each install over the range, asked again when a runner changes
+// phase and every 30 seconds besides.
+export const runnersExplainedAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
-    const { days, environmentId } = fromKey(key);
+    const days = get(runnersRangeAtom);
     get(phasesAtom(environmentId));
     const connection = get(connectedAtom(environmentId));
-    return connection === null ? Stream.never : Stream.fromEffectSchedule(connection.client["runners.explain"]({ days }), Schedule.spaced("30 seconds"));
-  }),
+    return connection === null ? Stream.never : polled(connection.client["runners.explain"]({ days }), "30 seconds");
+  }).pipe(Atom.setIdleTTL(KEPT)),
 );
-export const runnersExplainedAtom = (days: number, environmentId: string) => runnersExplainedFamily(byDays(days, environmentId));
 
 // The last day of machine samples, which come once a minute, so a day thinned to 1440 points keeps
 // every one of the last hour.
-export const runnerSamplesAtom = sinceConnected((client) => Stream.fromEffectSchedule(client["runners.samples"]({ days: 1, maxPoints: 1440 }), Schedule.spaced("60 seconds")));
-
-// Launcher events over the last `days`, asked once per connection.
-const launcherEventsFamily = Atom.family((key: string) =>
+export const runnerSamplesAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
-    const { days, environmentId } = fromKey(key);
+    const connection = get(connectedAtom(environmentId));
+    return connection === null ? Stream.never : polled(connection.client["runners.samples"]({ days: 1, maxPoints: 1440 }), "60 seconds");
+  }).pipe(Atom.setIdleTTL(KEPT)),
+);
+
+// Launcher events over the range, asked once per connection and range.
+export const launcherEventsAtom = Atom.family((environmentId: string) =>
+  Atom.make((get) => {
+    const days = get(runnersRangeAtom);
     const connection = get(connectedAtom(environmentId));
     return connection === null ? Effect.never : connection.client["runners.events"]({ days });
-  }),
+  }).pipe(Atom.setIdleTTL(KEPT)),
 );
-export const launcherEventsAtom = (days: number, environmentId: string) => launcherEventsFamily(byDays(days, environmentId));
 
 // The jobs GitHub has queued for the machine's runners, on a server that can push them. Watching
 // is what makes a server ask GitHub, and an atom only runs while something reads it.

@@ -14,7 +14,8 @@ import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { useMoveCi } from "../hooks/useMoveCi.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useAtomValue } from "@effect/atom-react";
-import { type RunnerMachine, runnerMachinesAtom, runnerQueueEverywhereAtom } from "../state/runnerMachines.ts";
+import { useRunnerMachines } from "../hooks/useRunnerMachines.ts";
+import { type RunnerMachine, runnerQueueEverywhereAtom } from "../state/runnerMachines.ts";
 import { formatAge } from "../lib/format.ts";
 import { parseSearch, type RootSearch } from "../lib/search.ts";
 import { waitingEverywhere } from "../lib/waitingEverywhere.ts";
@@ -34,7 +35,7 @@ export function RunnersPage() {
   const navigate = useNavigate();
   const setActive = usePreferences((state) => state.setActive);
   const { environment: active } = useActiveEnvironment();
-  const machines = useAtomValue(runnerMachinesAtom(days));
+  const machines = useRunnerMachines(days);
   // With one machine there's nothing to narrow, so it's always the one picked.
   const picked = (machines.length === 1 ? machines[0] : machines.find((machine) => machine.key === pickedKey)) ?? null;
   const pick = (machine: RunnerMachine | null) => {

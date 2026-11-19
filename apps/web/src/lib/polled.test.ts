@@ -1,0 +1,27 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
+import { TestClock } from "effect/testing";
+import { polled } from "./polled.ts";
+
+test("a failed answer asks again on the schedule instead of ending the stream, and a defect still ends it", async () => {
+  let calls = 0;
+  const flaky = Effect.suspend(() => {
+    calls += 1;
+    return calls === 2 ? Effect.fail("busy") : Effect.succeed(calls);
+  });
+  const values = await Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Stream.runCollect(Stream.take(polled(flaky, "30 seconds"), 3)).pipe(Effect.forkChild);
+      for (let tick = 0; tick < 4; tick += 1) yield* TestClock.adjust("30 seconds");
+      return yield* Fiber.join(fiber);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+  assert.deepEqual([...values], [1, 3, 4]);
+
+  const dead = await Effect.runPromiseExit(Stream.runCollect(polled(Effect.die("unknown method"), "30 seconds")));
+  assert.ok(Exit.isFailure(dead));
+});
