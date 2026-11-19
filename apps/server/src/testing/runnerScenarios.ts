@@ -17,7 +17,7 @@ const TOTAL_MIB = 16_384;
 const FLOOR = { hostMiB: 1024, vmMiB: 2048 };
 const KINDS = [
   { name: "linux", label: "example-linux", slots: 2, image: { rebuildDays: 7 }, runsIn: "container" as const },
-  { name: "docker", label: "example-linux-docker", slots: 1, runsIn: "container" as const },
+  { name: "docker", label: "example-linux-docker", slots: 1, runsIn: "container" as const, docker: true },
   { name: "light", label: "example-linux-light", slots: 3, runsIn: "container" as const, memoryFloor: { hostMiB: 512, vmMiB: 1024 } },
 ];
 

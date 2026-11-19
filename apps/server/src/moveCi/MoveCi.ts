@@ -1,4 +1,4 @@
-import type { CiJob, CiRepo, GitHubError, MoveCiView } from "@runnerbox/contracts";
+import { type CiJob, type CiRepo, type CiRunner, type GitHubError, MoveCiError, type MoveCiView, type RunnerVariable } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -9,33 +9,57 @@ import * as Semaphore from "effect/Semaphore";
 import * as GitHub from "../github/GitHub.ts";
 import { createGitHubReader } from "../github/githubReader.ts";
 import { QueueConfig } from "../runners/QueueConfig.ts";
+import * as RunnerState from "../runners/RunnerState.ts";
+import { readVariables, writeVariable } from "./runnerVariables.ts";
 import { unifiedDiff } from "./unifiedDiff.ts";
 import { applyEdits, workflowJobs } from "./workflowJobs.ts";
 
 // Every repository the App is installed on, read for Move CI: the workflow files on its default
 // branch, through the Contents read the App has, each job's runner, and the patch for the jobs that
-// don't read a runner variable yet. GitHub is asked at most once a minute, with the last ETag for
-// each path, so files that haven't changed cost nothing against the owner's budget. A 404 has no
-// ETag, so a repository without workflows is believed for ten minutes before it's asked again, and
-// once GitHub says to wait, nothing is asked until then and the last rows known stand in.
+// don't read a runner variable yet. Where jobs do, and the install has accepted the Variables
+// permission, the variables' values too, and `setRunner` sets or deletes one. GitHub is asked at
+// most once a minute, with the last ETag for each path, so what hasn't changed costs nothing
+// against the owner's budget. A 404 has no ETag, so a repository without workflows is believed for
+// ten minutes before it's asked again, and once GitHub says to wait, nothing is asked until then
+// and the last rows known stand in.
 
 const decodeListing = Schema.decodeUnknownOption(Schema.Array(Schema.Struct({ type: Schema.String, path: Schema.String })));
 const decodeFile = Schema.decodeUnknownOption(Schema.Struct({ encoding: Schema.String, content: Schema.String }));
 
 // Only a workflow's own path goes into a request, so a name GitHub gives can't reach another one.
 const WORKFLOW = /^\.github\/workflows\/[\w.-]+\.ya?ml$/;
+// The launcher's own pattern for a label, which is all a variable is ever set to.
+const LABEL = /^[\w.-]{1,100}$/;
 const MAX_WORKFLOWS = 50;
 const FRESH_MS = 60_000;
 const NO_WORKFLOWS_FRESH_MS = 10 * 60_000;
 const REPOS_AT_ONCE = 4;
 
-type Looked = { readonly at: number; readonly repos: string; readonly view: MoveCiView };
+type Looked = { readonly at: number; readonly repos: string; readonly app: NonNullable<MoveCiView["app"]>; readonly rows: ReadonlyArray<CiRepo>; readonly problem: string | null };
+export type May = { readonly switch: boolean };
 
-export class MoveCi extends Context.Service<MoveCi, { readonly status: Effect.Effect<MoveCiView, GitHubError> }>()("runnerbox/server/moveCi/MoveCi") {}
+// The runner kinds of every install on this machine, each label once. A kind on the host is a Mac.
+const runnersOf = (kinds: ReadonlyArray<{ readonly label: string; readonly docker?: boolean; readonly runsIn?: string }>): ReadonlyArray<CiRunner> => {
+  const byLabel = new Map<string, CiRunner>();
+  for (const { label, docker, runsIn } of kinds) if (LABEL.test(label) && !byLabel.has(label)) byLabel.set(label, { label, docker: docker === true, mac: runsIn === "host" });
+  return [...byLabel.values()].toSorted((a, b) => a.label.localeCompare(b.label));
+};
+
+export class MoveCi extends Context.Service<
+  MoveCi,
+  {
+    // `may` is what the asking session may do, which every view says back.
+    readonly status: (may: May) => Effect.Effect<MoveCiView, GitHubError>;
+    // Sets the repository's variable to one of this machine's labels, or deletes it for null, once
+    // every job that reads it can run there.
+    readonly setRunner: (repo: string, variable: RunnerVariable, label: string | null, may: May) => Effect.Effect<MoveCiView, GitHubError | MoveCiError>;
+  }
+>()("runnerbox/server/moveCi/MoveCi") {}
 
 const make = Effect.gen(function* () {
   const { apiBase } = yield* QueueConfig;
   const github = yield* GitHub.GitHub;
+  const runnerState = yield* RunnerState.RunnerState;
   const reader = createGitHubReader(apiBase);
   // One look at a time, so two clients asking together ask GitHub once, and a prune never drops what another look is using.
   const lock = yield* Semaphore.make(1);
@@ -47,8 +71,9 @@ const make = Effect.gen(function* () {
   const get = (path: string, token: string) => Effect.promise(() => reader.get(path, token));
 
   // Null when GitHub said to wait, before or during the read.
-  const readRepo = Effect.fn("MoveCi.readRepo")(function* (repo: string, token: string, now: number) {
-    const none: CiRepo = { repo, jobs: [], patch: null, problem: null };
+  const readRepo = Effect.fn("MoveCi.readRepo")(function* (repo: string, reached: GitHub.Reach, now: number) {
+    const { token } = reached;
+    const none: CiRepo = { repo, jobs: [], patch: null, problem: null, switch: "nothing", variables: [], approveUrl: null };
     const unread: CiRepo = { ...none, problem: `Couldn't read the workflows on ${repo}.` };
     if (now < waitUntil) return null;
     if (now - (noWorkflows.get(repo) ?? Number.NEGATIVE_INFINITY) < NO_WORKFLOWS_FRESH_MS) return none;
@@ -87,31 +112,82 @@ const make = Effect.gen(function* () {
     }
     const more = paths.length - MAX_WORKFLOWS;
     const problem = skipped.length > 0 ? `Couldn't read ${skipped.join(", ")}, so its jobs aren't listed.` : more > 0 ? `Only the first ${MAX_WORKFLOWS} workflows were read.` : null;
-    return { repo, jobs, patch: diffs.length > 0 ? diffs.join("") : null, problem } satisfies CiRepo;
+    const read: CiRepo = { ...none, jobs, patch: diffs.length > 0 ? diffs.join("") : null, problem };
+    const names = [...new Set(jobs.flatMap((job) => (job.state === "moves" && job.variable !== null ? [job.variable] : [])))].toSorted();
+    if (names.length === 0) return read;
+    const grant = reached.grants.get(repo);
+    if (grant?.variablesWrite !== true) return { ...read, switch: "approve", approveUrl: grant?.manageUrl ?? null } satisfies CiRepo;
+    const variables = yield* Effect.promise(() => readVariables(reader, repo, names, token));
+    if (variables.kind === "limited") {
+      waitUntil = Math.max(waitUntil, variables.untilMs);
+      return null;
+    }
+    if (variables.kind !== "read") return { ...read, switch: variables.kind } satisfies CiRepo;
+    return { ...read, switch: "ready", variables: variables.variables } satisfies CiRepo;
   });
 
-  const status = lock.withPermits(1)(
+  // The rows from the last look when it's fresh, or a new look. Null when the server isn't signed in.
+  const look = lock.withPermits(1)(
     Effect.gen(function* () {
       const reached = yield* github.reach;
-      if (reached === null) return { app: null, repos: [], problem: null } satisfies MoveCiView;
+      if (reached === null) return null;
       const now = yield* Clock.currentTimeMillis;
       const repos = reached.repos.join(" ");
-      if (looked !== null && looked.repos === repos && now - looked.at < FRESH_MS) return looked.view;
-      const read = yield* Effect.forEach(reached.repos, (repo) => readRepo(repo, reached.token, now), { concurrency: REPOS_AT_ONCE });
+      if (looked !== null && looked.repos === repos && now - looked.at < FRESH_MS) return looked;
+      const read = yield* Effect.forEach(reached.repos, (repo) => readRepo(repo, reached, now), { concurrency: REPOS_AT_ONCE });
       const waited = read.some((repo) => repo === null);
       // A prune would drop the ETags of the repositories a wait kept from being asked.
       if (!waited) reader.prune();
-      const before = new Map(looked?.view.repos.map((repo) => [repo.repo, repo]));
-      const repoRows = read.flatMap((repo, index) => (repo !== null ? [repo] : (before.get(reached.repos[index] ?? "") ?? [])));
-      // A repository with no workflows has nothing to move.
+      const before = new Map(looked?.rows.map((row) => [row.repo, row]));
+      const rows = read.flatMap((repo, index) => (repo !== null ? [repo] : (before.get(reached.repos[index] ?? "") ?? [])));
       const problem = waited ? "GitHub asked Runnerbox to wait, so some repositories are as they were last read." : reached.problem;
-      const view: MoveCiView = { app: reached.app, repos: repoRows.filter((repo) => repo.jobs.length > 0 || repo.problem !== null), problem };
-      looked = { at: now, repos, view };
-      return view;
+      // A repository with no workflows has nothing to move.
+      looked = { at: now, repos, app: reached.app, rows: rows.filter((row) => row.jobs.length > 0 || row.problem !== null), problem };
+      return looked;
     }),
   );
 
-  return MoveCi.of({ status });
+  // A machine whose runner state can't be read offers no runner to switch to, rather than failing the view.
+  const runners = runnerState.current.pipe(
+    Effect.map((installs) => runnersOf(installs.flatMap((install) => install.kinds))),
+    Effect.orElseSucceed((): ReadonlyArray<CiRunner> => []),
+  );
+
+  const status = Effect.fn("MoveCi.status")(function* (may: May) {
+    const current = yield* look;
+    if (current === null) return { app: null, repos: [], problem: null, runners: [], canSwitch: may.switch } satisfies MoveCiView;
+    return { app: current.app, repos: current.rows, problem: current.problem, runners: yield* runners, canSwitch: may.switch } satisfies MoveCiView;
+  });
+
+  const setRunner = Effect.fn("MoveCi.setRunner")(function* (repo: string, variable: RunnerVariable, label: string | null, may: May) {
+    const view = yield* status(may);
+    const reached = yield* github.reach;
+    if (view.app === null || reached === null) return yield* new MoveCiError({ reason: "not_signed_in" });
+    if (!reached.repos.includes(repo)) return yield* new MoveCiError({ reason: "not_installed" });
+    const row = view.repos.find((each) => each.repo === repo);
+    const reading = row?.jobs.filter((job) => job.state === "moves" && job.variable === variable) ?? [];
+    if (row === undefined || reading.length === 0) return yield* new MoveCiError({ reason: "not_read" });
+    if (label === null) {
+      // With the repository's deleted, the organization's value would name the runner instead, so
+      // a delete waits for a clean read that says it sets none.
+      if (row.switch !== "ready") return yield* new MoveCiError({ reason: "org_unknown" });
+      if (row.variables.some((each) => each.name === variable && each.org !== null)) return yield* new MoveCiError({ reason: "org_sets" });
+    } else {
+      const runner = view.runners.find((each) => each.label === label && each.mac === (variable === "MAC_RUNNER"));
+      if (runner === undefined) return yield* new MoveCiError({ reason: "unknown_label" });
+      if (!runner.docker && reading.some((job) => job.docker !== null)) return yield* new MoveCiError({ reason: "needs_docker" });
+    }
+    const written = yield* Effect.promise(() => writeVariable(apiBase, repo, variable, label, reached.token));
+    if (written !== "done") return yield* new MoveCiError({ reason: written === "unreachable" ? "github_unreachable" : "refused" });
+    // The next look reads it back from GitHub; until then the row says what was just written.
+    const others = row.variables.filter((each) => each.name !== variable);
+    const now = { name: variable, value: label, org: row.variables.find((each) => each.name === variable)?.org ?? null };
+    const moved = (each: CiRepo): CiRepo => (each.repo !== repo ? each : { ...each, switch: "ready", approveUrl: null, variables: [...others, now].toSorted((a, b) => a.name.localeCompare(b.name)) });
+    if (looked !== null) looked = { ...looked, rows: looked.rows.map(moved) };
+    return { ...view, repos: view.repos.map(moved) };
+  });
+
+  return MoveCi.of({ status, setRunner });
 });
 
 export const layer = Layer.effect(MoveCi, make);

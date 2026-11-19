@@ -17,7 +17,11 @@ import * as GitHubSignIn from "./GitHubSignIn.ts";
 
 // GitHub's replies are outside input: only these fields are read.
 const decodeInstallations = Schema.decodeUnknownOption(
-  Schema.Struct({ installations: Schema.Array(Schema.Struct({ id: Schema.Int, repository_selection: Schema.String, account: Schema.NullOr(Schema.Struct({ login: Schema.String })), html_url: Schema.optionalKey(Schema.String) })) }),
+  Schema.Struct({
+    installations: Schema.Array(
+      Schema.Struct({ id: Schema.Int, repository_selection: Schema.String, account: Schema.NullOr(Schema.Struct({ login: Schema.String })), html_url: Schema.optionalKey(Schema.String), permissions: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)) }),
+    ),
+  }),
 );
 const decodeRepositories = Schema.decodeUnknownOption(Schema.Struct({ total_count: Schema.Int, repositories: Schema.Array(Schema.Struct({ full_name: Schema.String })) }));
 
@@ -33,7 +37,10 @@ const RETRY_AFTER_MS = 60_000;
 const MANAGE_URL = /^https:\/\/github\.com\/[\w./-]+$/;
 const ACCOUNT = /^[\w-]{1,60}$/;
 
-type Installed = { readonly installations: ReadonlyArray<GitHubInstallation>; readonly repos: ReadonlyArray<string> };
+// What an install's owner approved for one repository: whether Variables can be written, which a
+// new permission only allows once each owner accepts it on GitHub, and the page where they do.
+export type RepoGrant = { readonly variablesWrite: boolean; readonly manageUrl: string | null };
+type Installed = { readonly installations: ReadonlyArray<GitHubInstallation>; readonly repos: ReadonlyArray<string>; readonly grants: ReadonlyMap<string, RepoGrant> };
 // What a signed-in server works with: the App, a token good for now, and what was installed when last looked.
 export type Reach = Installed & { readonly app: GitHubAppName; readonly token: string; readonly problem: string | null };
 export type May = { readonly configure: boolean };
@@ -74,7 +81,11 @@ const make = Effect.gen(function* () {
     if (Option.isNone(found)) return { problem: `Couldn't list where the App is installed${listed.kind === "error" ? `: ${listed.message}` : ""}.` } as const;
     const installations: GitHubInstallation[] = [];
     const repos: string[] = [];
-    for (const { id, repository_selection, account, html_url } of found.value.installations) {
+    const grants = new Map<string, RepoGrant>();
+    for (const { id, repository_selection, account, html_url, permissions } of found.value.installations) {
+      const manageUrl = html_url !== undefined && MANAGE_URL.test(html_url) ? html_url : null;
+      // GitHub names the Variables permission `actions_variables` in an installation's permissions.
+      const grant: RepoGrant = { variablesWrite: permissions?.actions_variables === "write", manageUrl };
       let total = 0;
       for (let page = 1; page <= MAX_REPO_PAGES; page += 1) {
         const reply = yield* ask(`user/installations/${id}/repositories?per_page=${REPOS_PER_PAGE}&page=${page}`, token);
@@ -82,16 +93,18 @@ const make = Effect.gen(function* () {
         if (Option.isNone(body)) return { problem: "Couldn't list the repositories the App is installed on." } as const;
         total = body.value.total_count;
         // Only names that pass the core's pattern ever go into a request path.
-        repos.push(...body.value.repositories.map(({ full_name }) => full_name).filter((name) => REPO_NAME.test(name)));
+        const named = body.value.repositories.map(({ full_name }) => full_name).filter((name) => REPO_NAME.test(name));
+        repos.push(...named);
+        for (const repo of named) grants.set(repo, grant);
         if (page * REPOS_PER_PAGE >= total) break;
       }
       installations.push({
         account: account !== null && ACCOUNT.test(account.login) ? account.login : "unknown",
         repositories: repository_selection === "all" ? null : total,
-        manageUrl: html_url !== undefined && MANAGE_URL.test(html_url) ? html_url : null,
+        manageUrl,
       });
     }
-    return { installed: { installations: installations.toSorted((a, b) => a.account.localeCompare(b.account)), repos: [...new Set(repos)].toSorted() } } as const;
+    return { installed: { installations: installations.toSorted((a, b) => a.account.localeCompare(b.account)), repos: [...new Set(repos)].toSorted(), grants } } as const;
   });
 
   const reachWithin = (freshMs: number) =>
@@ -103,7 +116,7 @@ const make = Effect.gen(function* () {
         const { epoch } = yield* signedIn.status;
         const now = yield* Clock.currentTimeMillis;
         const known = cache !== null && cache.epoch === epoch ? cache : null;
-        const last: Installed = known ?? { installations: [], repos: [] };
+        const last: Installed = known ?? { installations: [], repos: [], grants: new Map() };
         if (known !== null && now - known.at < freshMs) return { ...last, app, token, problem: null };
         // The last lists are shown while GitHub can't be asked, with why they weren't refreshed.
         if (failed !== null && failed.epoch === epoch && now - failed.at < RETRY_AFTER_MS) return { ...last, app, token, problem: failed.problem };

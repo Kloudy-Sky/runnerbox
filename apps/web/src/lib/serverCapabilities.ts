@@ -31,9 +31,11 @@ export type Capabilities = {
   readonly github: boolean;
   // `moveCi.status`: where each repository's jobs pick their runner, and the patch that moves them.
   readonly moveCi: boolean;
+  // `moveCi.setRunner`: the switch that sets a repository's runner variable.
+  readonly moveCiSwitch: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false, moveCi: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false, moveCi: false, moveCiSwitch: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -55,5 +57,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     reviewRuns: has(RPC_METHODS.reviewsStart) && has(RPC_METHODS.reviewsRead),
     github: has(RPC_METHODS.githubStatus) && has(RPC_METHODS.githubSignIn),
     moveCi: has(RPC_METHODS.moveCiStatus),
+    moveCiSwitch: has(RPC_METHODS.moveCiSetRunner),
   };
 }

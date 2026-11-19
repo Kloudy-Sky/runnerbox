@@ -92,6 +92,8 @@ export const KindState = Schema.Struct({
   tools: Schema.optionalKey(Schema.NullOr(Schema.Array(ImageTool))),
   // Where its jobs run. Only `container` jobs are sampled. Missing from an older `up`.
   runsIn: Schema.optionalKey(Schema.Literals(["container", "job_vm", "host"])),
+  // Whether each job gets its own Docker daemon. Missing from an older `up`.
+  docker: Schema.optionalKey(Schema.Boolean),
   // The kind's own memory floor, only when it sets one. Missing from an older `up`.
   memoryFloor: Schema.optionalKey(MemoryFloor),
   slots: Schema.Array(SlotState),

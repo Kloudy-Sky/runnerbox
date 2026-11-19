@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 // holding a job for example-linux and one for example-docker, and one job for a hosted label. It
 // answers with ETags like GitHub, so a repeated look is a 304. It also answers as GitHub with the
 // App installed on owner/name and owner/other, with three pull requests open on owner/name, the
-// second with a run going, and owner/name's workflows for Move CI, to any token, and signs a server in as octocat a few seconds after it
+// second with a run going, and owner/name's workflows and variables for Move CI, to any token, and signs a server in as octocat a few seconds after it
 // asks for a code.
 // `code` is the first pull request's real commits and diff, from reviewFixture.ts, so it can be reviewed.
 export async function startFakeGitHub(now: number, code?: { readonly baseSha: string; readonly headSha: string; readonly diff: string }) {
@@ -24,7 +24,7 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
   const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha, repo: { full_name: "owner/name" } } } : {}) };
   const replies: Record<string, unknown> = {
     "/user": { login: "octocat" },
-    "/user/installations?per_page=100": { installations: [{ id: 1, repository_selection: "selected", account: { login: "owner" }, html_url: "https://github.com/settings/installations/1" }] },
+    "/user/installations?per_page=100": { installations: [{ id: 1, repository_selection: "selected", account: { login: "owner" }, html_url: "https://github.com/settings/installations/1", permissions: { contents: "read", actions_variables: "write" } }] },
     "/user/installations/1/repositories?per_page=100&page=1": { total_count: 2, repositories: [{ full_name: "owner/name" }, { full_name: "owner/other" }] },
     "/repos/owner/name/pulls?state=open&sort=updated&direction=desc&per_page=50": [
       first,
@@ -57,6 +57,9 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     "/repos/actions/runner/releases/latest": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
     "/repos/actions/runner/releases/tags/v2.338.2": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
   };
+  // owner/name's repository variables, which the Runners page's switch sets and deletes.
+  const variables = new Map<string, string>();
+  const variablesPath = /^\/repos\/owner\/name\/actions\/variables(?:\/(\w+))?(?:\?.*)?$/;
   // The device flow: a code that's approved on the second time it's asked about.
   let polls = 0;
   const server = createServer((request, response) => {
@@ -68,6 +71,22 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     }
     if (path === "/login/oauth/access_token") return json((polls += 1) < 2 ? { error: "authorization_pending" } : { access_token: "not-a-real-user-token", expires_in: 28_800, refresh_token: "not-a-real-refresh-token", refresh_token_expires_in: 15_897_600 });
     const rate = { "x-ratelimit-remaining": "4900", "x-ratelimit-limit": "5000", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600) };
+    const variable = variablesPath.exec(path);
+    if (variable) {
+      let text = "";
+      request.on("data", (chunk) => (text += chunk));
+      request.on("end", () => {
+        const name = variable[1];
+        const sent = text ? (JSON.parse(text) as { name: string; value: string }) : null;
+        if (request.method === "GET") return json({ total_count: variables.size, variables: [...variables].map(([key, value]) => ({ name: key, value })) });
+        if (request.method === "POST" && sent) return void (variables.set(sent.name, sent.value), response.writeHead(201, rate).end("{}"));
+        if (name === undefined || !variables.has(name)) return void response.writeHead(404, rate).end("{}");
+        if (request.method === "PATCH" && sent) variables.set(name, sent.value);
+        else variables.delete(name);
+        response.writeHead(204, rate).end();
+      });
+      return;
+    }
     if (code && path === `/repos/owner/name/compare/${code.baseSha}...${code.headSha}`) return void response.writeHead(200, { ...rate, "content-type": "text/plain" }).end(code.diff);
     const reply = replies[path] ?? (path.includes("/actions/runs?") ? { workflow_runs: [] } : undefined);
     if (reply === undefined) return void response.writeHead(404, rate).end("{}");
