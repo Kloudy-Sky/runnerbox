@@ -2,9 +2,8 @@ import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { RepoRuns, RunnerVariable } from "@runnerbox/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
-import { capabilitiesOf, NO_CAPABILITIES } from "../lib/serverCapabilities.ts";
 import { runtime } from "../runtime.ts";
-import { serverMethodsAtom } from "../state/connections.ts";
+import { capabilitiesAtom } from "../state/connections.ts";
 import { moveCiAtom, whereRanAtom } from "../state/moveCi.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
 
@@ -17,9 +16,8 @@ export function useMoveCi() {
   const environmentId = environment?.environmentId ?? "";
   const status = useAtomValue(moveCiAtom(environmentId));
   const ran = useAtomValue(whereRanAtom(environmentId));
-  const methods = useAtomValue(serverMethodsAtom(environmentId));
   const write = useAtomSet(moveCiAtom(environmentId));
-  const capabilities = Option.match(AsyncResult.value(methods), { onNone: () => NO_CAPABILITIES, onSome: capabilitiesOf });
+  const capabilities = useAtomValue(capabilitiesAtom(environmentId));
   const runs = Option.getOrNull(AsyncResult.value(ran));
   return {
     view: Option.getOrNull(AsyncResult.value(status)),

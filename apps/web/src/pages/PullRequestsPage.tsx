@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { ReviewsView } from "@runnerbox/contracts";
 import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
@@ -7,10 +8,10 @@ import { type PullFilter, PullFilters } from "../components/pulls/PullFilters.ts
 import { pullColumns, PullRow, wideOnly } from "../components/pulls/PullRow.tsx";
 import { PullTotals } from "../components/pulls/PullTotals.tsx";
 import { usePullRequestsEverywhere } from "../hooks/usePullRequestsEverywhere.ts";
-import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
 import { standingOf } from "../lib/pullStanding.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { cn } from "../lib/utils.ts";
+import { loginsAtom } from "../state/github.ts";
 
 // Why there's nothing to list on any machine, and the settings page that fixes it.
 function nothingToShow(views: ReadonlyArray<ReviewsView>) {
@@ -25,7 +26,7 @@ function nothingToShow(views: ReadonlyArray<ReviewsView>) {
 export function PullRequestsPage() {
   const { machines, pulls, refused, start, stop } = usePullRequestsEverywhere();
   // "Yours" is any login a machine is signed in to GitHub as.
-  const logins = new Set(useRpcQueryEverywhere(["github"], (client) => client["github.status"]()).flatMap(({ data }) => (data?.account ? [data.account.toLowerCase()] : [])));
+  const logins = new Set([...useAtomValue(loginsAtom).values()].map((login) => login.toLowerCase()));
   const { owner, name, number } = useParams({ strict: false });
   const openedKey = owner && name && number ? `${owner}/${name}#${number}` : null;
   const [filter, setFilter] = useState<PullFilter>({ repo: null, yours: false, standing: null });

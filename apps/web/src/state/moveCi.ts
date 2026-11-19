@@ -1,10 +1,8 @@
 import type { MoveCiView } from "@runnerbox/contracts";
-import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { polled } from "../lib/polled.ts";
-import { capabilitiesOf } from "../lib/serverCapabilities.ts";
-import { connectedAtom, serverMethodsAtom } from "./connections.ts";
+import { capabilitiesAtom, connectedAtom } from "./connections.ts";
 import { runnersRangeAtom } from "./runners.ts";
 
 // Where each job on a machine's installed repositories picks its runner, as atoms. The server asks
@@ -17,8 +15,7 @@ const KEPT = "5 minutes";
 const askedAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
     const connection = get(connectedAtom(environmentId));
-    const methods = AsyncResult.value(get(serverMethodsAtom(environmentId)));
-    if (connection === null || Option.isNone(methods) || !capabilitiesOf(methods.value).moveCi) return Stream.never;
+    if (connection === null || !get(capabilitiesAtom(environmentId)).moveCi) return Stream.never;
     return polled(connection.client["moveCi.status"](), "60 seconds");
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
@@ -29,8 +26,7 @@ export const whereRanAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
     const days = get(runnersRangeAtom);
     const connection = get(connectedAtom(environmentId));
-    const methods = AsyncResult.value(get(serverMethodsAtom(environmentId)));
-    if (connection === null || Option.isNone(methods) || !capabilitiesOf(methods.value).whereRan) return Stream.never;
+    if (connection === null || !get(capabilitiesAtom(environmentId)).whereRan) return Stream.never;
     return polled(connection.client["history.whereRan"]({ days }), "60 seconds");
   }).pipe(Atom.setIdleTTL(KEPT)),
 );

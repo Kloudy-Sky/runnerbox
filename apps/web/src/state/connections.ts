@@ -1,6 +1,8 @@
 import type { ConnectionState } from "@runnerbox/client-runtime";
 import * as Effect from "effect/Effect";
-import { Atom } from "effect/reactivity";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/reactivity";
+import { capabilitiesOf, NO_CAPABILITIES } from "../lib/serverCapabilities.ts";
 import { runtime } from "../runtime.ts";
 
 // The client runtime's saved environments and their connections, as atoms, the way T3 Code's state
@@ -36,4 +38,10 @@ export const serverMethodsAtom = Atom.family((environmentId: string) =>
     if (connection === null) return Effect.never;
     return connection.client["server.methods"]().pipe(Effect.catchDefect((defect) => (String(defect).includes("Unknown request tag") ? Effect.succeed(null) : Effect.die(defect))));
   }),
+);
+
+// What an environment's server can do, from the methods it answers. Nothing newer is offered until
+// it has answered.
+export const capabilitiesAtom = Atom.family((environmentId: string) =>
+  Atom.readable((get) => Option.match(AsyncResult.value(get(serverMethodsAtom(environmentId))), { onNone: () => NO_CAPABILITIES, onSome: capabilitiesOf })),
 );
