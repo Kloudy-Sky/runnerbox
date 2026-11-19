@@ -1,6 +1,8 @@
 import type { GitHubStatus } from "@runnerbox/contracts";
 import { useQueryClient } from "@tanstack/react-query";
+import { appAtomRegistry } from "../rpc/atomRegistry.ts";
 import { runtime } from "../runtime.ts";
+import { reviewsAtom } from "../state/reviews.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
 import { useRpcQuery } from "./useRpcQuery.ts";
 import { useServerCapabilities } from "./useServerCapabilities.ts";
@@ -20,7 +22,7 @@ export function useGitHub() {
   // reviews can read changes with it.
   const show = (next: GitHubStatus) => {
     queryClient.setQueryData([environmentId, "github"], next);
-    void queryClient.invalidateQueries({ queryKey: [environmentId, "reviews"] });
+    appAtomRegistry.refresh(reviewsAtom(environmentId));
   };
   return {
     available,

@@ -1,20 +1,12 @@
-import type { PullReviews } from "@runnerbox/contracts";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useStore } from "zustand";
-import { going } from "../lib/reviewWords.ts";
-import { runtime } from "../runtime.ts";
+import { useAtomValue } from "@effect/atom-react";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
+import { AsyncResult } from "effect/reactivity";
+import { pullReviewsAtom } from "../state/reviews.ts";
 
-// One pull request's reviews as the machine that ran them keeps them, the newest first. Asked again
-// every few seconds while the newest is still going, and not otherwise: a finished review never
-// changes. Cached where `useRpcQuery` would cache it for that machine.
+// One pull request's reviews as the machine that ran them keeps them, the newest first, and why
+// the last ask failed, if it did.
 export function usePullReviews(environmentId: string, repo: string, number: number) {
-  const connected = useStore(runtime.store, (state) => state.connections[environmentId]?.status === "connected");
-  const queryKey = [environmentId, "reviews", repo, number] as const;
-  const reviewing = going(useQueryClient().getQueryData<PullReviews>(queryKey)?.reviews[0]);
-  return useQuery({
-    queryKey,
-    queryFn: () => runtime.run(environmentId, (client) => client["reviews.read"]({ repo, number })),
-    enabled: connected && Number.isInteger(number) && number > 0,
-    refetchInterval: reviewing ? 3_000 : false,
-  });
+  const kept = useAtomValue(pullReviewsAtom({ environmentId, repo, number }));
+  return { data: Option.getOrUndefined(AsyncResult.value(kept)), error: AsyncResult.isFailure(kept) ? Cause.squash(kept.cause) : null };
 }

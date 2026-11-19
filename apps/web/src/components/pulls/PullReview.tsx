@@ -48,7 +48,7 @@ export function PullReview({ pull, environmentId, view, start, stop }: Props) {
   const model = review === undefined ? "" : (view.models?.find((each) => each.id === review.model)?.label ?? review.model);
   const github = `https://github.com/${pull.repo}/pull/${pull.number}`;
 
-  if (kept.data === undefined) return kept.isError ? <p className="pt-3 text-destructive">{kept.error instanceof Error ? kept.error.message : "Couldn't read the reviews."}</p> : null;
+  if (kept.data === undefined) return kept.error !== null ? <p className="pt-3 text-destructive">{kept.error instanceof Error ? kept.error.message : "Couldn't read the reviews."}</p> : null;
   return (
     <div>
       <SectionLabel>{review === undefined ? "Review" : `Review of ${behind ? "an earlier" : "the latest"} push, ${ago(review.startedAt)}`}</SectionLabel>
