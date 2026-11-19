@@ -8,7 +8,7 @@ import { RepoPicker } from "../components/RepoPicker.tsx";
 import { Input } from "../components/ui/input.tsx";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
-import { useRpcQuery } from "../hooks/useRpcQuery.ts";
+import { useRuns } from "../hooks/useRuns.ts";
 import { formatAge, formatDuration, jobName } from "../lib/format.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { VERDICT_WORDS } from "../lib/vocabulary.ts";
@@ -29,7 +29,7 @@ export function RunsPage() {
   const { repo, loaded } = useRepo();
   const [filter, setFilter] = useState("");
   const navigate = useNavigate();
-  const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }));
+  const runs = useRuns(repo, days);
   if (loaded && !repo) return <NoHistory />;
   const needle = filter.trim().toLowerCase();
   const rows = (runs.data ?? []).filter((run) => !needle || `${jobName(run)} ${run.branch ?? ""} ${run.runnerType}`.toLowerCase().includes(needle));

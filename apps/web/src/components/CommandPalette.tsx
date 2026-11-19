@@ -4,7 +4,7 @@ import { CircleDot, FileText, Gauge, GitPullRequest, Inbox, LayoutDashboard, Lis
 import { useInbox } from "../hooks/useInbox.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
-import { useRpcQuery } from "../hooks/useRpcQuery.ts";
+import { useRuns } from "../hooks/useRuns.ts";
 import { formatAge, jobName } from "../lib/format.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { AutocompleteEmpty } from "./ui/autocomplete.tsx";
@@ -18,7 +18,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const inbox = useInbox().data;
   const { days } = useRange();
   const { repo } = useRepo();
-  const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }));
+  const runs = useRuns(repo, days);
   const keep = (previous: RootSearch) => previous;
   const page = (id: string, label: string, to: "/" | "/inbox" | "/runs" | "/pulls" | "/speed" | "/runners" | "/settings", icon: typeof LayoutDashboard): Entry => ({ id, label, detail: "", icon, go: () => void navigate({ to, search: keep }) });
   const groups = [
