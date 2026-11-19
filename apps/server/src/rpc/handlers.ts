@@ -136,6 +136,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "reviews.status": () => reviewWatch.status(mayReview),
         "reviews.subscribe": () => reviewWatch.changes(mayReview),
         "github.status": () => github.status(mayReview),
+        "github.subscribe": () => github.changes(mayReview),
         "github.signIn": () => github.signIn(mayReview),
         "github.cancelSignIn": () => github.cancelSignIn(mayReview),
         "github.signOut": () => github.signOut(mayReview),

@@ -9,6 +9,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { writeFileAtomic } from "../config/atomicWrite.ts";
 import * as ServerPaths from "../config/ServerPaths.ts";
 import { QueueConfig } from "../runners/QueueConfig.ts";
@@ -73,6 +75,9 @@ export class GitHubSignIn extends Context.Service<
     readonly token: Effect.Effect<string | null, GitHubError>;
     // Told GitHub refused `token`, so the next `token` renews it before handing it out again.
     readonly refused: (token: string) => Effect.Effect<void>;
+    // Counts up when what `status` says may have changed: a code started or cancelled, a sign-in
+    // approved or ended, or the server signed out.
+    readonly changed: Stream.Stream<number>;
   }
 >()("runnerbox/server/github/GitHubSignIn") {}
 
@@ -93,6 +98,8 @@ const make = Effect.gen(function* () {
   let failure: GitHubSignInFailure | null = null;
   let refusedToken: string | null = null;
   let epoch = 0;
+  const changed = yield* SubscriptionRef.make(0);
+  const bump = SubscriptionRef.update(changed, (count) => count + 1);
 
   // A token endpoint that redirects is misconfigured or hostile, so the redirect isn't followed.
   const post = (pathname: string, form: Record<string, string>) =>
@@ -167,6 +174,7 @@ const make = Effect.gen(function* () {
       if (refreshToken === null || grant?.error !== undefined) {
         if (usable !== null) return usable;
         yield* forget;
+        yield* bump;
         return null;
       }
       // No answer came, so the next ask tries again.
@@ -213,7 +221,7 @@ const make = Effect.gen(function* () {
     pending = null;
     return waiting === null ? Effect.void : Fiber.interrupt(waiting.fiber);
   });
-  const cancel = starting.withPermits(1)(dropPending);
+  const cancel = starting.withPermits(1)(dropPending).pipe(Effect.andThen(bump));
 
   const begin = Effect.gen(function* () {
     if (app === null) return yield* new GitHubError({ reason: "not_configured" });
@@ -237,17 +245,18 @@ const make = Effect.gen(function* () {
           failure = outcome;
         }),
       ),
+      Effect.andThen(bump),
       Effect.forkIn(scope),
     );
     pending = { prompt, fiber };
   });
-  const start = starting.withPermits(1)(begin);
+  const start = starting.withPermits(1)(begin).pipe(Effect.ensuring(bump));
 
   const status = current.pipe(Effect.map((held) => ({ account: held?.account ?? null, pending: pending?.prompt ?? null, failure, epoch })));
-  const signOut = cancel.pipe(Effect.andThen(lock.withPermits(1)(forget)));
+  const signOut = cancel.pipe(Effect.andThen(lock.withPermits(1)(forget)), Effect.andThen(bump));
   const refused = (refusedNow: string) => Effect.sync(() => void (refusedToken = refusedNow));
 
-  return GitHubSignIn.of({ app: app === null ? null : { slug: app.slug, name: app.name }, status, start, cancel, signOut, token, refused });
+  return GitHubSignIn.of({ app: app === null ? null : { slug: app.slug, name: app.name }, status, start, cancel, signOut, token, refused, changed: SubscriptionRef.changes(changed) });
 });
 
 export const layer = Layer.effect(GitHubSignIn, make);

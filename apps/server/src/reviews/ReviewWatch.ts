@@ -79,7 +79,9 @@ const make = Effect.gen(function* () {
   // Each watcher also asks on its own, as often as the view's pull requests stay fresh, so its ask
   // reads GitHub once the last look has gone stale.
   const changes = (may: Reviews.May) =>
-    Stream.merge(store.changed, reviews.changed).pipe(
+    // The store's count starts the watcher; the other's starting count would only start it again,
+    // cutting short the first ask.
+    Stream.merge(store.changed, reviews.changed.pipe(Stream.drop(1))).pipe(
       Stream.switchMap(() => Stream.fromEffectSchedule(status(may), Schedule.spaced(Reviews.PULLS_FRESH_MS))),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );

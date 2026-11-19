@@ -1,5 +1,6 @@
 import type { GitHubStatus } from "@runnerbox/contracts";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { polled } from "../lib/polled.ts";
@@ -11,13 +12,17 @@ import { capabilitiesAtom, connectedAtom, environmentsAtom } from "./connections
 // How long the status outlives the last page that read it, so coming back shows it at once.
 const KEPT = "5 minutes";
 
-// The status as the server last answered it, on a server that has the sign-in. Asked every half
-// minute, since installs change on GitHub's own time, and every couple of seconds while a code
-// waits to be approved, since the server learns of the approval on its own.
+// The status as the server last sent it, on a server that has the sign-in: pushed whenever it
+// changes, or, from a server older than the push, asked every half minute, since installs change on
+// GitHub's own time, and every couple of seconds while a code waits to be approved, since the
+// server learns of the approval on its own. A pushed stream that fails is followed again half a
+// minute later.
 const askedAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
     const connection = get(connectedAtom(environmentId));
-    if (connection === null || !get(capabilitiesAtom(environmentId)).github) return Stream.never;
+    const capabilities = get(capabilitiesAtom(environmentId));
+    if (connection === null || !capabilities.github) return Stream.never;
+    if (capabilities.githubPush) return connection.client["github.subscribe"]().pipe(Stream.retry(Schedule.spaced("30 seconds")));
     return polled(connection.client["github.status"](), "30 seconds", { every: "2 seconds", when: (status) => status.pending !== null });
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
