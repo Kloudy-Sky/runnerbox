@@ -304,7 +304,7 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   // Where each job on the repositories the App is installed on picks its runner, and the patch
   // that moves the ones that don't read a runner variable yet. Nothing is written to GitHub.
   Rpc.make(RPC_METHODS.moveCiStatus, { success: MoveCiView, error: GitHubFailure }),
-  // The same view, now and whenever it changes: after a look, at most once a minute, or a switch.
+  // The same view, now and whenever it changes: as a look reads GitHub, at most once a minute, or on a switch.
   Rpc.make(RPC_METHODS.moveCiSubscribe, { success: MoveCiView, error: GitHubFailure, stream: true }),
   // Sets the repository's runner variable to one of this machine's labels, or deletes it with null
   // so its jobs run on GitHub again. Only the variable is written; never code.

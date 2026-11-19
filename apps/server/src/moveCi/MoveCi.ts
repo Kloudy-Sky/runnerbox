@@ -56,9 +56,9 @@ export class MoveCi extends Context.Service<
     // Sets the repository's variable to one of this machine's labels, or deletes it for null, once
     // every job that reads it can run there.
     readonly setRunner: (repo: string, variable: RunnerVariable, label: string | null, may: May) => Effect.Effect<MoveCiView, GitHubError | MoveCiError>;
-    // The view for a client that keeps it on screen: now, again after each look, and at once after
-    // any session's switch, so every client watching sees a move when it's made. A look that
-    // changes nothing pushes nothing.
+    // The view for a client that keeps it on screen: now, and again whenever the rows change, as a
+    // look reads GitHub or any session switches, so every client watching sees each look and move
+    // as it lands. A change that leaves its view as it was pushes nothing.
     readonly changes: (may: May) => Stream.Stream<MoveCiView, GitHubError>;
   }
 >()("runnerbox/server/moveCi/MoveCi") {}
@@ -74,8 +74,9 @@ const make = Effect.gen(function* () {
   // When each repository last answered that it has no workflows, and until when GitHub said to wait.
   const noWorkflows = new Map<string, number>();
   let waitUntil = 0;
-  // Counted up by each switch, which starts every watcher's asking over.
-  const switched = yield* SubscriptionRef.make(0);
+  // Counted up whenever the rows change, by a look that read GitHub or by a switch. Every watcher
+  // starts its asking over on it, so a look one watcher's minute made reaches them all.
+  const changed = yield* SubscriptionRef.make(0);
 
   const get = (path: string, token: string) => Effect.promise(() => reader.get(path, token));
 
@@ -152,6 +153,7 @@ const make = Effect.gen(function* () {
       const problem = waited ? "GitHub asked Runnerbox to wait, so some repositories are as they were last read." : reached.problem;
       // A repository with no workflows has nothing to move.
       looked = { at: now, repos, app: reached.app, rows: rows.filter((row) => row.jobs.length > 0 || row.problem !== null), problem };
+      yield* SubscriptionRef.update(changed, (count) => count + 1);
       return looked;
     }),
   );
@@ -193,14 +195,15 @@ const make = Effect.gen(function* () {
     const now = { name: variable, value: label, org: row.variables.find((each) => each.name === variable)?.org ?? null };
     const moved = (each: CiRepo): CiRepo => (each.repo !== repo ? each : { ...each, switch: "ready", approveUrl: null, variables: [...others, now].toSorted((a, b) => a.name.localeCompare(b.name)) });
     if (looked !== null) looked = { ...looked, rows: looked.rows.map(moved) };
-    yield* SubscriptionRef.update(switched, (count) => count + 1);
+    yield* SubscriptionRef.update(changed, (count) => count + 1);
     return { ...view, repos: view.repos.map(moved) };
   });
 
-  // Each watcher asks on the look's own pace, so however many watch, GitHub is still asked at most
-  // once a minute.
+  // Each watcher asks once a minute, and the look's cache keeps GitHub to at most once a minute
+  // however many watch. Whichever watcher's minute comes first makes the look, which every watcher
+  // then reads from the cache.
   const changes = (may: May) =>
-    SubscriptionRef.changes(switched).pipe(
+    SubscriptionRef.changes(changed).pipe(
       Stream.switchMap(() => Stream.fromEffectSchedule(status(may), Schedule.spaced(FRESH_MS))),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
