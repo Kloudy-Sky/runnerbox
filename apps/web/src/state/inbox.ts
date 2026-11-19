@@ -1,9 +1,8 @@
 import type { MonitorStatus } from "@runnerbox/contracts";
 import * as Option from "effect/Option";
-import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { polled } from "../lib/polled.ts";
+import { polled, polledOrFailed } from "../lib/polled.ts";
 import { connectedAtom, environmentsAtom } from "./connections.ts";
 import { accountAtom } from "./github.ts";
 import { reviewsAtom } from "./reviews.ts";
@@ -28,7 +27,7 @@ export const inboxAtom = Atom.family(({ environmentId, days }: { readonly enviro
     get(inboxWrittenAtom(environmentId));
     const connection = get(connectedAtom(environmentId));
     if (connection === null) return Stream.never;
-    return Stream.fromEffectSchedule(connection.client["inbox.list"]({ days }), Schedule.spaced("60 seconds")).pipe(Stream.retry(Schedule.max([Schedule.spaced("3 seconds"), Schedule.recurs(1)])));
+    return polledOrFailed(connection.client["inbox.list"]({ days }), "60 seconds");
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
 

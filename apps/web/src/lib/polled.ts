@@ -15,3 +15,9 @@ export const polled = <A, E>(effect: Effect.Effect<A, E>, every: Duration.Input,
     effect,
     Schedule.spaced(every).pipe(Schedule.modifyDelay<number, A>(({ input, duration }) => Effect.succeed(sooner?.when(input) ? sooner.every : duration))),
   ).pipe(Stream.retry(Schedule.spaced(every)));
+
+// Asks on a schedule as `polled` does, for a view that says when it can't be read: a failed ask is
+// tried once more, then the failure ends the stream, beside what it last answered. The count
+// starts again after each answer, so one bad answer between good ones never shows.
+export const polledOrFailed = <A, E>(effect: Effect.Effect<A, E>, every: Duration.Input) =>
+  Stream.fromEffectSchedule(effect, Schedule.spaced(every)).pipe(Stream.retry(Schedule.max([Schedule.spaced("3 seconds"), Schedule.recurs(1)])));

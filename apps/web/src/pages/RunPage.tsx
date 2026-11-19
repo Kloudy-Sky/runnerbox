@@ -7,7 +7,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/
 import { useJobResources } from "../hooks/useJobResources.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
-import { useRpcQuery } from "../hooks/useRpcQuery.ts";
+import { useRuns } from "../hooks/useRuns.ts";
 import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 import { formatAge, jobName } from "../lib/format.ts";
 import { runHappened, VERDICT_ACTION, VERDICT_WHY } from "../lib/vocabulary.ts";
@@ -17,7 +17,7 @@ export function RunPage() {
   const { jobId } = useParams({ strict: false });
   const { days } = useRange();
   const { repo } = useRepo();
-  const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }));
+  const runs = useRuns(repo, days);
   const run = runs.data?.find((candidate) => String(candidate.jobId) === jobId);
   const resources = useJobResources(run);
   const { jobResources } = useServerCapabilities();

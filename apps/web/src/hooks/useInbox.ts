@@ -1,6 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import * as Option from "effect/Option";
-import { AsyncResult } from "effect/reactivity";
+import { answerOf } from "../lib/answer.ts";
 import { inboxAtom } from "../state/inbox.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
 import { useRange } from "./useRange.ts";
@@ -10,6 +9,5 @@ import { useRange } from "./useRange.ts";
 export function useInbox() {
   const { days } = useRange();
   const environmentId = useActiveEnvironment().environment?.environmentId ?? "";
-  const inbox = useAtomValue(inboxAtom({ environmentId, days }));
-  return { data: Option.getOrUndefined(AsyncResult.value(inbox)), isError: AsyncResult.isFailure(inbox) };
+  return answerOf(useAtomValue(inboxAtom({ environmentId, days })));
 }

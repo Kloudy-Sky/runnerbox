@@ -21,6 +21,7 @@ import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
 import { useRpcQuery } from "../hooks/useRpcQuery.ts";
 import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
+import { useRuns } from "../hooks/useRuns.ts";
 import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 
 // Health always looks back a month, whatever the range: a laptop's week of nights and weekends
@@ -53,7 +54,7 @@ export function SpeedPage() {
     { keepPrevious: true, enabled: speed && repo !== undefined },
   );
   // The same call, and so the same cache, as the run list.
-  const runs = useRpcQuery(["runs", repo, days], (client) => client["history.runs"]({ repo: repo!, days, limit: 2000 }), { enabled: repo !== undefined });
+  const runs = useRuns(repo, days);
   const overview = useRpcQuery(["overview", days], (client) => client["history.overview"]({ days }), { keepPrevious: true, enabled: speed });
   const inbox = useInbox();
   if (loaded && !repo) return <NoHistory />;

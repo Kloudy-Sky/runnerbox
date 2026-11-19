@@ -10,6 +10,7 @@ import { usePullRequestsEverywhere } from "./usePullRequestsEverywhere.ts";
 import { useRange } from "./useRange.ts";
 import { useRpcQueryEverywhere } from "./useRpcQueryEverywhere.ts";
 import { useAtomValue } from "@effect/atom-react";
+import { reposEverywhereAtom } from "../state/history.ts";
 import { runnerQueueEverywhereAtom } from "../state/runnerMachines.ts";
 import { useRunnerMachines } from "./useRunnerMachines.ts";
 
@@ -25,7 +26,7 @@ export function useOverview() {
   const connections = useStore(runtime.store, (state) => state.connections);
   const inbox = useInboxEverywhere();
   const totals = useRpcQueryEverywhere(["dailyTotals", days * 2, repo ?? null], (client) => client["history.dailyTotals"]({ days: days * 2, ...(repo ? { repo } : {}) }), { refetchEvery: 60_000 });
-  const repoLists = useRpcQueryEverywhere(["repos"], (client) => client["history.repos"]());
+  const repoLists = useAtomValue(reposEverywhereAtom);
   const pulls = usePullRequestsEverywhere();
   const runners = useRunnerMachines(days);
   const queues = useAtomValue(runnerQueueEverywhereAtom);
@@ -33,7 +34,7 @@ export function useOverview() {
   const shows = ({ environmentId }: { readonly environmentId: string }) => picked === null || picked.environmentId === environmentId;
   const narrow = <Answers extends MachineAnswers>(answers: Answers) => (repo ? answersForRepo(answers, repo) : answers);
   // Repositories with jobs on any machine, and those with reviews on, whose jobs may all run on GitHub's runners.
-  const repos = new Set([...repoLists.flatMap((answer) => answer.data ?? []), ...pulls.machines.flatMap(({ view }) => view.repos.flatMap((each) => (each.review ? [each.repo] : [])))]);
+  const repos = new Set([...repoLists, ...pulls.machines.flatMap(({ view }) => view.repos.flatMap((each) => (each.review ? [each.repo] : [])))]);
   const machines = environments.filter(shows).map((environment) => {
     const answer = totals.find((each) => each.environment.environmentId === environment.environmentId);
     return {
