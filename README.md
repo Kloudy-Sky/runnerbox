@@ -14,7 +14,7 @@ Throwaway GitHub Actions runners on your own hardware, with job tracking that sh
 
 ## Install
 
-Download `runnerbox.js` and `runnerbox.js.sha256` from a [release](https://github.com/Kloudy-Sky/runnerbox/releases), check it with `sha256sum -c runnerbox.js.sha256`, and run it with Node 22.18 or newer. It's one file with its dependencies included, so there's nothing to install. `node runnerbox.js --version` prints its version and the repository it was released from.
+Download `runnerbox.js` and `runnerbox.js.sha256` from a [release](https://github.com/Kloudy-Sky/runnerbox/releases), check it with `sha256sum -c runnerbox.js.sha256`, and run it with Node 22.19 or newer. It's one file with its dependencies included, so there's nothing to install. `node runnerbox.js --version` prints its version and the repository it was released from.
 
 To run from a checkout instead, use `pnpm install` and `pnpm runnerbox`. That needs a Node that can run TypeScript directly. Some distro builds, such as Ubuntu's `nodejs` package, can't, so get Node from nodejs.org or a version manager.
 
