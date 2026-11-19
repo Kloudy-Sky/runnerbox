@@ -1,9 +1,12 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAtomValue } from "@effect/atom-react";
 import { Input } from "./ui/input.tsx";
 import { Button } from "./ui/button.tsx";
 import { useState } from "react";
 import { useStore } from "zustand";
+import { answerOf } from "../lib/answer.ts";
+import { appAtomRegistry } from "../rpc/atomRegistry.ts";
 import { runtime } from "../runtime.ts";
+import { connectStatusAtom, linkedEnvironmentsAtom } from "../state/connect.ts";
 import { usePreferences } from "../state/preferences.ts";
 import { Heading } from "./Heading.tsx";
 
@@ -12,15 +15,16 @@ import { Heading } from "./Heading.tsx";
 // its managed tunnel. Sessions bought this way read and nothing more.
 export function ConnectSection() {
   const connect = runtime.connect;
-  const queryClient = useQueryClient();
   const environments = useStore(runtime.store, (state) => state.environments);
   const setActive = usePreferences((state) => state.setActive);
   const [relayUrl, setRelayUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const status = useQuery({ queryKey: ["connect", "status"], queryFn: () => (connect ? connect.status() : Promise.reject(new Error("Connect isn't available here."))), enabled: connect !== undefined, refetchInterval: false });
-  const linked = useQuery({ queryKey: ["connect", "environments"], queryFn: () => (connect ? connect.environments() : Promise.reject(new Error("Connect isn't available here."))), enabled: status.data?.signedIn === true });
+  const status = answerOf(useAtomValue(connectStatusAtom));
+  const linked = answerOf(useAtomValue(linkedEnvironmentsAtom));
   if (!connect || !status.data) return null;
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["connect"] });
+  const { relayUrl: signedInAt } = status.data;
+  // A new status asks for the linked environments again.
+  const refresh = () => appAtomRegistry.refresh(connectStatusAtom);
   const attempt = (run: () => Promise<unknown>) => {
     setError(null);
     run().then(refresh, (failure: unknown) => setError(failure instanceof Error ? failure.message : "That didn't work."));
@@ -48,7 +52,7 @@ export function ConnectSection() {
                       {added ? (
                         <span className="text-muted-foreground">added</span>
                       ) : (
-                        <Button variant="secondary" size="xs" onClick={() => attempt(() => runtime.addConnectRoute(environment, status.data.relayUrl!).then((saved) => setActive(saved.environmentId)))}>
+                        <Button variant="secondary" size="xs" onClick={() => attempt(() => runtime.addConnectRoute(environment, signedInAt!).then((saved) => setActive(saved.environmentId)))}>
                           Add
                         </Button>
                       )}
