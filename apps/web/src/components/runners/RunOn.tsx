@@ -11,34 +11,35 @@ const segment = (on: boolean) =>
     "flex h-6 items-center gap-1 px-2.5 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-50",
     on ? "bg-foreground font-medium text-background" : "text-muted-foreground enabled:hover:text-foreground",
   );
+const group = "inline-flex shrink-0 overflow-hidden rounded-md border border-border";
 
-// Where the jobs reading one runner variable run: GitHub, or a runner on this machine. With one
+// Where the jobs reading one runner variable run: a runner on this machine, or GitHub. With one
 // runner that fits, Here moves at once; with more, it opens them, and one a job couldn't run on is
-// listed with why but can't be picked. Once moved, Here names the runner.
-export function RunOn({ variable, choices, disabled, onChoose }: { variable: CiVariable; choices: ReadonlyArray<RunOnChoice>; disabled: boolean; onChoose: (label: string | null) => void }) {
+// listed with why but can't be picked. Once moved, Here names the runner. With no variable, the
+// repository isn't set up, so the switch shows GitHub and can't be used yet. `align` is the side
+// the switch sits on, which the runner menu opens from.
+export function RunOn({ variable, choices, disabled, align, onChoose }: { variable: CiVariable | null; choices: ReadonlyArray<RunOnChoice>; disabled: boolean; align: "start" | "end"; onChoose: (label: string | null) => void }) {
+  if (variable === null) {
+    return (
+      <div className={cn(group, "opacity-40")} aria-label="Runs on GitHub until it's set up">
+        <span className={segment(false)}>Here</span>
+        <span className={segment(true)}>GitHub</span>
+      </div>
+    );
+  }
   const fitting = choices.filter((choice) => choice.unfit === null);
   const here = choices.find((choice) => choice.label === variable.value) ?? null;
   const onGitHub = variable.value === null && variable.org === null;
   const noFit = fitting.length === 0 ? (choices[0]?.unfit ?? "No runner on this machine serves these jobs.") : undefined;
   return (
-    <div className="inline-flex shrink-0 overflow-hidden rounded-md border border-border" role="group" aria-label={`Run jobs that read ${variable.name} on`}>
-      <button
-        type="button"
-        aria-pressed={onGitHub}
-        disabled={disabled || variable.org !== null}
-        title={variable.org !== null ? "The organization sets this variable, so the repository's can't send its jobs to GitHub." : undefined}
-        className={segment(onGitHub)}
-        onClick={() => !onGitHub && onChoose(null)}
-      >
-        GitHub
-      </button>
+    <div className={group} role="group" aria-label={`Run jobs that read ${variable.name} on`}>
       {fitting.length > 1 ? (
         <Menu>
           <MenuTrigger render={<button type="button" aria-pressed={here !== null} disabled={disabled} className={segment(here !== null)} />}>
             {here?.label ?? "Here"}
             <ChevronDown className="size-3" />
           </MenuTrigger>
-          <MenuPopup align="end" className="min-w-56">
+          <MenuPopup align={align} className="min-w-56">
             {choices.map((choice) => (
               <MenuItem key={choice.label} disabled={choice.unfit !== null || choice.label === variable.value} onClick={() => onChoose(choice.label)}>
                 <span>{choice.label}</span>
@@ -52,6 +53,16 @@ export function RunOn({ variable, choices, disabled, onChoose }: { variable: CiV
           {here?.label ?? "Here"}
         </button>
       )}
+      <button
+        type="button"
+        aria-pressed={onGitHub}
+        disabled={disabled || variable.org !== null}
+        title={variable.org !== null ? "The organization sets this variable, so the repository's can't send its jobs to GitHub." : undefined}
+        className={segment(onGitHub)}
+        onClick={() => !onGitHub && onChoose(null)}
+      >
+        GitHub
+      </button>
     </div>
   );
 }

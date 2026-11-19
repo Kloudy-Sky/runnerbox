@@ -1,4 +1,4 @@
-import type { GroupBy, JobResources, JobRun, JobSummary, JobTrend, KindUsageReport, Overview, StepComparison, WeeklySummary } from "@runnerbox/contracts";
+import type { GroupBy, JobResources, JobRun, JobSummary, JobTrend, KindUsageReport, Overview, RepoRuns, StepComparison, WeeklySummary } from "@runnerbox/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -16,6 +16,7 @@ import { kindUsage } from "./kindUsage.ts";
 import { machineFit } from "./machineFit.ts";
 import { toJobRun } from "./jobRun.ts";
 import { machineLookup } from "./machineLookup.ts";
+import { whereRan } from "./whereRan.ts";
 import * as StateLogs from "./StateLogs.ts";
 
 const DAY_MS = 24 * 60 * 60_000;
@@ -39,6 +40,7 @@ export class JobHistory extends Context.Service<
     readonly jobResources: (input: { readonly repo: string; readonly jobId: number }) => Effect.Effect<JobResources, StateLogs.LogReadError | JobNotFound>;
     readonly kindUsage: (days: number) => Effect.Effect<KindUsageReport, StateLogs.LogReadError>;
     readonly jobTrends: (input: Window) => Effect.Effect<ReadonlyArray<JobTrend>, StateLogs.LogReadError>;
+    readonly whereRan: (days: number) => Effect.Effect<ReadonlyArray<RepoRuns>, StateLogs.LogReadError>;
   }
 >()("runnerbox/server/JobHistory") {}
 
@@ -148,7 +150,11 @@ const make = Effect.gen(function* () {
     return jobTrends(yield* logs.jobs(repo, now - 2 * days * DAY_MS), now, days);
   });
 
-  return JobHistory.of({ repos: logs.repos, overview, jobSummaries, stepComparison, runs, weeklySummary, jobResources: resources, kindUsage: usage, jobTrends: trends });
+  const ran = Effect.fn("JobHistory.whereRan")(function* (days: number) {
+    return whereRan(yield* logs.allJobs(yield* since(days)));
+  });
+
+  return JobHistory.of({ repos: logs.repos, overview, jobSummaries, stepComparison, runs, weeklySummary, jobResources: resources, kindUsage: usage, jobTrends: trends, whereRan: ran });
 });
 
 export const layer = Layer.effect(JobHistory, make);

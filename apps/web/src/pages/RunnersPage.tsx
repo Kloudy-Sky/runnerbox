@@ -113,7 +113,7 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
           </dl>
         ) : null}
       </header>
-      {moveCi.view !== null && moveCi.view.repos.length > 0 ? <MoveCi view={moveCi.view} setRunner={moveCi.canSet ? moveCi.setRunner : null} /> : null}
+      {moveCi.view !== null && moveCi.view.repos.length > 0 ? <MoveCi view={moveCi.view} runs={moveCi.runs} days={days} setRunner={moveCi.canSet ? moveCi.setRunner : null} /> : null}
       {shown.map((machine) => (
         <MachineSection key={machine.key} machine={machine} running={queues.get(machine.environmentId)?.running ?? []} onPick={several ? () => onPick(machine) : null} />
       ))}

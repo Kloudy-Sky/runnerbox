@@ -1,20 +1,20 @@
-import type { MoveCiView, RunnerVariable } from "@runnerbox/contracts";
+import type { MoveCiView, RepoRuns, RunnerVariable } from "@runnerbox/contracts";
 import { CiRepoRow } from "./CiRepoRow.tsx";
 import { SectionTitle } from "./SectionTitle.tsx";
 
-// Each repository the server's sign-in reaches, and where its jobs run: here or on GitHub, with a
-// switch that sets its runner variable. A row opens to the patch for the jobs that don't read the
-// variable yet, and to the ones that need Docker or are left alone. `setRunner` is null on a
-// server older than the switch.
-export function MoveCi({ view, setRunner }: { view: MoveCiView; setRunner: ((repo: string, variable: RunnerVariable, label: string | null) => Promise<void>) | null }) {
-  const labels = new Set(view.runners.map((runner) => runner.label));
-  const here = view.repos.filter((repo) => repo.variables.some((variable) => variable.value !== null && labels.has(variable.value))).length;
+const range = (days: number) => (days === 1 ? "jobs in the last day" : `jobs in the last ${days} days`);
+
+// Each repository the server's sign-in reaches, one line each: where its jobs ran over the page's
+// range, and a switch between this machine's runners and GitHub. A row that isn't set up opens to
+// the steps that set it up. `runs` is null on a server too old to count where jobs ran, and
+// `setRunner` null on one older than the switch.
+export function MoveCi({ view, runs, days, setRunner }: { view: MoveCiView; runs: ReadonlyMap<string, RepoRuns> | null; days: number; setRunner: ((repo: string, variable: RunnerVariable, label: string | null) => Promise<void>) | null }) {
   return (
     <section>
-      <SectionTitle note={`${here} of ${view.repos.length} ${view.repos.length === 1 ? "repository" : "repositories"} running here`}>Where CI runs</SectionTitle>
-      <div className="flex flex-col gap-2">
+      <SectionTitle note={runs !== null ? range(days) : undefined} noteClassName="max-sm:hidden">Where CI runs</SectionTitle>
+      <div className={runs !== null ? "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3.5 divide-y divide-border sm:grid-cols-[minmax(0,1fr)_9.5rem_auto]" : "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3.5 divide-y divide-border"}>
         {view.repos.map((repo) => (
-          <CiRepoRow key={repo.repo} repo={repo} runners={view.runners} canSwitch={view.canSwitch} setRunner={setRunner} />
+          <CiRepoRow key={repo.repo} repo={repo} runners={view.runners} runs={runs === null ? null : runs.get(repo.repo)} canSwitch={view.canSwitch} setRunner={setRunner} />
         ))}
       </div>
       {view.problem ? <p className="pt-2 text-muted-foreground">{view.problem}</p> : null}

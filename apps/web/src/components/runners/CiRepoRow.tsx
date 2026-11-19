@@ -1,33 +1,29 @@
 import { opensInBrowser } from "@runnerbox/client-runtime";
-import type { CiRepo, CiRunner, CiVariable, RunnerVariable } from "@runnerbox/contracts";
-import { ChevronRight } from "lucide-react";
-import { useState } from "react";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible.tsx";
+import type { CiRepo, CiRunner, CiVariable, RepoRuns, RunnerVariable } from "@runnerbox/contracts";
+import { type ReactNode, useState } from "react";
 import { MoveCiSteps } from "./MoveCiSteps.tsx";
 import { RunOn, type RunOnChoice } from "./RunOn.tsx";
+import { RunsBar } from "./RunsBar.tsx";
 
 const jobs = (count: number) => (count === 1 ? "1 job" : `${count} jobs`);
 const words = (cause: unknown) => (cause instanceof Error ? cause.message : "That didn't work.");
 const KIND: Record<RunnerVariable, string> = { LINUX_RUNNER: "Linux", MAC_RUNNER: "Mac" };
+const link = "text-foreground underline-offset-2 hover:underline";
 
-// Where a variable sends its jobs, in a few words.
-function where({ value, org }: CiVariable, runners: ReadonlyArray<CiRunner>) {
-  if (value !== null) return runners.some((runner) => runner.label === value) ? `here on ${value}` : `on ${value}, which isn't a runner here`;
-  return org !== null ? `on ${org}, which the organization sets` : "on GitHub";
+// Where a variable sends its jobs when the switch alone can't say: a label that isn't a runner here,
+// or the organization's value.
+function elsewhere({ name, value, org }: CiVariable, runners: ReadonlyArray<CiRunner>, several: boolean) {
+  const whose = several ? `${KIND[name]} jobs run` : "Runs";
+  if (value !== null) return runners.some((runner) => runner.label === value) ? null : `${whose} on ${value}, which isn't a runner here.`;
+  return org !== null ? `${whose} on ${org}, which the organization sets.` : null;
 }
 
-// One line on where a repository's jobs run, and how many can't move yet.
-function summary(repo: CiRepo, runners: ReadonlyArray<CiRunner>) {
+// How many of a repository's jobs can't move yet, in a few words, or null when they all can.
+function notYet(repo: CiRepo) {
   const patched = repo.jobs.filter((job) => job.state === "patched").length;
   const moves = repo.jobs.filter((job) => job.state === "moves").length;
-  const notYet = patched > 0 ? `${patched} of ${jobs(repo.jobs.length)} can't move yet.` : null;
-  if (repo.switch === "ready") {
-    const runs = repo.variables.length === 1 ? `Runs ${where(repo.variables[0]!, runners)}.` : repo.variables.map((each) => `${KIND[each.name]} jobs run ${where(each, runners)}.`).join(" ");
-    return [runs, notYet].filter(Boolean).join(" ");
-  }
-  if (notYet) return notYet;
-  if (moves === 0) return repo.jobs.length > 0 ? "No job names a runner that can move." : "";
-  return moves === repo.jobs.length ? `${moves === 1 ? "Its 1 job" : `All ${moves} jobs`} can move.` : `${moves} of ${jobs(repo.jobs.length)} can move.`;
+  if (patched > 0) return moves === 0 ? "No job can move yet." : `${patched} of ${jobs(repo.jobs.length)} don't move yet.`;
+  return moves === 0 && repo.jobs.length > 0 ? "No job names a runner that can move." : null;
 }
 
 // The runners on this machine a variable can name, and why a job reading it couldn't use each one.
@@ -39,12 +35,19 @@ function choicesFor(repo: CiRepo, name: RunnerVariable, runners: ReadonlyArray<C
 
 type Moved = { readonly variable: RunnerVariable; readonly from: string | null; readonly to: string | null };
 
-// A repository: where its jobs run, with a switch for each runner variable they read, opening to
-// the patch for the jobs that don't read one yet. After a move it says where new runs go, with Undo.
-export function CiRepoRow({ repo, runners, canSwitch, setRunner }: { repo: CiRepo; runners: ReadonlyArray<CiRunner>; canSwitch: boolean; setRunner: ((repo: string, variable: RunnerVariable, label: string | null) => Promise<void>) | null }) {
+// A repository on one line: its name, where its jobs ran over the page's range (`runs` is null on a
+// server too old to say), and a switch for each runner variable they read. The line under it says
+// what's in the way, if anything, and opens the setup steps in the row, where the switch moves to.
+// After a move it says where new runs go, with Undo.
+export function CiRepoRow({ repo, runners, runs, canSwitch, setRunner }: { repo: CiRepo; runners: ReadonlyArray<CiRunner>; runs: RepoRuns | undefined | null; canSwitch: boolean; setRunner: ((repo: string, variable: RunnerVariable, label: string | null) => Promise<void>) | null }) {
+  const [open, setOpen] = useState(false);
   const [moving, setMoving] = useState(false);
   const [moved, setMoved] = useState<Moved | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Once a patch this row showed is gone, it's on the default branch, and the steps tick.
+  const [sawPatch, setSawPatch] = useState(false);
+  if (repo.patch !== null && !sawPatch) setSawPatch(true);
+  const landed = sawPatch && repo.patch === null;
   const choose = (variable: RunnerVariable, from: string | null, to: string | null) => {
     if (setRunner === null) return;
     setMoving(true);
@@ -63,79 +66,93 @@ export function CiRepoRow({ repo, runners, canSwitch, setRunner }: { repo: CiRep
     (moved.from === null
       ? !repo.variables.some((each) => each.name === moved.variable && each.org !== null)
       : choicesFor(repo, moved.variable, runners).some((choice) => choice.label === moved.from && choice.unfit === null));
-  const opens = repo.patch !== null || repo.jobs.some((job) => job.docker !== null || job.state === "left");
-  const line = summary(repo, runners);
-  const owner = repo.repo.split("/")[0];
-  const head = (
-    <>
-      <span className="truncate font-medium">{repo.repo}</span>
-      <span className="text-muted-foreground">
-        {line}
-        {repo.problem ? ` ${repo.problem}` : ""}
-      </span>
-    </>
+  const ready = repo.switch === "ready" && repo.variables.length > 0;
+  const several = repo.variables.length > 1;
+  const switches = (align: "start" | "end") => ready ? (
+    <div className={align === "end" ? "flex flex-col items-end gap-1" : "flex flex-col items-start gap-1"}>
+      {repo.variables.map((variable) => (
+        <div key={variable.name} className="flex items-center gap-2">
+          {several ? <span className="text-muted-foreground text-xs">{KIND[variable.name]}</span> : null}
+          <RunOn variable={variable} choices={choicesFor(repo, variable.name, runners)} disabled={setRunner === null || !canSwitch || moving} align={align} onChoose={(label) => choose(variable.name, variable.value, label)} />
+        </div>
+      ))}
+    </div>
+  ) : (
+    <RunOn variable={null} choices={[]} disabled align={align} onChoose={() => undefined} />
   );
-  const columns = "grid grid-cols-[1rem_minmax(0,14rem)_minmax(0,1fr)] items-start gap-x-2 text-left";
+  const owner = repo.repo.split("/")[0];
+  const allow =
+    repo.switch === "approve" && repo.approveUrl !== null && opensInBrowser(repo.approveUrl) ? (
+      <a href={repo.approveUrl} target="_blank" rel="noreferrer noopener" className={link}>
+        Allow on GitHub
+      </a>
+    ) : null;
+  const opens = repo.patch !== null || repo.jobs.some((job) => job.docker !== null || job.state === "left");
+  const toggle = repo.patch !== null ? (repo.jobs.some((job) => job.state === "moves") ? "Set them up" : "Set it up") : "Details";
+  const said: ReactNode[] = [];
+  const say = (key: string, node: ReactNode) => said.push(<span key={key}>{node} </span>);
+  const blocked = notYet(repo);
+  if (blocked) say("not-yet", blocked);
+  for (const variable of repo.variables) {
+    const sentence = elsewhere(variable, runners, several);
+    if (sentence) say(variable.name, sentence);
+  }
+  // Open, the third step says it instead.
+  if (repo.switch === "approve" && !open)
+    say(
+      "approve",
+      <span className="text-warning">
+        {owner} hasn't allowed Runnerbox to set variables. {allow}
+      </span>,
+    );
+  if (repo.switch === "unread") say("unread", "GitHub didn't answer for its variables, so this tries again within a minute.");
+  if (repo.switch === "refused") say("refused", "GitHub won't show you its variables. Switching needs write access to it.");
+  if (ready && setRunner !== null && !canSwitch) say("device", "This device can't move CI.");
+  if (repo.problem) say("problem", repo.problem);
+  if (opens && !open)
+    say(
+      "open",
+      <button type="button" className={link} onClick={() => setOpen(true)}>
+        {toggle}
+      </button>,
+    );
   return (
-    <Collapsible>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
-        {opens ? (
-          <CollapsibleTrigger className={`group/repo w-full ${columns}`}>
-            <ChevronRight className="mt-0.5 size-3.5 text-muted-foreground transition-transform duration-150 group-data-panel-open/repo:rotate-90" />
-            {head}
-          </CollapsibleTrigger>
-        ) : (
-          <div className={columns}>
-            <span />
-            {head}
-          </div>
-        )}
-        {repo.switch === "ready" && setRunner !== null ? (
-          <div className="flex flex-col items-end gap-1">
-            {repo.variables.map((variable) => (
-              <div key={variable.name} className="flex items-center gap-2">
-                {repo.variables.length > 1 ? <span className="text-muted-foreground text-xs">{KIND[variable.name]}</span> : null}
-                <RunOn variable={variable} choices={choicesFor(repo, variable.name, runners)} disabled={!canSwitch || moving} onChoose={(label) => choose(variable.name, variable.value, label)} />
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      <div className="pl-[calc(1rem+0.5rem)] text-xs">
-        {moving ? <p className="text-muted-foreground">Moving</p> : null}
-        {moved !== null && !moving ? (
-          <p className="text-muted-foreground">
-            <span className="text-foreground">Moved to {moved.to ?? "GitHub"}.</span> New runs start there; jobs already waiting stay put.
-            {undoable ? (
-              <>
-                {" "}
-                <button type="button" className="text-foreground underline-offset-2 hover:underline" onClick={() => choose(moved.variable, moved.to, moved.from)}>
+    <div className="col-span-full grid grid-cols-subgrid items-center gap-y-0.5 py-2">
+      <span className="truncate font-medium">{repo.repo}</span>
+      {runs !== null ? (
+        <div className="max-sm:hidden">
+          <RunsBar runs={runs} />
+        </div>
+      ) : null}
+      {open ? (
+        <button type="button" className="justify-self-end text-muted-foreground text-xs hover:text-foreground" onClick={() => setOpen(false)}>
+          Hide
+        </button>
+      ) : (
+        <div className="justify-self-end">{switches("end")}</div>
+      )}
+      {said.length > 0 || moving || moved !== null || error !== null ? (
+        <p className="col-span-full text-muted-foreground text-xs">
+          {moving ? <span>Moving </span> : null}
+          {moved !== null && !moving ? (
+            <span>
+              <span className="text-foreground">Moved to {moved.to ?? "GitHub"}.</span> New runs start there; jobs already waiting stay put.{" "}
+              {undoable ? (
+                <button type="button" className={link} onClick={() => choose(moved.variable, moved.to, moved.from)}>
                   Undo
                 </button>
-              </>
-            ) : null}
-          </p>
-        ) : null}
-        {error !== null ? <p className="text-destructive">{error}</p> : null}
-        {repo.switch === "approve" ? (
-          <p className="text-warning">
-            {owner} hasn't accepted the Variables permission, so this can't be switched from here.{" "}
-            {repo.approveUrl !== null && opensInBrowser(repo.approveUrl) ? (
-              <a href={repo.approveUrl} target="_blank" rel="noreferrer noopener" className="text-foreground underline-offset-2 hover:underline">
-                Accept on GitHub
-              </a>
-            ) : null}
-          </p>
-        ) : null}
-        {repo.switch === "unread" ? <p className="text-muted-foreground">GitHub didn't answer for this repository's variables. This tries again within a minute.</p> : null}
-        {repo.switch === "refused" ? <p className="text-muted-foreground">GitHub won't show this repository's variables to you. Switching needs write access to it.</p> : null}
-        {repo.switch === "ready" && !canSwitch ? <p className="text-muted-foreground">This device can't move CI.</p> : null}
-      </div>
-      {opens ? (
-        <CollapsiblePanel>
-          <MoveCiSteps repo={repo} />
-        </CollapsiblePanel>
+              ) : null}{" "}
+            </span>
+          ) : null}
+          {error !== null ? <span className="text-destructive">{error} </span> : null}
+          {said}
+        </p>
       ) : null}
-    </Collapsible>
+      {open ? (
+        <div className="col-span-full pt-1.5">
+          <MoveCiSteps repo={repo} landed={landed} choose={repo.switch === "approve" ? <span className="text-warning text-xs">{owner} hasn't allowed Runnerbox to set variables. {allow}</span> : switches("start")} />
+        </div>
+      ) : null}
+    </div>
   );
 }
