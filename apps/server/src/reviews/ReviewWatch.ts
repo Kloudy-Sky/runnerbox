@@ -23,8 +23,6 @@ import * as ReviewStore from "./ReviewStore.ts";
 // `.server/review-auto.json`, so the day's limit holds across restarts.
 
 const CHECK_EVERY = "1 minute";
-// As long as the view's pull requests stay fresh, so a watcher's ask past that reads GitHub again.
-const ASK_EVERY = "20 seconds";
 const StartsFile = Schema.Struct({ v: Schema.Literal(1), started: Schema.Array(Schema.String) });
 const decodeFile = Schema.decodeUnknownOption(Schema.fromJsonString(StartsFile));
 
@@ -78,10 +76,11 @@ const make = Effect.gen(function* () {
 
   const status = (may: Reviews.May) => Effect.all([reviews.status(may), budget]).pipe(Effect.map(([view, { room }]) => ({ ...view, autoPaused: !room })));
 
-  // Each watcher also asks on its own, which reads GitHub once the last look has gone stale.
+  // Each watcher also asks on its own, as often as the view's pull requests stay fresh, so its ask
+  // reads GitHub once the last look has gone stale.
   const changes = (may: Reviews.May) =>
     Stream.merge(store.changed, reviews.changed).pipe(
-      Stream.switchMap(() => Stream.fromEffectSchedule(status(may), Schedule.spaced(ASK_EVERY))),
+      Stream.switchMap(() => Stream.fromEffectSchedule(status(may), Schedule.spaced(Reviews.PULLS_FRESH_MS))),
       Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
     );
 

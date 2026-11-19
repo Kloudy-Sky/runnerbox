@@ -35,7 +35,7 @@ const NONE: SettingsFile = { v: 1, repos: [] };
 const PULLS_PER_REPO = 50;
 // GitHub is asked for the lists at most this often, however often clients ask: an app polls faster
 // while a review runs, and nothing stops a client asking in a loop.
-const PULLS_FRESH_MS = 20_000;
+export const PULLS_FRESH_MS = 20_000;
 type Looked = { readonly at: number; readonly repos: string; readonly pulls: ReadonlyArray<ListedPull>; readonly problem: string | null };
 
 export type May = { readonly configure: boolean; readonly review: boolean };
