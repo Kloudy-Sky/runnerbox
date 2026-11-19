@@ -16,7 +16,7 @@
     "@runnerbox/client-runtime": "workspace:*",
     "@runnerbox/connect": "workspace:*",
     "@runnerbox/contracts": "workspace:*",
-    "effect": "4.0.5",
+    "effect": "4.1.2",
     "electron-updater": "6.8.11",
     "semver": "7.7.4"
   },
