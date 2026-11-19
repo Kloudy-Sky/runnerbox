@@ -139,6 +139,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "github.cancelSignIn": () => github.cancelSignIn(mayReview),
         "github.signOut": () => github.signOut(mayReview),
         "moveCi.status": () => moveCi.status(mayMove),
+        "moveCi.subscribe": () => moveCi.changes(mayMove),
         "moveCi.setRunner": ({ repo, variable, label }) => moveCi.setRunner(repo, variable, label, mayMove),
         "reviews.setRepo": ({ repo, review }) => reviews.setRepo(repo, review, mayReview),
         "reviews.setModel": ({ model }) => reviews.setModel(model, mayReview),

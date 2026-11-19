@@ -35,9 +35,11 @@ export type Capabilities = {
   readonly moveCiSwitch: boolean;
   // `history.whereRan`: the runs bar beside each repository in Where CI runs.
   readonly whereRan: boolean;
+  // `moveCi.subscribe`: the server pushes Move CI's view when it changes, rather than being asked.
+  readonly moveCiPush: boolean;
 };
 
-export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false, moveCi: false, moveCiSwitch: false, whereRan: false };
+export const NO_CAPABILITIES: Capabilities = { models: false, attachments: false, references: false, queue: false, deleteThread: false, providers: false, jobResources: false, waitingJobs: false, serverUpdate: false, speed: false, checkRelease: false, restartRunners: false, reviews: false, reviewRuns: false, github: false, moveCi: false, moveCiSwitch: false, whereRan: false, moveCiPush: false };
 
 export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilities {
   if (methods === null) return NO_CAPABILITIES;
@@ -61,5 +63,6 @@ export function capabilitiesOf(methods: ReadonlyArray<string> | null): Capabilit
     moveCi: has(RPC_METHODS.moveCiStatus),
     moveCiSwitch: has(RPC_METHODS.moveCiSetRunner),
     whereRan: has(RPC_METHODS.historyWhereRan),
+    moveCiPush: has(RPC_METHODS.moveCiSubscribe),
   };
 }

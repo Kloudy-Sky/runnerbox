@@ -137,6 +137,7 @@ export const RPC_METHODS = {
   githubSignOut: "github.signOut",
   moveCiStatus: "moveCi.status",
   moveCiSetRunner: "moveCi.setRunner",
+  moveCiSubscribe: "moveCi.subscribe",
   reviewsStatus: "reviews.status",
   reviewsSetRepo: "reviews.setRepo",
   reviewsSetModel: "reviews.setModel",
@@ -303,6 +304,8 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   // Where each job on the repositories the App is installed on picks its runner, and the patch
   // that moves the ones that don't read a runner variable yet. Nothing is written to GitHub.
   Rpc.make(RPC_METHODS.moveCiStatus, { success: MoveCiView, error: GitHubFailure }),
+  // The same view, now and whenever it changes: after a look, at most once a minute, or a switch.
+  Rpc.make(RPC_METHODS.moveCiSubscribe, { success: MoveCiView, error: GitHubFailure, stream: true }),
   // Sets the repository's runner variable to one of this machine's labels, or deletes it with null
   // so its jobs run on GitHub again. Only the variable is written; never code.
   Rpc.make(RPC_METHODS.moveCiSetRunner, {
@@ -439,6 +442,7 @@ export const RPC_SCOPES = {
   [RPC_METHODS.githubSignOut]: ACCESS,
   // Job names and their runners are history like a job's runs are.
   [RPC_METHODS.moveCiStatus]: HISTORY,
+  [RPC_METHODS.moveCiSubscribe]: HISTORY,
   // Moving a repository's CI changes where its code runs, as which repositories are read does.
   [RPC_METHODS.moveCiSetRunner]: ACCESS,
   // Pull request titles, authors and branches are history like a job's are.

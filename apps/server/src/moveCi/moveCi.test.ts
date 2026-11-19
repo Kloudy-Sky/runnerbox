@@ -5,8 +5,10 @@ import { openSession, pairWithCode } from "@runnerbox/client-runtime";
 import { ALL_SCOPES, type AuthScope } from "@runnerbox/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
@@ -244,6 +246,32 @@ test("the switch writes only a runner this machine has that every job can run on
 
     const reader = await session(["history:read"], (client) => client["moveCi.status"]());
     assert.ok(Exit.isSuccess(reader) && reader.value.canSwitch === false);
+  } finally {
+    await Promise.all([server.close(), github.close()]);
+  }
+});
+
+test("a client watching Move CI gets the view at once, and a switch's move without waiting for the next look", async () => {
+  const github = await fakeVariables();
+  const server = await startTestServer({ prepare: writeGitHubSession, queue: { apiBase: github.apiBase, app: TEST_APP, reportEnvPath: "/nonexistent/report.env", timing: TIMING } });
+  try {
+    const { code } = await server.createPairingCode(ALL_SCOPES);
+    const { token } = await Effect.runPromise(pairWithCode(server.baseUrl, code, "app"));
+    const views = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flatMap(openSession(server.baseUrl, token), ({ client }) =>
+          Effect.gen(function* () {
+            const first = yield* Deferred.make<void>();
+            const watching = yield* client["moveCi.subscribe"]().pipe(Stream.tap(() => Deferred.succeed(first, undefined)), Stream.take(2), Stream.runCollect, Effect.forkChild);
+            yield* Deferred.await(first);
+            yield* client["moveCi.setRunner"]({ repo: "owner/name", variable: "LINUX_RUNNER", label: "example-docker" });
+            return yield* Fiber.join(watching).pipe(Effect.timeout("5 seconds"));
+          }),
+        ),
+      ),
+    );
+    const runsOn = (view: (typeof views)[number]) => view.repos.find(({ repo }) => repo === "owner/name")?.variables[0]?.value;
+    assert.deepEqual(views.map(runsOn), [null, "example-docker"]);
   } finally {
     await Promise.all([server.close(), github.close()]);
   }
