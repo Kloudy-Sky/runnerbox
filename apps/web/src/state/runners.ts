@@ -5,8 +5,7 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { polled } from "../lib/polled.ts";
-import { capabilitiesOf } from "../lib/serverCapabilities.ts";
-import { connectedAtom, serverMethodsAtom } from "./connections.ts";
+import { capabilitiesAtom, connectedAtom } from "./connections.ts";
 
 // Each saved machine's runners as atoms, after T3 Code's state modules: its live slot state pushed
 // by its server, the answers built on it, its memory samples and launcher events, and the jobs
@@ -79,8 +78,7 @@ export const launcherEventsAtom = Atom.family((environmentId: string) =>
 export const runnerQueueAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
     const connection = get(connectedAtom(environmentId));
-    const methods = AsyncResult.value(get(serverMethodsAtom(environmentId)));
-    if (connection === null || Option.isNone(methods) || !capabilitiesOf(methods.value).waitingJobs) return Stream.never;
+    if (connection === null || !get(capabilitiesAtom(environmentId)).waitingJobs) return Stream.never;
     return connection.client["runners.subscribeQueue"]();
   }),
 );

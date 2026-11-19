@@ -6,7 +6,8 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { polled } from "../lib/polled.ts";
 import { going } from "../lib/reviewWords.ts";
 import { capabilitiesOf } from "../lib/serverCapabilities.ts";
-import { connectedAtom, environmentsAtom, serverMethodsAtom } from "./connections.ts";
+import { capabilitiesAtom, connectedAtom, environmentsAtom, serverMethodsAtom } from "./connections.ts";
+import { accountAtom } from "./github.ts";
 
 // Each machine's reviews as atoms: the repositories its GitHub App is installed on, their open pull
 // requests with each one's newest review, and one pull request's reviews as the machine keeps them.
@@ -17,12 +18,13 @@ const KEPT = "5 minutes";
 const reviewing = (view: ReviewsView) => view.pulls.some((pull) => going(pull.review));
 
 // The view as the server last answered it, on a server that has reviews. Asked every half minute,
-// since pull requests change on GitHub's own time, and every few seconds while a review runs.
+// since pull requests change on GitHub's own time, every few seconds while a review runs, and at
+// once when the machine signs in to GitHub as someone else, since that's what it reads through.
 const askedAtom = Atom.family((environmentId: string) =>
   Atom.make((get) => {
+    get(accountAtom(environmentId));
     const connection = get(connectedAtom(environmentId));
-    const methods = AsyncResult.value(get(serverMethodsAtom(environmentId)));
-    if (connection === null || Option.isNone(methods) || !capabilitiesOf(methods.value).reviews) return Stream.never;
+    if (connection === null || !get(capabilitiesAtom(environmentId)).reviews) return Stream.never;
     return polled(connection.client["reviews.status"](), "30 seconds", { every: "3 seconds", when: reviewing });
   }).pipe(Atom.setIdleTTL(KEPT)),
 );

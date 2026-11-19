@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { inboxRows } from "../lib/inboxRows.ts";
+import { loginsAtom } from "../state/github.ts";
 import { reviewsEverywhereAtom } from "../state/reviews.ts";
 import { useRange } from "./useRange.ts";
 import { useRpcQueryEverywhere } from "./useRpcQueryEverywhere.ts";
@@ -12,7 +13,7 @@ export function useInboxEverywhere() {
   const inboxes = useRpcQueryEverywhere(["inbox", days], (client) => client["inbox.list"]({ days }));
   const monitors = useRpcQueryEverywhere(["monitors"], (client) => client["monitors.status"](), { refetchEvery: 60_000 });
   const reviews = new Map(useAtomValue(reviewsEverywhereAtom).map(({ environment, view }) => [environment.environmentId, view]));
-  const github = useRpcQueryEverywhere(["github"], (client) => client["github.status"](), { refetchEvery: 30_000 });
+  const logins = useAtomValue(loginsAtom);
   // `up` applies an approved change on its own time.
   const proposals = useRpcQueryEverywhere(["proposals"], (client) => client["proposals.list"](), { refetchEvery: 15_000 });
   const machines = inboxes.map(({ environment, data }, index) => ({
@@ -21,7 +22,7 @@ export function useInboxEverywhere() {
     inbox: data,
     monitors: monitors[index]?.data,
     reviews: reviews.get(environment.environmentId),
-    login: github[index]?.data?.account,
+    login: logins.get(environment.environmentId),
     proposals: proposals[index]?.data,
   }));
   return { machines, rows: inboxRows(machines), loaded: inboxes.some((answer) => answer.data !== undefined) };
