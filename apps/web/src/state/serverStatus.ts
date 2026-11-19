@@ -30,13 +30,15 @@ export const updateStatusAtom = Atom.family((environmentId: string) =>
   }).pipe(latest, Atom.setIdleTTL(KEPT)),
 );
 
-// Whether a release is signed, asked once, on a server that checks. The check goes to GitHub.
+// Whether a release is signed, on a server that checks, asked every five minutes while a view
+// asks: the check goes to GitHub, and a release's signature can land after the release, or a check
+// fail once, so neither answer is kept for good.
 export const releaseSignatureAtom = Atom.family(({ environmentId, version }: { readonly environmentId: string; readonly version: string }) =>
   Atom.make((get) => {
     const connection = get(connectedAtom(environmentId));
-    if (connection === null || !get(capabilitiesAtom(environmentId)).checkRelease) return Effect.never;
-    return connection.client["server.checkRelease"]({ version });
-  }).pipe(Atom.setIdleTTL(KEPT)),
+    if (connection === null || !get(capabilitiesAtom(environmentId)).checkRelease) return Stream.never;
+    return polledOrFailed(connection.client["server.checkRelease"]({ version }), "5 minutes");
+  }).pipe(latest, Atom.setIdleTTL(KEPT)),
 );
 
 // Whether an install's runners can restart onto a new version, and how the last restart went,
