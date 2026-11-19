@@ -1,6 +1,9 @@
 import type { InboxItem, MachineSample } from "@runnerbox/contracts";
-import { useRpcQuery } from "../../hooks/useRpcQuery.ts";
+import { useAtomValue } from "@effect/atom-react";
+import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
+import { answerOf } from "../../lib/answer.ts";
 import { formatMiB } from "../../lib/format.ts";
+import { samplesAtom } from "../../state/speed.ts";
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
@@ -20,7 +23,8 @@ export function FreeMemoryProof({ item }: { item: InboxItem }) {
   const end = Math.max(Date.parse(item.at), ...runs.map((run) => run.end)) + MARGIN;
   const start = Math.min(end - LEAST, ...runs.map((run) => run.start - MARGIN));
   const days = Math.min(90, Math.max(1, Math.ceil((Date.now() - start) / DAY)));
-  const answer = useRpcQuery(["runners.samples", days, "unthinned"], (client) => client["runners.samples"]({ days, maxPoints: Math.min(5000, days * 1440) }));
+  const environmentId = useActiveEnvironment().environment?.environmentId ?? "";
+  const answer = answerOf(useAtomValue(samplesAtom({ environmentId, days, maxPoints: Math.min(5000, days * 1440) })));
   const inWindow = (answer.data ?? []).flatMap((sample) => {
     const time = Date.parse(sample.time);
     return sample.vm && time >= start && time <= end ? [{ ...sample, vm: sample.vm }] : [];

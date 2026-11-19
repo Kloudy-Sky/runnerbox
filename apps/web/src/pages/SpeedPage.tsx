@@ -1,4 +1,4 @@
-import * as Effect from "effect/Effect";
+import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { NoHistory } from "../components/NoHistory.tsx";
 import { PageHeader } from "../components/PageHeader.tsx";
@@ -17,12 +17,14 @@ import { waitGrid, waitSentence } from "../components/speed/waitsByHour.ts";
 import { hours, rangeWords } from "../components/speed/words.ts";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { useInbox } from "../hooks/useInbox.ts";
+import { useKept } from "../hooks/useKept.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
-import { useRpcQuery } from "../hooks/useRpcQuery.ts";
-import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
 import { useRuns } from "../hooks/useRuns.ts";
 import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
+import { answerOf } from "../lib/answer.ts";
+import { dailyTotalsEverywhereAtom } from "../state/history.ts";
+import { healthEverywhereAtom, jobTrendsAtom, kindUsageEverywhereAtom, overviewAtom } from "../state/speed.ts";
 
 // Health always looks back a month, whatever the range: a laptop's week of nights and weekends
 // only reads as a pattern over several.
@@ -41,21 +43,18 @@ export function SpeedPage() {
   const { environment } = useActiveEnvironment();
   const [machine, setMachine] = useState(ALL_MACHINES);
   const [picked, setPicked] = useState<string | null>(null);
-  const usage = useRpcQueryEverywhere(["kindUsage", days], (client) => client["history.kindUsage"]({ days }));
-  const health = useRpcQueryEverywhere(["health", HEALTH_DAYS], (client) => client["runners.health"]({ days: HEALTH_DAYS }));
+  const environmentId = environment?.environmentId ?? "";
+  const usage = useAtomValue(kindUsageEverywhereAtom(days));
+  const health = useAtomValue(healthEverywhereAtom(HEALTH_DAYS));
   // Each machine runs its own reviews on its own Claude account, so their cost adds up across machines.
-  const totals = useRpcQueryEverywhere(["dailyTotals", days, null], (client) => client["history.dailyTotals"]({ days }));
-  const repoTotals = useRpcQueryEverywhere(["dailyTotals", days, repo ?? null], (client) => client["history.dailyTotals"]({ days, repo: repo! }), { enabled: repo !== undefined });
+  const totals = useAtomValue(dailyTotalsEverywhereAtom({ days, repo: null }));
+  const repoTotals = useAtomValue(dailyTotalsEverywhereAtom({ days, repo: repo ?? null }));
   // Carries its repo, so a range change keeps it on screen while the next loads but another repo's
   // jobs never show under this repo's name.
-  const trendsQuery = useRpcQuery(
-    ["jobTrends", repo, days],
-    (client) => client["history.jobTrends"]({ repo: repo!, days }).pipe(Effect.map((trends) => ({ trends, repo }))),
-    { keepPrevious: true, enabled: speed && repo !== undefined },
-  );
+  const trendsQuery = useKept(answerOf(useAtomValue(jobTrendsAtom({ environmentId, repo, days }))));
   // The same runs atom All runs reads.
   const runs = useRuns(repo, days);
-  const overview = useRpcQuery(["overview", days], (client) => client["history.overview"]({ days }), { keepPrevious: true, enabled: speed });
+  const overview = useKept(answerOf(useAtomValue(overviewAtom({ environmentId, days }))));
   const inbox = useInbox();
   if (loaded && !repo) return <NoHistory />;
   const header = (
