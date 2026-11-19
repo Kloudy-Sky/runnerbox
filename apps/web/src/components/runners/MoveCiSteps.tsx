@@ -1,4 +1,5 @@
 import type { CiJob, CiRepo, DockerUse } from "@runnerbox/contracts";
+import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard.ts";
 import { cn } from "../../lib/utils.ts";
@@ -21,24 +22,28 @@ const lineClass = (line: string) =>
         ? "bg-destructive/10"
         : undefined;
 
-function Step({ number, title, children }: { number: number; title: string; children: ReactNode }) {
+function Step({ number, done, title, children }: { number: number; done: boolean; title: string; children?: ReactNode }) {
   return (
     <li className="grid grid-cols-[1.25rem_minmax(0,1fr)] gap-x-2.5">
-      <span aria-hidden className="flex size-5 items-center justify-center rounded-full border border-border text-[11px] text-muted-foreground tabular-nums">
-        {number}
+      <span
+        aria-label={done ? "done" : undefined}
+        className={cn("flex size-5 items-center justify-center rounded-full border text-[11px] tabular-nums", done ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground")}
+      >
+        {done ? <Check className="size-3" strokeWidth={3} /> : number}
       </span>
       <div className="flex min-w-0 flex-col gap-1.5">
-        <span className="font-medium">{title}</span>
+        <span className={cn("pt-px", done && "text-muted-foreground")}>{title}</span>
         {children}
       </div>
     </li>
   );
 }
 
-// A repository's setup, opened under its row: the patch and the commit that moves the jobs that
-// don't read a runner variable yet, then what to know about the jobs: which need Docker, and which
-// the patch leaves alone. Runnerbox never commits it; the row updates once it's on the default branch.
-export function MoveCiSteps({ repo }: { repo: CiRepo }) {
+// A repository's setup, opened in its row: copy the patch, commit it, choose where it runs. Runnerbox
+// never commits it; it reads the default branch, and once the change is there, which `landed` says,
+// the first two steps tick and the third's switch works. Under the steps, the jobs to know about:
+// which need Docker, and which the patch leaves alone. `choose` is the third step's control.
+export function MoveCiSteps({ repo, landed, choose }: { repo: CiRepo; landed: boolean; choose: ReactNode }) {
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   const patched = repo.jobs.filter((job) => job.state === "patched");
   const files = new Set(patched.map((job) => job.workflow)).size;
@@ -46,36 +51,43 @@ export function MoveCiSteps({ repo }: { repo: CiRepo }) {
   const left = repo.jobs.filter((job) => job.state === "left");
   const name = (job: CiJob) => <span className="font-medium">{job.job}</span>;
   return (
-    <div className="flex flex-col gap-3 pt-2 pb-3 pl-5">
-      {repo.patch !== null ? (
-        <ol className="flex flex-col gap-4">
-          <Step number={1} title="Copy the change">
-            <p className="text-muted-foreground">
-              {patched.length === 1 ? "1 job" : `${patched.length} jobs`} in {files === 1 ? "1 file" : `${files} files`}. Each keeps its GitHub runner until the variable is set.
-            </p>
-            <pre className="max-h-[28rem] overflow-auto rounded-md bg-surface py-2 font-mono text-xs leading-relaxed">
-              {repo.patch
-                .trimEnd()
-                .split("\n")
-                .map((line, index) => (
-                  <div key={index} className={cn("px-3", lineClass(line))}>
-                    {line || " "}
-                  </div>
-                ))}
-            </pre>
-            <div>
-              <Button size="sm" onClick={() => repo.patch !== null && copyToClipboard(repo.patch)}>
-                {isCopied ? "Copied" : "Copy patch"}
-              </Button>
-            </div>
+    <div className="flex flex-col gap-3 rounded-md bg-foreground/[0.03] px-3 py-3">
+      {repo.patch !== null || landed ? (
+        <ol className="flex flex-col gap-3.5">
+          <Step number={1} done={landed} title="Copy the change">
+            {repo.patch !== null ? (
+              <>
+                <p className="text-muted-foreground text-xs">
+                  {patched.length === 1 ? "1 job" : `${patched.length} jobs`} in {files === 1 ? "1 file" : `${files} files`}. Each keeps its GitHub runner until the variable is set.
+                </p>
+                <pre className="max-h-[28rem] overflow-auto rounded-md bg-background py-2 font-mono text-xs leading-relaxed">
+                  {repo.patch
+                    .trimEnd()
+                    .split("\n")
+                    .map((line, index) => (
+                      <div key={index} className={cn("px-3", lineClass(line))}>
+                        {line || " "}
+                      </div>
+                    ))}
+                </pre>
+                <div>
+                  <Button size="sm" onClick={() => repo.patch !== null && copyToClipboard(repo.patch)}>
+                    {isCopied ? "Copied" : "Copy patch"}
+                  </Button>
+                </div>
+              </>
+            ) : null}
           </Step>
-          <Step number={2} title="Commit it to the default branch">
-            <p className="text-muted-foreground">Runnerbox never writes code. This row updates within a minute of the change landing.</p>
+          <Step number={2} done={landed} title="Commit it to the default branch">
+            {landed ? null : <p className="text-muted-foreground text-xs">Runnerbox never writes code. It reads the default branch and ticks this off once the change is there.</p>}
+          </Step>
+          <Step number={3} done={false} title="Choose where it runs">
+            <div>{choose}</div>
           </Step>
         </ol>
       ) : null}
       {docker.length > 0 || left.length > 0 ? (
-        <ul className="flex flex-col gap-1">
+        <ul className="flex flex-col gap-1 text-xs">
           {docker.map((job) => (
             <li key={`docker-${job.workflow}-${job.job}`} className="text-warning">
               {name(job)} {DOCKER[job.docker]}, so it needs a runner kind with Docker.
@@ -83,7 +95,7 @@ export function MoveCiSteps({ repo }: { repo: CiRepo }) {
           ))}
           {left.map((job) => (
             <li key={`left-${job.workflow}-${job.job}`} className="text-muted-foreground">
-              {name(job)} picks its runner with <span className="font-mono text-xs">{job.runsOn}</span>, so it's left alone.
+              {name(job)} picks its runner with <span className="font-mono">{job.runsOn}</span>, so it's left alone.
             </li>
           ))}
         </ul>

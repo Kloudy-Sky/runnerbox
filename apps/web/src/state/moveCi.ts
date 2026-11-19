@@ -5,6 +5,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { polled } from "../lib/polled.ts";
 import { capabilitiesOf } from "../lib/serverCapabilities.ts";
 import { connectedAtom, serverMethodsAtom } from "./connections.ts";
+import { runnersRangeAtom } from "./runners.ts";
 
 // Where each job on a machine's installed repositories picks its runner, as atoms. The server asks
 // GitHub no more than once a minute, so asking it more often would only repeat its last answer.
@@ -19,6 +20,18 @@ const askedAtom = Atom.family((environmentId: string) =>
     const methods = AsyncResult.value(get(serverMethodsAtom(environmentId)));
     if (connection === null || Option.isNone(methods) || !capabilitiesOf(methods.value).moveCi) return Stream.never;
     return polled(connection.client["moveCi.status"](), "60 seconds");
+  }).pipe(Atom.setIdleTTL(KEPT)),
+);
+
+// Where each repository's jobs ran over the Runners page's range, for the runs bar beside its
+// switch, so a move can be checked against where runs then went.
+export const whereRanAtom = Atom.family((environmentId: string) =>
+  Atom.make((get) => {
+    const days = get(runnersRangeAtom);
+    const connection = get(connectedAtom(environmentId));
+    const methods = AsyncResult.value(get(serverMethodsAtom(environmentId)));
+    if (connection === null || Option.isNone(methods) || !capabilitiesOf(methods.value).whereRan) return Stream.never;
+    return polled(connection.client["history.whereRan"]({ days }), "60 seconds");
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
 

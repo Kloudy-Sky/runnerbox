@@ -86,6 +86,7 @@ export const layer = (session: Session, answered: ReadonlyArray<string> = Object
         "history.weeklySummary": (input) => history.weeklySummary(input).pipe(toWire),
         "history.kindUsage": ({ days }) => history.kindUsage(days).pipe(toWire),
         "history.jobTrends": (input) => history.jobTrends(input).pipe(toWire),
+        "history.whereRan": ({ days }) => history.whereRan(days).pipe(toWire),
         "history.dailyTotals": ({ days, repo }) =>
           dailyTotals.days(days, repo).pipe(Effect.mapError((error) => new StateReadError({ what: error._tag === "ReviewError" ? "reviews" : error.what }))),
         "history.jobResources": (input) =>

@@ -1,11 +1,13 @@
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 
 // A stand-in for GitHub's Actions and releases API, for the fake server: owner/name has two runs queued, one
 // holding a job for example-linux and one for example-docker, and one job for a hosted label. It
 // answers with ETags like GitHub, so a repeated look is a 304. It also answers as GitHub with the
 // App installed on owner/name and owner/other, with three pull requests open on owner/name, the
-// second with a run going, and owner/name's workflows and variables for Move CI, to any token, and signs a server in as octocat a few seconds after it
-// asks for a code.
+// second with a run going, and owner/name's and owner/other's workflows and variables for Move CI, to any token, and signs a server in as octocat a few seconds after it
+// asks for a code. owner/other isn't set up for Move CI until something POSTs `/fake/commit`, which
+// commits its patch as someone would; posting again takes it back out.
 // `code` is the first pull request's real commits and diff, from reviewFixture.ts, so it can be reviewed.
 export async function startFakeGitHub(now: number, code?: { readonly baseSha: string; readonly headSha: string; readonly diff: string }) {
   const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -21,6 +23,8 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
   });
   const pull = (number: number, title: string, branch: string, opened: number, changed: number, draft = false) => ({ number, title, draft, user: { login: "someone" }, head: { ref: branch, sha: String(number % 10).repeat(40), repo: { full_name: "owner/name" } }, base: { ref: "main" }, created_at: ago(opened), updated_at: ago(changed) });
   const workflow = (text: string) => ({ encoding: "base64", content: Buffer.from(text).toString("base64") });
+  // owner/other's one job, which needs Docker for its database.
+  const otherCi = (runsOn: string) => `jobs:\n  test:\n    runs-on: ${runsOn}\n    services:\n      db:\n        image: postgres\n    steps:\n      - run: make test\n`;
   const first = { ...pull(41, "The queue shows a job once its runner is gone", "fix/queue-gone-runner", 180, 12), ...(code ? { head: { ref: "fix/queue-gone-runner", sha: code.headSha, repo: { full_name: "owner/name" } } } : {}) };
   const replies: Record<string, unknown> = {
     "/user": { login: "octocat" },
@@ -51,15 +55,19 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
       "jobs:\n  build:\n    runs-on: ${{ vars.LINUX_RUNNER || 'ubuntu-24.04' }}\n    steps:\n      - run: make\n  e2e:\n    runs-on: ubuntu-latest\n    services:\n      db:\n        image: postgres\n    steps:\n      - run: make e2e\n  lint:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: make lint\n",
     ),
     "/repos/owner/name/contents/.github/workflows/release.yml": workflow("jobs:\n  release:\n    strategy:\n      matrix:\n        os: [ubuntu-latest, macos-15]\n    runs-on: ${{ matrix.os }}\n    steps:\n      - run: make release\n"),
+    "/repos/owner/other/contents/.github/workflows": [{ type: "file", path: ".github/workflows/ci.yml" }],
+    "/repos/owner/other/contents/.github/workflows/ci.yml": workflow(otherCi("ubuntu-latest")),
     // The fixtures' gh is 2.45.0, well behind; their runner is the newest.
     "/repos/cli/cli/releases/latest": { tag_name: "v2.83.0", published_at: new Date(now - 14 * 86_400_000).toISOString() },
     "/repos/cli/cli/releases/tags/v2.45.0": { tag_name: "v2.45.0", published_at: "2024-02-07T00:00:00Z" },
     "/repos/actions/runner/releases/latest": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
     "/repos/actions/runner/releases/tags/v2.338.2": { tag_name: "v2.338.2", published_at: new Date(now - 25 * 86_400_000).toISOString() },
   };
-  // owner/name's repository variables, which the Runners page's switch sets and deletes.
-  const variables = new Map<string, string>();
-  const variablesPath = /^\/repos\/owner\/name\/actions\/variables(?:\/(\w+))?(?:\?.*)?$/;
+  // Each repository's variables, which the Runners page's switch sets and deletes.
+  const variablesOf = new Map([["name", new Map<string, string>()], ["other", new Map<string, string>()]]);
+  const variablesPath = /^\/repos\/owner\/(name|other)\/actions\/variables(?:\/(\w+))?(?:\?.*)?$/;
+  // Whether owner/other's patch is committed, which each POST to /fake/commit flips.
+  let committed = false;
   // The device flow: a code that's approved on the second time it's asked about.
   let polls = 0;
   const server = createServer((request, response) => {
@@ -69,6 +77,11 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
       polls = 0;
       return json({ device_code: "not-a-real-device-code", user_code: "WDJB-MJHT", verification_uri: `${base()}/login/device`, expires_in: 900, interval: 2 });
     }
+    if (path === "/fake/commit" && request.method === "POST") {
+      committed = !committed;
+      replies["/repos/owner/other/contents/.github/workflows/ci.yml"] = workflow(otherCi(committed ? "${{ vars.LINUX_RUNNER || 'ubuntu-latest' }}" : "ubuntu-latest"));
+      return json({ committed });
+    }
     if (path === "/login/oauth/access_token") return json((polls += 1) < 2 ? { error: "authorization_pending" } : { access_token: "not-a-real-user-token", expires_in: 28_800, refresh_token: "not-a-real-refresh-token", refresh_token_expires_in: 15_897_600 });
     const rate = { "x-ratelimit-remaining": "4900", "x-ratelimit-limit": "5000", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 3600) };
     const variable = variablesPath.exec(path);
@@ -76,7 +89,8 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
       let text = "";
       request.on("data", (chunk) => (text += chunk));
       request.on("end", () => {
-        const name = variable[1];
+        const variables = variablesOf.get(variable[1] ?? "") ?? new Map<string, string>();
+        const name = variable[2];
         const sent = text ? (JSON.parse(text) as { name: string; value: string }) : null;
         if (request.method === "GET") return json({ total_count: variables.size, variables: [...variables].map(([key, value]) => ({ name: key, value })) });
         if (request.method === "POST" && sent) return void (variables.set(sent.name, sent.value), response.writeHead(201, rate).end("{}"));
@@ -90,8 +104,10 @@ export async function startFakeGitHub(now: number, code?: { readonly baseSha: st
     if (code && path === `/repos/owner/name/compare/${code.baseSha}...${code.headSha}`) return void response.writeHead(200, { ...rate, "content-type": "text/plain" }).end(code.diff);
     const reply = replies[path] ?? (path.includes("/actions/runs?") ? { workflow_runs: [] } : undefined);
     if (reply === undefined) return void response.writeHead(404, rate).end("{}");
-    if (request.headers["if-none-match"] === `"${path}"`) return void response.writeHead(304, { ...rate, etag: `"${path}"` }).end();
-    response.writeHead(200, { ...rate, etag: `"${path}"`, "content-type": "application/json" }).end(JSON.stringify(reply));
+    const body = JSON.stringify(reply);
+    const etag = `"${createHash("sha1").update(body).digest("hex")}"`;
+    if (request.headers["if-none-match"] === etag) return void response.writeHead(304, { ...rate, etag }).end();
+    response.writeHead(200, { ...rate, etag, "content-type": "application/json" }).end(body);
   });
   const base = () => {
     const address = server.address();

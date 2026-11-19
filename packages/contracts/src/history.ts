@@ -102,6 +102,10 @@ export const WeeklySummary = Schema.Struct({
 });
 export type WeeklySummary = typeof WeeklySummary.Type;
 
+// How many of a repository's jobs ran on self-hosted runners, and how many on GitHub's.
+export const RepoRuns = Schema.Struct({ repo: Schema.String, here: Schema.Number, github: Schema.Number });
+export type RepoRuns = typeof RepoRuns.Type;
+
 // The figures across the top of the inbox, over every repo with a job log.
 export const Overview = Schema.Struct({
   repos: Schema.Array(Schema.String),

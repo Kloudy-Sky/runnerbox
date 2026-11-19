@@ -3,7 +3,7 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { AuthorizationError, type AuthScope, AuthScope as AuthScopeSchema, PairingCode, SessionSummary } from "./auth.ts";
-import { DayTotals, Days, GroupBy, JobRun, JobSummary, Overview, RepoName, StepComparison, WeeklySummary } from "./history.ts";
+import { DayTotals, Days, GroupBy, JobRun, JobSummary, Overview, RepoName, RepoRuns, StepComparison, WeeklySummary } from "./history.ts";
 import { GitHubError, GitHubStatus } from "./github.ts";
 import { Inbox, InboxItemId, InboxStateError, Instant } from "./inbox.ts";
 import { MachineHealth } from "./health.ts";
@@ -77,6 +77,7 @@ export const RPC_METHODS = {
   historyKindUsage: "history.kindUsage",
   historyJobTrends: "history.jobTrends",
   historyDailyTotals: "history.dailyTotals",
+  historyWhereRan: "history.whereRan",
   inboxList: "inbox.list",
   inboxSettle: "inbox.settle",
   inboxUnsettle: "inbox.unsettle",
@@ -176,6 +177,8 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.historyJobTrends, { payload: Window, success: Schema.Array(JobTrend), error: ReadError }),
   // One row per UTC date the window touches, oldest first, over every repo or the one named.
   Rpc.make(RPC_METHODS.historyDailyTotals, { payload: { days: Days, repo: Schema.optionalKey(RepoName) }, success: Schema.Array(DayTotals), error: ReadError }),
+  // Where each repo with a job log ran its jobs over the window, for the runs bar in Where CI runs.
+  Rpc.make(RPC_METHODS.historyWhereRan, { payload: { days: Days }, success: Schema.Array(RepoRuns), error: ReadError }),
   Rpc.make(RPC_METHODS.historyRuns, {
     payload: { ...Window, limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 5000 })) },
     success: Schema.Array(JobRun),
@@ -360,6 +363,7 @@ export const RPC_SCOPES = {
   // Reviews are already read with `history:read` (reviews.read), so their totals take the same
   // scope and none of the row is held back from a session that can read jobs.
   [RPC_METHODS.historyDailyTotals]: HISTORY,
+  [RPC_METHODS.historyWhereRan]: HISTORY,
   // The inbox reads launcher events and samples alongside jobs.
   [RPC_METHODS.inboxList]: ["history:read", "runners:read"],
   // Anyone who may ask the agent about an item may snooze or settle it.
