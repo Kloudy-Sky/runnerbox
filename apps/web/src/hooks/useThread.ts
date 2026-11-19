@@ -1,11 +1,14 @@
 import { type ReproduceNetwork, subjectKey, type ThreadReference, type ThreadSubject } from "@runnerbox/contracts";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useAtomValue } from "@effect/atom-react";
 import * as Predicate from "effect/Predicate";
 import { useEffect, useState } from "react";
 import { draftKeyOf, type QueuedDraft, useComposerDraftStore } from "../composerDraftStore.ts";
+import { answerOf } from "../lib/answer.ts";
 import { queueOutcome } from "../lib/queuedDrafts.ts";
 import { EMPTY_VIEW, foldThread, isReproducing, type ThreadView } from "../lib/threadView.ts";
+import { appAtomRegistry } from "../rpc/atomRegistry.ts";
 import { runtime } from "../runtime.ts";
+import { reproduceCheckAtom, subjectThreadsAtom, threadProviderAtom } from "../state/threads.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
 
 type SendOptions = {
@@ -27,25 +30,15 @@ export function useThread(subject: ThreadSubject | null, days: number) {
   const environmentId = environment?.environmentId ?? "";
   const connected = connection?.status === "connected" ? connection.since : null;
   const key = subject === null ? null : subjectKey(subject);
-  const queryClient = useQueryClient();
   const draftKey = draftKeyOf(environmentId, key ?? "");
 
   // The server decides whether this session may run threads: the scopes saved at pairing can be
   // older than what it grants now.
-  const provider = useQuery({
-    queryKey: [environmentId, "threads.provider"],
-    queryFn: () => runtime.run(environmentId, (client) => client["threads.provider"]()),
-    enabled: connected !== null,
-    retry: false,
-  });
+  const provider = answerOf(useAtomValue(threadProviderAtom(environmentId)));
   const permitted = !Predicate.isTagged(provider.error, "AuthorizationError");
   const enabled = provider.isSuccess && connected !== null && subject !== null;
-  const latest = useQuery({
-    queryKey: [environmentId, "threads", key],
-    // `enabled` waits for the subject, so the empty answer is never asked for.
-    queryFn: async () => (subject === null ? [] : await runtime.run(environmentId, (client) => client["threads.list"]({ subject }))),
-    enabled,
-  });
+  const threadsAtom = subjectThreadsAtom({ environmentId, subject });
+  const latest = answerOf(useAtomValue(threadsAtom));
   // Set when the user starts a thread here, or asks for a fresh one (null).
   const [chosen, setChosen] = useState<{ key: string | null; id: string | null } | undefined>();
   const threadId = chosen?.key === key ? chosen.id : (latest.data?.[0]?.id ?? null);
@@ -74,15 +67,9 @@ export function useThread(subject: ThreadSubject | null, days: number) {
 
   const current = threadId !== null && view?.id === threadId ? view.value : EMPTY_VIEW;
   const reproducing = isReproducing(current.items);
-  // Whether this thread's job can be reproduced, and whether this session may: the server decides.
-  // While a container runs, asking again each minute lets the server notice `up` removed it.
-  const reproduce = useQuery({
-    queryKey: [environmentId, "threads.checkReproduce", threadId],
-    queryFn: () => runtime.run(environmentId, (client) => client["threads.checkReproduce"]({ id: threadId! })),
-    enabled: enabled && threadId !== null,
-    refetchInterval: reproducing ? 60_000 : false,
-    retry: false,
-  });
+  // Whether this thread's job can be reproduced, and whether this session may. No thread yet reads
+  // no machine, which never asks.
+  const reproduce = answerOf(useAtomValue(reproduceCheckAtom({ environmentId: enabled && threadId !== null ? environmentId : "", threadId: threadId ?? "" })));
   // The owner's click; the server picks the image from the job's own runner.
   const startReproduce = async (network: ReproduceNetwork) => {
     if (threadId === null) return false;
@@ -111,7 +98,7 @@ export function useThread(subject: ThreadSubject | null, days: number) {
       if (id === null) {
         id = (await runtime.run(environmentId, (client) => client["threads.create"]({ subject, days }))).id;
         setChosen({ key, id });
-        void queryClient.invalidateQueries({ queryKey: [environmentId, "threads", key] });
+        appAtomRegistry.refresh(threadsAtom);
       }
       const target = id;
       await runtime.run(environmentId, (client) =>
@@ -178,7 +165,7 @@ export function useThread(subject: ThreadSubject | null, days: number) {
     try {
       await runtime.run(environmentId, (client) => client["threads.delete"]({ id: threadId }));
       setChosen({ key, id: null });
-      void queryClient.invalidateQueries({ queryKey: [environmentId, "threads"] });
+      appAtomRegistry.refresh(threadsAtom);
       return true;
     } catch (cause) {
       setError(errorText(cause));
