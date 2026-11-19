@@ -1,5 +1,6 @@
 import type { MonitorStatus } from "@runnerbox/contracts";
 import * as Option from "effect/Option";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { polled } from "../lib/polled.ts";
@@ -19,11 +20,15 @@ const valueOf = <A, E>(result: AsyncResult.AsyncResult<A, E>) => Option.getOrUnd
 export const inboxWrittenAtom = Atom.family((_environmentId: string) => Atom.make(0));
 
 // A machine's items over the last `days`, asked every minute, since items come and go as jobs run.
+// A failed ask is tried once more, then the failure shows beside what it last answered, so a page
+// that waits for the items, such as Speed and cost, goes on without them. A write, a new range or
+// a reconnect asks again.
 export const inboxAtom = Atom.family(({ environmentId, days }: { readonly environmentId: string; readonly days: number }) =>
   Atom.make((get) => {
     get(inboxWrittenAtom(environmentId));
     const connection = get(connectedAtom(environmentId));
-    return connection === null ? Stream.never : polled(connection.client["inbox.list"]({ days }), "60 seconds");
+    if (connection === null) return Stream.never;
+    return Stream.fromEffectSchedule(connection.client["inbox.list"]({ days }), Schedule.spaced("60 seconds")).pipe(Stream.retry(Schedule.max([Schedule.spaced("3 seconds"), Schedule.recurs(1)])));
   }).pipe(Atom.setIdleTTL(KEPT)),
 );
 
