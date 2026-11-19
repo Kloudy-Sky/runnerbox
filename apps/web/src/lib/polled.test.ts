@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -24,4 +25,20 @@ test("a failed answer asks again on the schedule instead of ending the stream, a
 
   const dead = await Effect.runPromiseExit(Stream.runCollect(polled(Effect.die("unknown method"), "30 seconds")));
   assert.ok(Exit.isFailure(dead));
+});
+
+test("asks sooner while the last answer says something is under way, and at the usual pace after", async () => {
+  const times = await Effect.runPromise(
+    Effect.gen(function* () {
+      let asked = 0;
+      const ask = Effect.gen(function* () {
+        asked += 1;
+        return { at: yield* Clock.currentTimeMillis, running: asked < 3 };
+      });
+      const fiber = yield* polled(ask, "30 seconds", { every: "3 seconds", when: (last) => last.running }).pipe(Stream.take(4), Stream.runCollect, Effect.forkChild);
+      yield* TestClock.adjust("2 minutes");
+      return (yield* Fiber.join(fiber)).map(({ at }) => at);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+  assert.deepEqual(times, [0, 3_000, 6_000, 36_000]);
 });
