@@ -13,8 +13,8 @@ import { Button } from "../components/ui/button.tsx";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { useMoveCi } from "../hooks/useMoveCi.ts";
 import { useRange } from "../hooks/useRange.ts";
-import { type RunnerMachine, useRunnerMachines } from "../hooks/useRunnerMachines.ts";
-import { useRunnerQueueEverywhere } from "../hooks/useRunnerQueueEverywhere.ts";
+import { useAtomValue } from "@effect/atom-react";
+import { type RunnerMachine, runnerMachinesAtom, runnerQueueEverywhereAtom } from "../state/runnerMachines.ts";
 import { formatAge } from "../lib/format.ts";
 import { parseSearch, type RootSearch } from "../lib/search.ts";
 import { waitingEverywhere } from "../lib/waitingEverywhere.ts";
@@ -34,7 +34,7 @@ export function RunnersPage() {
   const navigate = useNavigate();
   const setActive = usePreferences((state) => state.setActive);
   const { environment: active } = useActiveEnvironment();
-  const machines = useRunnerMachines(days);
+  const machines = useAtomValue(runnerMachinesAtom(days));
   // With one machine there's nothing to narrow, so it's always the one picked.
   const picked = (machines.length === 1 ? machines[0] : machines.find((machine) => machine.key === pickedKey)) ?? null;
   const pick = (machine: RunnerMachine | null) => {
@@ -60,7 +60,7 @@ export function RunnersPage() {
 function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<RunnerMachine>; picked: RunnerMachine | null; onPick: (machine: RunnerMachine | null) => void; ask: Ask }) {
   const { days } = useRange();
   const environments = useStore(runtime.store, (state) => state.environments);
-  const queues = useRunnerQueueEverywhere();
+  const queues = useAtomValue(runnerQueueEverywhereAtom);
   // From the window's own environment, whose sign-in to GitHub reads the workflows.
   const moveCi = useMoveCi();
   const shown = picked ? [picked] : machines;

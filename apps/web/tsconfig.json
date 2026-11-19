@@ -17,8 +17,7 @@
       "@t3tools/contracts/settings": ["./src/lib/t3codeContracts.ts"],
       "@t3tools/shared/*": ["./src/t3tools/shared/*"],
       "@t3tools/client-runtime/composer-model-mentions": ["./src/t3tools/client-runtime/composerModelMentions.ts"],
-      "@t3tools/client-runtime/*": ["./src/t3tools/client-runtime/*"],
-      "@effect/atom-react": ["./src/t3tools/atom-react.ts"]
+      "@t3tools/client-runtime/*": ["./src/t3tools/client-runtime/*"]
     }
   },
   "include": ["src", "scripts", "vite.config.ts"]

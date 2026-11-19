@@ -1,6 +1,6 @@
 import { useNow } from "../../hooks/useNow.ts";
 import type { OverviewMachine } from "../../hooks/useOverview.ts";
-import type { RunnerMachine } from "../../hooks/useRunnerMachines.ts";
+import type { RunnerMachine } from "../../state/runnerMachines.ts";
 import { formatDuration } from "../../lib/format.ts";
 import { machineTrouble } from "../../lib/machineTrouble.ts";
 import { cn } from "../../lib/utils.ts";

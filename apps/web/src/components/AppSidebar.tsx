@@ -4,7 +4,8 @@ import { Gauge, GitPullRequest, Inbox, LayoutDashboard, ListTree, Server, Settin
 import type * as React from "react";
 import { useRange } from "../hooks/useRange.ts";
 import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
-import { useRunnerStateEverywhere } from "../hooks/useRunnerStateEverywhere.ts";
+import { useAtomValue } from "@effect/atom-react";
+import { runnerStateEverywhereAtom } from "../state/runnerMachines.ts";
 import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 import { useSidebarShortcut } from "../hooks/useSidebarShortcut.ts";
 import { needsYouEverywhere } from "../lib/needsYouEverywhere.ts";
@@ -43,7 +44,7 @@ export function AppSidebar() {
   const { days } = useRange();
   const inboxes = useRpcQueryEverywhere(["inbox", days], (client) => client["inbox.list"]({ days }));
   const path = useRouterState({ select: (state) => state.location.pathname });
-  const machines = useRunnerStateEverywhere();
+  const machines = useAtomValue(runnerStateEverywhereAtom);
   const slots = [...machines.values()].flat().filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots));
   const busy = slots.filter((slot) => slot.phase === "busy").length;
   const waiting = needsYouEverywhere(inboxes.map((answer) => ({ environmentId: answer.environment.environmentId, inbox: answer.data }))).filter((item) => !isInboxItemHidden(item)).length;

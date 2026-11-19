@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import type { RunnerMachine } from "../../hooks/useRunnerMachines.ts";
+import type { RunnerMachine } from "../../state/runnerMachines.ts";
 import { Button } from "../ui/button.tsx";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu.tsx";
 
