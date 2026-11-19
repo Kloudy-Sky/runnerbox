@@ -23,11 +23,13 @@ const askedAtom = Atom.family((environmentId: string) =>
 );
 
 // The view, which the switch can also write: `moveCi.setRunner` answers with the view as it now
-// is, and that shows until the next answer, which the server builds from the same rows.
+// is, and that shows until the next answer, which the server builds from the same rows. It's kept
+// as long as the answers are, or a page left and come back to before then would show the runner
+// from before the switch.
 export const moveCiAtom = Atom.family((environmentId: string) =>
   Atom.writable(
     (get) => get(askedAtom(environmentId)),
     (ctx, view: MoveCiView) => ctx.setSelf(AsyncResult.success(view)),
     (refresh) => refresh(askedAtom(environmentId)),
-  ),
+  ).pipe(Atom.setIdleTTL(KEPT)),
 );
