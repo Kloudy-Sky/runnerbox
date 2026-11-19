@@ -1,25 +1,27 @@
-import type { MoveCiView, RunnerVariable } from "@runnerbox/contracts";
-import { useQueryClient } from "@tanstack/react-query";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import type { RunnerVariable } from "@runnerbox/contracts";
+import * as Option from "effect/Option";
+import { AsyncResult } from "effect/reactivity";
+import { capabilitiesOf, NO_CAPABILITIES } from "../lib/serverCapabilities.ts";
 import { runtime } from "../runtime.ts";
+import { serverMethodsAtom } from "../state/connections.ts";
+import { moveCiAtom } from "../state/moveCi.ts";
 import { useActiveEnvironment } from "./useEnvironment.ts";
-import { useRpcQuery } from "./useRpcQuery.ts";
-import { useServerCapabilities } from "./useServerCapabilities.ts";
 
-// Where each job on the environment's installed repositories picks its runner, the patch that
-// moves the rest, and the switch that sets their runner variable. Asked again every minute, so a
-// row updates soon after its patch is committed; the server asks GitHub no more often than that.
-// `canSet` is false on a server older than the switch.
+// Where each job on the active environment's installed repositories picks its runner, the patch
+// that moves the rest, and the switch that sets their runner variable. `canSet` is false on a
+// server older than the switch.
 export function useMoveCi() {
   const { environment } = useActiveEnvironment();
   const environmentId = environment?.environmentId ?? "";
-  const { moveCi: available, moveCiSwitch: canSet } = useServerCapabilities();
-  const queryClient = useQueryClient();
-  const status = useRpcQuery(["moveCi"], (client) => client["moveCi.status"](), { enabled: available, refetchEvery: 60_000 });
+  const status = useAtomValue(moveCiAtom(environmentId));
+  const methods = useAtomValue(serverMethodsAtom(environmentId));
+  const write = useAtomSet(moveCiAtom(environmentId));
+  const { moveCiSwitch: canSet } = Option.match(AsyncResult.value(methods), { onNone: () => NO_CAPABILITIES, onSome: capabilitiesOf });
   return {
-    view: status.data ?? null,
+    view: Option.getOrNull(AsyncResult.value(status)),
     canSet,
-    // Answers with the view as it now is, so the row shows the move without asking again.
-    setRunner: (repo: string, variable: RunnerVariable, label: string | null) =>
-      runtime.run(environmentId, (client) => client["moveCi.setRunner"]({ repo, variable, label })).then((view: MoveCiView) => void queryClient.setQueryData([environmentId, "moveCi"], view)),
+    // The row shows the move from the switch's own answer, without asking again.
+    setRunner: (repo: string, variable: RunnerVariable, label: string | null) => runtime.run(environmentId, (client) => client["moveCi.setRunner"]({ repo, variable, label })).then(write),
   };
 }
