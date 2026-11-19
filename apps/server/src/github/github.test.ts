@@ -6,8 +6,11 @@ import { test } from "node:test";
 import { openSession, pairWithCode } from "@runnerbox/client-runtime";
 import { ALL_SCOPES, type AuthScope, type GitHubStatus } from "@runnerbox/contracts";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 import { TEST_APP, USER_TOKEN, writeGitHubSession } from "../testing/githubSession.ts";
 import { startTestServer } from "../testing/testServer.ts";
 
@@ -106,6 +109,40 @@ test("the owner signs in by approving a code, with no secret sent, and the token
     const out = await session(ALL_SCOPES, (client) => client["github.signOut"]());
     assert.ok(Exit.isSuccess(out) && out.value.account === null && out.value.installations.length === 0);
     await assert.rejects(stat(file));
+  } finally {
+    await close();
+  }
+});
+
+test("a client watching the sign-in sees the code, the account once it's approved, and the sign-out, each as it happens", async () => {
+  const { github, session, close } = await start();
+  try {
+    github.script.answer = "wait";
+    // All of it well inside the 30 seconds a watcher waits before asking on its own.
+    const seen = await session(ALL_SCOPES, (client) =>
+      Effect.gen(function* () {
+        const listed = yield* Deferred.make<void>();
+        const waiting = yield* Deferred.make<void>();
+        const signedIn = yield* Deferred.make<void>();
+        const watching = yield* client["github.subscribe"]().pipe(
+          Stream.map((status) => (status.account !== null ? `signed in as ${status.account}` : status.pending !== null ? `code ${status.pending.userCode}` : "signed out")),
+          Stream.changes,
+          Stream.tap((said) => Deferred.succeed(said.startsWith("code") ? waiting : said.startsWith("signed in") ? signedIn : listed, undefined)),
+          Stream.take(4),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Deferred.await(listed);
+        yield* client["github.signIn"]();
+        yield* Deferred.await(waiting);
+        github.script.answer = "approve";
+        yield* Deferred.await(signedIn);
+        yield* client["github.signOut"]();
+        return yield* Fiber.join(watching);
+      }).pipe(Effect.timeout("5 seconds")),
+    );
+    assert.ok(Exit.isSuccess(seen));
+    assert.deepEqual(seen.value, ["signed out", "code WDJB-MJHT", "signed in as octocat", "signed out"]);
   } finally {
     await close();
   }

@@ -6,6 +6,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as Schedule from "effect/Schedule";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { REPO_NAME } from "runnerbox/src/github/github-client.ts";
 import { QueueConfig } from "../runners/QueueConfig.ts";
 import { githubRequest } from "./githubRequest.ts";
@@ -31,6 +34,9 @@ const MAX_REPO_PAGES = 5;
 // it newer, so an install shows soon after the owner comes back from making it.
 const INSTALLED_FRESH_MS = 5 * 60_000;
 const SETTINGS_FRESH_MS = 15_000;
+// How often a watcher asks on its own, for installs that change on GitHub's own time: the pace the
+// app asked at before the push, since the pages that show who's signed in all watch.
+const WATCH_EVERY_MS = 30_000;
 // After a look that failed, GitHub isn't asked again for this long, however many clients ask.
 const RETRY_AFTER_MS = 60_000;
 // An installation's page is shown as a link, so only one on GitHub's own site is passed on.
@@ -56,6 +62,11 @@ export class GitHub extends Context.Service<
     readonly signIn: (may: May) => Effect.Effect<GitHubStatus, GitHubError>;
     readonly cancelSignIn: (may: May) => Effect.Effect<GitHubStatus, GitHubError>;
     readonly signOut: (may: May) => Effect.Effect<GitHubStatus, GitHubError>;
+    // The status for a client that keeps it on screen: now, and again whenever it may have changed,
+    // as a code is started, approved or cancelled, the server signs in or out, or the installations
+    // are read afresh, so every client watching sees each as it lands. A change that leaves the
+    // status as it was pushes nothing.
+    readonly changes: (may: May) => Stream.Stream<GitHubStatus, GitHubError>;
   }
 >()("runnerbox/server/github/GitHub") {}
 
@@ -66,6 +77,8 @@ const make = Effect.gen(function* () {
   const looking = yield* Semaphore.make(1);
   let cache: (Installed & { readonly at: number; readonly epoch: number }) | null = null;
   let failed: { readonly at: number; readonly epoch: number; readonly problem: string } | null = null;
+  // Counted up by every read of the installations, so a read one watcher's ask made reaches them all.
+  const read = yield* SubscriptionRef.make(0);
 
   const ask = (path: string, token: string) => Effect.promise(() => githubRequest(apiBase, "GET", path, token));
 
@@ -120,7 +133,7 @@ const make = Effect.gen(function* () {
         if (known !== null && now - known.at < freshMs) return { ...last, app, token, problem: null };
         // The last lists are shown while GitHub can't be asked, with why they weren't refreshed.
         if (failed !== null && failed.epoch === epoch && now - failed.at < RETRY_AFTER_MS) return { ...last, app, token, problem: failed.problem };
-        const fetched = yield* fetchInstalled(token);
+        const fetched = yield* fetchInstalled(token).pipe(Effect.ensuring(SubscriptionRef.update(read, (count) => count + 1)));
         if ("installed" in fetched) {
           cache = { ...fetched.installed, at: now, epoch };
           failed = null;
@@ -139,9 +152,17 @@ const make = Effect.gen(function* () {
     return { app: signedIn.app, account, pending: may.configure ? pending : null, failure, installations: reached?.installations ?? [], problem: reached?.problem ?? null, canConfigure: may.configure };
   });
 
+  // Each watcher also asks on its own, and that ask reads GitHub once the last read has gone stale.
+  const changes = (may: May) =>
+    Stream.merge(signedIn.changed, SubscriptionRef.changes(read)).pipe(
+      Stream.switchMap(() => Stream.fromEffectSchedule(status(may), Schedule.spaced(WATCH_EVERY_MS))),
+      Stream.changesWith((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+    );
+
   return GitHub.of({
     reach: reachWithin(INSTALLED_FRESH_MS),
     status,
+    changes,
     signIn: (may) => signedIn.start.pipe(Effect.andThen(status(may))),
     cancelSignIn: (may) => signedIn.cancel.pipe(Effect.andThen(status(may))),
     signOut: (may) => signedIn.signOut.pipe(Effect.andThen(status(may))),

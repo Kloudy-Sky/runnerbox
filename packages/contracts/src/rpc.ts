@@ -132,6 +132,7 @@ export const RPC_METHODS = {
   monitorsSave: "monitors.save",
   monitorsMarkRead: "monitors.markRead",
   githubStatus: "github.status",
+  githubSubscribe: "github.subscribe",
   githubSignIn: "github.signIn",
   githubCancelSignIn: "github.cancelSignIn",
   githubSignOut: "github.signOut",
@@ -297,6 +298,9 @@ export const RunnerboxRpcGroup = RpcGroup.make(
   Rpc.make(RPC_METHODS.monitorsMarkRead, { payload: { itemId: Schema.String }, error: Schema.Union([AuthorizationError, MonitorError]) }),
   // Who the server is signed in to GitHub as, and where the App is installed.
   Rpc.make(RPC_METHODS.githubStatus, { success: GitHubStatus, error: GitHubFailure }),
+  // The same status, now and whenever it changes: a code started, approved or cancelled, a sign-in
+  // or sign-out, or a fresh read of where the App is installed.
+  Rpc.make(RPC_METHODS.githubSubscribe, { success: GitHubStatus, error: GitHubFailure, stream: true }),
   // Asks GitHub for a code and returns at once. The server waits for the owner to approve it, and status says when.
   Rpc.make(RPC_METHODS.githubSignIn, { success: GitHubStatus, error: GitHubFailure }),
   Rpc.make(RPC_METHODS.githubCancelSignIn, { success: GitHubStatus, error: GitHubFailure }),
@@ -440,6 +444,7 @@ export const RPC_SCOPES = {
   [RPC_METHODS.monitorsMarkRead]: THREADS,
   // The account and where the App is installed say no more than the repositories reviews already list.
   [RPC_METHODS.githubStatus]: HISTORY,
+  [RPC_METHODS.githubSubscribe]: HISTORY,
   // A token that can read the owner's code and write to their pull requests manages access.
   [RPC_METHODS.githubSignIn]: ACCESS,
   [RPC_METHODS.githubCancelSignIn]: ACCESS,

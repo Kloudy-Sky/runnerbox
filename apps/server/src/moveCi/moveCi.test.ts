@@ -85,7 +85,7 @@ test("Move CI reads only the workflows on each installed repository, drafts the 
 test("Move CI keeps to the owner's budget: a repository without workflows waits ten minutes, and a wait GitHub asks for is kept", async () => {
   const github = await fakeGitHub();
   const reach = { app: TEST_APP, token: USER_TOKEN, installations: [], repos: ["owner/name", "owner/other"], grants: new Map(), problem: null };
-  const signedIn = Layer.succeed(GitHub.GitHub, GitHub.GitHub.of({ reach: Effect.succeed(reach), status: () => Effect.die("unused"), signIn: () => Effect.die("unused"), cancelSignIn: () => Effect.die("unused"), signOut: () => Effect.die("unused") }));
+  const signedIn = Layer.succeed(GitHub.GitHub, GitHub.GitHub.of({ reach: Effect.succeed(reach), status: () => Effect.die("unused"), signIn: () => Effect.die("unused"), cancelSignIn: () => Effect.die("unused"), signOut: () => Effect.die("unused"), changes: () => Stream.die("unused") }));
   const queue = QueueConfig.layerTest({ apiBase: github.apiBase, reportEnvPath: "/nonexistent/report.env", timing: TIMING });
   const noRunners = Layer.succeed(RunnerState.RunnerState, RunnerState.RunnerState.of({ current: Effect.succeed([]), changes: Stream.empty }));
   const context = await Effect.runPromise(Layer.build(Layer.mergeAll(MoveCi.layer.pipe(Layer.provide(Layer.mergeAll(signedIn, queue, noRunners))), TestClock.layer())).pipe(Effect.scoped));
@@ -184,7 +184,7 @@ async function fakeVariables() {
 test("a look one watcher's minute makes is pushed to every watcher as it lands", async () => {
   const github = await fakeGitHub();
   const reach = { app: TEST_APP, token: USER_TOKEN, installations: [], repos: ["owner/name"], grants: new Map(), problem: null };
-  const signedIn = Layer.succeed(GitHub.GitHub, GitHub.GitHub.of({ reach: Effect.succeed(reach), status: () => Effect.die("unused"), signIn: () => Effect.die("unused"), cancelSignIn: () => Effect.die("unused"), signOut: () => Effect.die("unused") }));
+  const signedIn = Layer.succeed(GitHub.GitHub, GitHub.GitHub.of({ reach: Effect.succeed(reach), status: () => Effect.die("unused"), signIn: () => Effect.die("unused"), cancelSignIn: () => Effect.die("unused"), signOut: () => Effect.die("unused"), changes: () => Stream.die("unused") }));
   const queue = QueueConfig.layerTest({ apiBase: github.apiBase, reportEnvPath: "/nonexistent/report.env", timing: TIMING });
   const noRunners = Layer.succeed(RunnerState.RunnerState, RunnerState.RunnerState.of({ current: Effect.succeed([]), changes: Stream.empty }));
   const context = await Effect.runPromise(Layer.build(Layer.mergeAll(MoveCi.layer.pipe(Layer.provide(Layer.mergeAll(signedIn, queue, noRunners))), TestClock.layer())).pipe(Effect.scoped));
