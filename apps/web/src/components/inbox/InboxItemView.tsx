@@ -1,12 +1,12 @@
-import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useActiveEnvironment } from "../../hooks/useEnvironment.ts";
-import type { InboxMachine } from "../../hooks/useInboxEverywhere.ts";
 import type { useInboxWrites } from "../../hooks/useInboxWrites.ts";
 import type { ItemRow } from "../../lib/inboxRows.ts";
 import { rowWhere } from "../../lib/inboxWords.ts";
 import { cn } from "../../lib/utils.ts";
 import { EnvironmentScope } from "../../state/environmentScope.ts";
+import { type InboxMachine, monitorsAtom } from "../../state/inbox.ts";
+import { appAtomRegistry } from "../../rpc/atomRegistry.ts";
 import { runtime } from "../../runtime.ts";
 import { ItemEvidence } from "../ItemEvidence.tsx";
 import { Reading } from "../Reading.tsx";
@@ -39,7 +39,6 @@ export function InboxItemView({ row, machines, writes }: { row: ItemRow; machine
   const { item } = row;
   // Opening an item a monitor looked into reads what it left, on each machine that looked, so its
   // "Answer ready" goes. Joined, so the effect runs when the set changes rather than every render.
-  const queryClient = useQueryClient();
   const unreadOn = row.copies
     .filter((copy) => machines.some((machine) => machine.environmentId === copy.environmentId && machine.monitors?.unread.includes(item.id)))
     .map((copy) => copy.environmentId)
@@ -47,11 +46,11 @@ export function InboxItemView({ row, machines, writes }: { row: ItemRow; machine
   useEffect(() => {
     for (const machine of unreadOn.split("\n").filter(Boolean)) {
       runtime.run(machine, (client) => client["monitors.markRead"]({ itemId: item.id })).then(
-        () => queryClient.invalidateQueries({ queryKey: [machine, "monitors"] }),
+        () => appAtomRegistry.refresh(monitorsAtom(machine)),
         () => undefined,
       );
     }
-  }, [item.id, unreadOn, queryClient]);
+  }, [item.id, unreadOn]);
   const runs = item.evidence.attempts.length;
   const memory = memoryCopy(row);
   const where = rowWhere(row, label);

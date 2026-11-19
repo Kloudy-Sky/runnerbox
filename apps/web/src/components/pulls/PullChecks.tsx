@@ -1,11 +1,12 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { Check, PullRequest } from "@runnerbox/contracts";
 import { Link } from "@tanstack/react-router";
 import { useRange } from "../../hooks/useRange.ts";
-import { useRpcQueryEverywhere } from "../../hooks/useRpcQueryEverywhere.ts";
 import { checkTime } from "../../lib/checkWords.ts";
 import { inboxRows } from "../../lib/inboxRows.ts";
 import { machineFailureFor } from "../../lib/machineFailure.ts";
 import type { RootSearch } from "../../lib/search.ts";
+import { inboxesAtom } from "../../state/inbox.ts";
 import { SectionLabel } from "./SectionLabel.tsx";
 
 const keepSearch = (previous: RootSearch) => previous;
@@ -25,8 +26,7 @@ function said(check: Check) {
 // Each machine's copy is looked in, since only one may hold an attempt on the head commit.
 export function PullChecks({ pull }: { pull: PullRequest }) {
   const { days } = useRange();
-  const inboxes = useRpcQueryEverywhere(["inbox", days], (client) => client["inbox.list"]({ days }));
-  const all = inboxRows(inboxes.map((answer) => ({ environmentId: answer.environment.environmentId, inbox: answer.data }))).all.flatMap((row) => row.copies.map((copy) => copy.item));
+  const all = inboxRows(useAtomValue(inboxesAtom(days))).all.flatMap((row) => row.copies.map((copy) => copy.item));
   const checks = pull.checks ?? [];
   const failures = checks.flatMap((check) => {
     const item = machineFailureFor(pull, check, all);

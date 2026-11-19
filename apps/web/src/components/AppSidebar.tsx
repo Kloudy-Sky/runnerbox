@@ -3,8 +3,8 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { Gauge, GitPullRequest, Inbox, LayoutDashboard, ListTree, Server, Settings } from "lucide-react";
 import type * as React from "react";
 import { useRange } from "../hooks/useRange.ts";
-import { useRpcQueryEverywhere } from "../hooks/useRpcQueryEverywhere.ts";
 import { useAtomValue } from "@effect/atom-react";
+import { inboxesAtom } from "../state/inbox.ts";
 import { runnerStateEverywhereAtom } from "../state/runnerMachines.ts";
 import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
 import { useSidebarShortcut } from "../hooks/useSidebarShortcut.ts";
@@ -42,12 +42,12 @@ function PageRow({ page, path }: { page: Page; path: string }) {
 export function AppSidebar() {
   useSidebarShortcut();
   const { days } = useRange();
-  const inboxes = useRpcQueryEverywhere(["inbox", days], (client) => client["inbox.list"]({ days }));
+  const inboxes = useAtomValue(inboxesAtom(days));
   const path = useRouterState({ select: (state) => state.location.pathname });
   const machines = useAtomValue(runnerStateEverywhereAtom);
   const slots = [...machines.values()].flat().filter((install) => !install.stale).flatMap((install) => install.kinds.flatMap((kind) => kind.slots));
   const busy = slots.filter((slot) => slot.phase === "busy").length;
-  const waiting = needsYouEverywhere(inboxes.map((answer) => ({ environmentId: answer.environment.environmentId, inbox: answer.data }))).filter((item) => !isInboxItemHidden(item)).length;
+  const waiting = needsYouEverywhere(inboxes).filter((item) => !isInboxItemHidden(item)).length;
   const { reviews } = useServerCapabilities();
 
   const pages: ReadonlyArray<Page> = [
