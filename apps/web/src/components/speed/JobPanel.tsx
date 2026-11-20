@@ -6,6 +6,7 @@ import { answerOf } from "../../lib/answer.ts";
 import { formatDuration, jobName } from "../../lib/format.ts";
 import type { RootSearch } from "../../lib/search.ts";
 import { stepComparisonAtom } from "../../state/speed.ts";
+import { StepsGhost } from "./SpeedGhosts.tsx";
 import { StepBar } from "./StepBar.tsx";
 
 // Runs within this share of the typical time count as typical.
@@ -44,7 +45,14 @@ export function JobPanel({ trend, runs, repo, days }: { readonly trend: JobTrend
         A typical {jobName(trend)} run on {trend.runnerType}, {formatDuration(trend.typicalMs)}
         {trend.slower ? `, was ${formatDuration(trend.earlierTypicalMs)}` : ""}
       </span>
-      {steps.length > 0 ? <StepBar steps={steps} marked={change?.step ?? null} /> : comparison.data ? <p className="text-muted-foreground">No passing run with steps in this time.</p> : null}
+      {steps.length > 0 ? (
+        <StepBar steps={steps} marked={change?.step ?? null} />
+      ) : comparison.data ? (
+        <p className="text-muted-foreground">No passing run with steps in this time.</p>
+      ) : comparison.isError ? null : (
+        // Its steps come after the rest of the page, so they hold their place until then.
+        <StepsGhost />
+      )}
       {change ? <p className="text-foreground/90">{change.text}</p> : null}
       {run ? (
         <Link to="/runs/$jobId" params={{ jobId: String(run.jobId) }} search={(previous: RootSearch) => ({ ...previous, repo })} className="self-start underline underline-offset-2">
