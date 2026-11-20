@@ -3,7 +3,7 @@ import { JobsEachDay } from "../components/overview/JobsEachDay.tsx";
 import { OverviewInbox } from "../components/overview/OverviewInbox.tsx";
 import { OverviewTotals } from "../components/overview/OverviewTotals.tsx";
 import { PullsNow } from "../components/overview/PullsNow.tsx";
-import { RANGE_WORDS } from "../components/overview/rangeWords.ts";
+import { RANGE_WORDS } from "../components/rangeWords.ts";
 import { ReviewsEachDay } from "../components/overview/ReviewsEachDay.tsx";
 import { RepoFilter } from "../components/overview/RepoFilter.tsx";
 import { ReviewTime } from "../components/overview/ReviewTime.tsx";

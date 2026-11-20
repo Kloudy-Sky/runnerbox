@@ -1,4 +1,4 @@
-import type { Range } from "../../lib/range.ts";
+import type { Range } from "../lib/range.ts";
 
 // The range in words: what the range menu calls it, and the period before it that Overview's totals
 // compare against.

@@ -53,58 +53,58 @@ export function PullRequestsPage() {
     <>
       <PageBar title="Pull requests">{blocked === null ? <PullFilters filter={filter} onChange={setFilter} repos={repos} canTellYours={logins.size > 0} /> : null}</PageBar>
       <PageBody width="expanded" className="@container block">
-      {machines.map(({ environmentId, label, view }) => (
-        <div key={environmentId}>
-          {view.problem ? <p className="pb-2 text-warning">{named(label, view.problem)}</p> : null}
-          {view.autoPaused ? <p className="pb-2 text-warning">{named(label, "40 reviews have started on their own in the last day, so new pushes wait. Review still works on any pull request.")}</p> : null}
-        </div>
-      ))}
-      {blocked !== null ? (
-        <p className="text-muted-foreground">
-          {blocked.why}{" "}
-          {views.some((view) => view.canConfigure) ? (
-            <Link to={blocked.fix} search={(previous: RootSearch) => previous} className="text-foreground underline-offset-4 hover:underline">
-              Open Settings
-            </Link>
-          ) : null}
-        </p>
-      ) : (
-        <>
-          <PullTotals pulls={scoped.map(({ pull }) => pull)} />
-          {rows.length === 0 ? (
-            <p className="pt-8 text-muted-foreground">{pulls.length === 0 ? "No open pull requests." : yours && scoped.length === 0 ? "None of them are yours." : "No pull request matches."}</p>
-          ) : (
-            <div className="pt-7">
-              <div className={cn(pullColumns, "text-muted-foreground text-xs")}>
-                <span>Pull request</span>
-                <span>Checks</span>
-                <span className={wideOnly}>Review</span>
-                <span className={cn(wideOnly, "justify-end")}>Updated</span>
+        {machines.map(({ environmentId, label, view }) => (
+          <div key={environmentId}>
+            {view.problem ? <p className="pb-2 text-warning">{named(label, view.problem)}</p> : null}
+            {view.autoPaused ? <p className="pb-2 text-warning">{named(label, "40 reviews have started on their own in the last day, so new pushes wait. Review still works on any pull request.")}</p> : null}
+          </div>
+        ))}
+        {blocked !== null ? (
+          <p className="text-muted-foreground">
+            {blocked.why}{" "}
+            {views.some((view) => view.canConfigure) ? (
+              <Link to={blocked.fix} search={(previous: RootSearch) => previous} className="text-foreground underline-offset-4 hover:underline">
+                Open Settings
+              </Link>
+            ) : null}
+          </p>
+        ) : (
+          <>
+            <PullTotals pulls={scoped.map(({ pull }) => pull)} />
+            {rows.length === 0 ? (
+              <p className="pt-8 text-muted-foreground">{pulls.length === 0 ? "No open pull requests." : yours && scoped.length === 0 ? "None of them are yours." : "No pull request matches."}</p>
+            ) : (
+              <div className="pt-7">
+                <div className={cn(pullColumns, "text-muted-foreground text-xs")}>
+                  <span>Pull request</span>
+                  <span>Checks</span>
+                  <span className={wideOnly}>Review</span>
+                  <span className={cn(wideOnly, "justify-end")}>Updated</span>
+                </div>
+                {[...groups].map(([repo, inRepo]) => (
+                  <section key={repo}>
+                    <div className="flex justify-between gap-2.5 pt-5 pb-1.5 font-semibold">
+                      <span className="truncate">{repo}</span>
+                      <span className="font-normal text-muted-foreground text-xs">{inRepo.length} open</span>
+                    </div>
+                    {inRepo.map(({ pull, environmentId, view }) => (
+                      <PullRow
+                        key={pull.number}
+                        pull={pull}
+                        environmentId={environmentId}
+                        view={view}
+                        opened={openedKey === `${pull.repo}#${pull.number}`}
+                        start={() => start(environmentId, pull.repo, pull.number)}
+                        stop={() => stop(environmentId, pull.repo, pull.number)}
+                      />
+                    ))}
+                  </section>
+                ))}
+                <CheckLegend />
               </div>
-              {[...groups].map(([repo, inRepo]) => (
-                <section key={repo}>
-                  <div className="flex justify-between gap-2.5 pt-5 pb-1.5 font-semibold">
-                    <span className="truncate">{repo}</span>
-                    <span className="font-normal text-muted-foreground text-xs">{inRepo.length} open</span>
-                  </div>
-                  {inRepo.map(({ pull, environmentId, view }) => (
-                    <PullRow
-                      key={pull.number}
-                      pull={pull}
-                      environmentId={environmentId}
-                      view={view}
-                      opened={openedKey === `${pull.repo}#${pull.number}`}
-                      start={() => start(environmentId, pull.repo, pull.number)}
-                      stop={() => stop(environmentId, pull.repo, pull.number)}
-                    />
-                  ))}
-                </section>
-              ))}
-              <CheckLegend />
-            </div>
-          )}
-        </>
-      )}
+            )}
+          </>
+        )}
       </PageBody>
     </>
   );

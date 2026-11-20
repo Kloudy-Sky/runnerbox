@@ -5,7 +5,7 @@ import { isRange, RANGES } from "../lib/range.ts";
 import type { RootSearch } from "../lib/search.ts";
 import { Button } from "./ui/button.tsx";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu.tsx";
-import { RANGE_WORDS } from "./overview/rangeWords.ts";
+import { RANGE_WORDS } from "./rangeWords.ts";
 
 // The range a page counts over, kept in the URL, so it carries from page to page. In the bar of each
 // page that reads one, as a menu like the filters beside it.
