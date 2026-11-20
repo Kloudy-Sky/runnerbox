@@ -1,7 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useState } from "react";
 import { NoHistory } from "../components/NoHistory.tsx";
-import { PageHeader } from "../components/PageHeader.tsx";
+import { PageBar } from "../components/PageBar.tsx";
+import { PageBody } from "../components/PageBody.tsx";
+import { RangeMenu } from "../components/RangeMenu.tsx";
 import { RepoPicker } from "../components/RepoPicker.tsx";
 import { AllNumbers } from "../components/speed/AllNumbers.tsx";
 import { Costs } from "../components/speed/Costs.tsx";
@@ -56,24 +58,29 @@ export function SpeedPage() {
   const runs = useRuns(repo, days);
   const overview = useKept(answerOf(useAtomValue(overviewAtom({ environmentId, days }))));
   const inbox = useInbox();
-  if (loaded && !repo) return <NoHistory />;
-  const header = (
-    <PageHeader.Root>
-      <PageHeader.Title>Speed and cost</PageHeader.Title>
-      <PageHeader.Spacer />
-      {/* The filters sit in one row at their own width, where a picker alone would fill it. */}
-      <div className="flex flex-wrap items-center gap-2 [&_[data-slot=select-trigger]]:w-auto">
-        <MachinePicker value={machine === ALL_MACHINES ? ALL_MACHINES : (environment?.environmentId ?? ALL_MACHINES)} onChange={setMachine} />
-        <RepoPicker />
-      </div>
-    </PageHeader.Root>
+  const bar = (
+    <PageBar title="Speed and cost">
+      <MachinePicker value={machine === ALL_MACHINES ? ALL_MACHINES : (environment?.environmentId ?? ALL_MACHINES)} onChange={setMachine} />
+      <RepoPicker />
+      <RangeMenu />
+    </PageBar>
   );
+  if (loaded && !repo) {
+    return (
+      <>
+        {bar}
+        <PageBody width="wide">
+          <NoHistory />
+        </PageBody>
+      </>
+    );
+  }
   if (!speed) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto pb-6">
-        {header}
-        <div className="px-6">{repo ? <AllNumbers repo={repo} days={days} /> : null}</div>
-      </div>
+      <>
+        {bar}
+        <PageBody width="wide">{repo ? <AllNumbers repo={repo} days={days} /> : null}</PageBody>
+      </>
     );
   }
   // One machine picked follows the active one, so the sidebar's switcher moves it too.
@@ -107,56 +114,58 @@ export function SpeedPage() {
   const repoSpend = spend(repoTotals);
   const reviews = allSpend.reviews > 0 || allSpend.usd > 0 ? { ...allSpend, repo: repo && repoTotals.some((answer) => answer.data) && repoSpend.usd !== allSpend.usd ? { name: repo, ...repoSpend } : null } : null;
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto pb-10">
-      {header}
-      {ready && repo ? (
-        // While a new range loads, the last answer stays and dims after 150 ms, so a fast reload never shows.
-        <div className={`flex flex-col gap-10 px-6 pt-2 text-[13px] transition-opacity ${reloading ? "opacity-40 delay-150" : ""}`}>
-          <div className="flex flex-col gap-7">
-            <Savings usd={priced.length > 0 ? priced.reduce((total, usd) => total + usd, 0) : null} ownMs={ownMs} pricesReadOn={reports[0]?.pricesReadOn ?? null} days={days} reviewUsd={reviews?.usd ?? null} />
-            <Facts ownMs={ownMs} githubMs={summary?.githubMachinesMs ?? null} ownShare={ownShare} typicalJobMs={overview.data?.p50Ms ?? null} typicalWaitMs={summary?.typicalWaitMs ?? null} />
-          </div>
-          <Section title="Health, machine by machine" note={`last ${HEALTH_DAYS} days`}>
-            <HealthRows
-              length={HEALTH_DAYS}
-              machines={health.flatMap((answer) =>
-                shown(answer.environment.environmentId) ? [{ environmentId: answer.environment.environmentId, label: answer.environment.label, health: answer.data, isError: answer.isError }] : [],
-              )}
-            />
-          </Section>
-          <Section title="Where the time goes" note={trends && trends.length > 0 ? `${hours(trends.reduce((total, trend) => total + trend.runnerMs, 0))} on ${trends.length} jobs` : undefined}>
-            <div className="grid gap-x-10 gap-y-6 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <TimeByJob trends={trends ?? []} picked={pickedTrend ? trendKey(pickedTrend) : null} onPick={setPicked} />
-              {pickedTrend ? <JobPanel trend={pickedTrend} runs={runs.data} repo={repo} days={days} /> : null}
+    <>
+      {bar}
+      <PageBody width="wide">
+        {ready && repo ? (
+          // While a new range loads, the last answer stays and dims after 150 ms, so a fast reload never shows.
+          <div className={`flex flex-col gap-10 transition-opacity ${reloading ? "opacity-40 delay-150" : ""}`}>
+            <div className="flex flex-col gap-7">
+              <Savings usd={priced.length > 0 ? priced.reduce((total, usd) => total + usd, 0) : null} ownMs={ownMs} pricesReadOn={reports[0]?.pricesReadOn ?? null} days={days} reviewUsd={reviews?.usd ?? null} />
+              <Facts ownMs={ownMs} githubMs={summary?.githubMachinesMs ?? null} ownShare={ownShare} typicalJobMs={overview.data?.p50Ms ?? null} typicalWaitMs={summary?.typicalWaitMs ?? null} />
             </div>
-          </Section>
-          <Section title="When jobs wait for a runner" note="typical wait, by weekday and hour">
-            {runs.data && runs.data.length > 0 ? (
-              <div className="grid items-start gap-x-10 gap-y-4 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <WaitGrid grid={grid} />
-                <div className="flex flex-col gap-2 text-foreground/90">
-                  {[...sentences].map((sentence) => (
-                    <p key={sentence}>{sentence}</p>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p className="text-muted-foreground">{runs.isError ? "Couldn't read the job history." : "No jobs ran in this repository in this time."}</p>
-            )}
-          </Section>
-          {reports[0] && (priced.length > 0 || reviews) ? (
-            <Section title="What it costs" note={rangeWords(days)}>
-              <Costs machines={answered.map(({ report, ...machine }) => ({ ...machine, kinds: report.kinds }))} pricesReadOn={reports[0].pricesReadOn} reviews={reviews} />
+            <Section title="Health, machine by machine" note={`last ${HEALTH_DAYS} days`}>
+              <HealthRows
+                length={HEALTH_DAYS}
+                machines={health.flatMap((answer) =>
+                  shown(answer.environment.environmentId) ? [{ environmentId: answer.environment.environmentId, label: answer.environment.label, health: answer.data, isError: answer.isError }] : [],
+                )}
+              />
             </Section>
-          ) : null}
-          <details>
-            <summary className="cursor-default text-muted-foreground">All numbers</summary>
-            <div className="pt-2">
-              <AllNumbers repo={repo} days={days} />
-            </div>
-          </details>
-        </div>
-      ) : null}
-    </div>
+            <Section title="Where the time goes" note={trends && trends.length > 0 ? `${hours(trends.reduce((total, trend) => total + trend.runnerMs, 0))} on ${trends.length} jobs` : undefined}>
+              <div className="grid gap-x-10 gap-y-6 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <TimeByJob trends={trends ?? []} picked={pickedTrend ? trendKey(pickedTrend) : null} onPick={setPicked} />
+                {pickedTrend ? <JobPanel trend={pickedTrend} runs={runs.data} repo={repo} days={days} /> : null}
+              </div>
+            </Section>
+            <Section title="When jobs wait for a runner" note="typical wait, by weekday and hour">
+              {runs.data && runs.data.length > 0 ? (
+                <div className="grid items-start gap-x-10 gap-y-4 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                  <WaitGrid grid={grid} />
+                  <div className="flex flex-col gap-2 text-foreground/90">
+                    {[...sentences].map((sentence) => (
+                      <p key={sentence}>{sentence}</p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">{runs.isError ? "Couldn't read the job history." : "No jobs ran in this repository in this time."}</p>
+              )}
+            </Section>
+            {reports[0] && (priced.length > 0 || reviews) ? (
+              <Section title="What it costs" note={rangeWords(days)}>
+                <Costs machines={answered.map(({ report, ...machine }) => ({ ...machine, kinds: report.kinds }))} pricesReadOn={reports[0].pricesReadOn} reviews={reviews} />
+              </Section>
+            ) : null}
+            <details>
+              <summary className="cursor-default text-muted-foreground">All numbers</summary>
+              <div className="pt-2">
+                <AllNumbers repo={repo} days={days} />
+              </div>
+            </details>
+          </div>
+        ) : null}
+      </PageBody>
+    </>
   );
 }

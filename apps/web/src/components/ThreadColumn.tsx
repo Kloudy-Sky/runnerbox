@@ -81,7 +81,7 @@ export function ThreadColumn(props: { subject: ThreadSubject | null; placeholder
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div
           ref={scroller}
-          className="min-h-0 flex-1 overflow-y-auto"
+          className="topbar-scroll-fade min-h-0 flex-1 overflow-y-auto"
           // Only scrolling up stops following: text that grew before a scroll event lands isn't the
           // owner leaving the end.
           onScroll={(event) => {

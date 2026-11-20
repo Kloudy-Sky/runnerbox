@@ -7,12 +7,13 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 export const ALL_MACHINES = "all";
 
 // All machines, or one. Picking one makes it the active machine, as the sidebar's switcher does,
-// so the job history and repository picker below follow it.
+// so the job history and repository picker beside it follow it. With one machine it's named, as
+// the repository picker names a lone repository.
 export function MachinePicker({ value, onChange }: { readonly value: string; readonly onChange: (value: string) => void }) {
   const environments = useStore(runtime.store, (state) => state.environments);
   const { environment } = useActiveEnvironment();
   const setActive = usePreferences((state) => state.setActive);
-  if (environments.length < 2) return <span className="font-medium">{environment?.label}</span>;
+  if (environments.length < 2) return <span className="truncate text-muted-foreground max-sm:hidden">{environment?.label}</span>;
   const labels = new Map([[ALL_MACHINES, "All machines"], ...environments.map((saved) => [saved.environmentId, saved.label] as const)]);
   return (
     <Select
@@ -23,7 +24,7 @@ export function MachinePicker({ value, onChange }: { readonly value: string; rea
         onChange(picked);
       }}
     >
-      <SelectTrigger className="font-medium">
+      <SelectTrigger size="sm" className="w-auto min-w-0 font-medium">
         <SelectValue>{() => labels.get(value)}</SelectValue>
       </SelectTrigger>
       <SelectPopup>
