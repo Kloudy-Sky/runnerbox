@@ -8,11 +8,12 @@ export const Reading = {
     <article className={cn("mx-auto flex w-full max-w-(--reading-width) flex-col gap-5 px-6 pt-8 pb-6", className)} data-slot="reading" {...props} />
   ),
   Header: ({ className, ...props }: React.ComponentProps<"header">) => <header className={cn("flex flex-col gap-1", className)} data-slot="reading-header" {...props} />,
-  Title: ({ className, ...props }: React.ComponentProps<"h1">) => <h1 className={cn("text-xl font-medium leading-snug text-balance", className)} data-slot="reading-title" {...props} />,
+  // The page's bar holds its h1, so the reading's own title is the next heading down.
+  Title: ({ className, ...props }: React.ComponentProps<"h2">) => <h2 className={cn("text-xl font-medium leading-snug text-balance", className)} data-slot="reading-title" {...props} />,
   Meta: ({ className, ...props }: React.ComponentProps<"div">) => <div className={cn("text-muted-foreground", className)} data-slot="reading-meta" {...props} />,
   Section: ({ heading, className, children, ...props }: React.ComponentProps<"section"> & { heading: React.ReactNode }) => (
     <section className={cn("flex flex-col gap-1", className)} data-slot="reading-section" {...props}>
-      <h2 className="font-medium">{heading}</h2>
+      <h3 className="font-medium">{heading}</h3>
       <div className="text-foreground/90">{children}</div>
     </section>
   ),

@@ -1,6 +1,8 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Bell, Eye, GitBranch, GitPullRequest, Info, KeyRound, Plug, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { PaletteButton } from "../components/PaletteButton.tsx";
 import { handleSettingsSectionKeyDown } from "../components/settings/settingsSectionNavigation.ts";
+import { SidebarToggle } from "../components/SidebarToggle.tsx";
 import { SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar.tsx";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem, WorkspaceBreadcrumbSeparator } from "../components/WorkspaceBreadcrumb.tsx";
 import type { RootSearch } from "../lib/search.ts";
@@ -18,7 +20,8 @@ const SECTIONS = [
 ] as const;
 
 // Settings as T3 Code lays them out: the sections in a rail on the left, arrow keys moving between
-// them, and the open one on the right under a breadcrumb.
+// them, and the open one on the right under a breadcrumb, which starts with the app sidebar's toggle
+// and ends with the palette's button, as every page's bar does.
 export function SettingsPage() {
   const path = useRouterState({ select: (state) => state.location.pathname });
   const current = SECTIONS.find((section) => section.to === path);
@@ -46,7 +49,8 @@ export function SettingsPage() {
         </SidebarContent>
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-5 pe-2">
+        <header className="flex h-12 shrink-0 items-center gap-3 border-b ps-3.5 pe-2">
+          <SidebarToggle />
           <WorkspaceBreadcrumb ariaLabel="Settings breadcrumb">
             {current ? (
               <>
@@ -58,6 +62,8 @@ export function SettingsPage() {
               {current?.label ?? "Settings"}
             </WorkspaceBreadcrumbItem>
           </WorkspaceBreadcrumb>
+          <div className="min-w-0 flex-1" />
+          <PaletteButton />
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
           <Outlet />

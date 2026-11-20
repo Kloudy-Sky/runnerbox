@@ -2,7 +2,8 @@ import { useAtomValue } from "@effect/atom-react";
 import type { ReviewsView } from "@runnerbox/contracts";
 import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import { PageHeader } from "../components/PageHeader.tsx";
+import { PageBar } from "../components/PageBar.tsx";
+import { PageBody } from "../components/PageBody.tsx";
 import { CheckLegend } from "../components/pulls/CheckLegend.tsx";
 import { type PullFilter, PullFilters } from "../components/pulls/PullFilters.tsx";
 import { pullColumns, PullRow, wideOnly } from "../components/pulls/PullRow.tsx";
@@ -30,7 +31,14 @@ export function PullRequestsPage() {
   const { owner, name, number } = useParams({ strict: false });
   const openedKey = owner && name && number ? `${owner}/${name}#${number}` : null;
   const [filter, setFilter] = useState<PullFilter>({ repo: null, yours: false, standing: null });
-  if (machines.length === 0) return refused ? <p className="px-6 pt-6 text-muted-foreground">This server is older than reviews. Update it from Settings, under About.</p> : null;
+  if (machines.length === 0) {
+    return (
+      <>
+        <PageBar title="Pull requests" />
+        <PageBody width="expanded">{refused ? <p className="text-muted-foreground">This server is older than reviews. Update it from Settings, under About.</p> : null}</PageBody>
+      </>
+    );
+  }
   const views = machines.map((machine) => machine.view);
   const blocked = nothingToShow(views);
   const repos = [...new Set(views.flatMap((view) => view.repos.filter((repo) => repo.review).map((repo) => repo.repo)))].toSorted();
@@ -42,13 +50,9 @@ export function PullRequestsPage() {
   // A machine's note is named after it once there's more than one.
   const named = (label: string, text: string) => (machines.length > 1 ? `${label}: ${text}` : text);
   return (
-    <div className="@container min-h-0 flex-1 overflow-y-auto pb-10 text-[13px]">
-      <PageHeader.Root>
-        <PageHeader.Title>Pull requests</PageHeader.Title>
-        <PageHeader.Spacer />
-        {blocked === null ? <PullFilters filter={filter} onChange={setFilter} repos={repos} canTellYours={logins.size > 0} /> : null}
-      </PageHeader.Root>
-      <div className="px-6">
+    <>
+      <PageBar title="Pull requests">{blocked === null ? <PullFilters filter={filter} onChange={setFilter} repos={repos} canTellYours={logins.size > 0} /> : null}</PageBar>
+      <PageBody width="expanded" className="@container block">
         {machines.map(({ environmentId, label, view }) => (
           <div key={environmentId}>
             {view.problem ? <p className="pb-2 text-warning">{named(label, view.problem)}</p> : null}
@@ -101,7 +105,7 @@ export function PullRequestsPage() {
             )}
           </>
         )}
-      </div>
-    </div>
+      </PageBody>
+    </>
   );
 }

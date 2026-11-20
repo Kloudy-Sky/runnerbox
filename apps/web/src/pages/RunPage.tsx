@@ -1,5 +1,7 @@
 import { useParams } from "@tanstack/react-router";
 import { JobResourcesView } from "../components/job/JobResourcesView.tsx";
+import { PageBar } from "../components/PageBar.tsx";
+import { RangeMenu } from "../components/RangeMenu.tsx";
 import { Reading } from "../components/Reading.tsx";
 import { ThreadColumn } from "../components/ThreadColumn.tsx";
 import { Button } from "../components/ui/button.tsx";
@@ -26,50 +28,63 @@ export function RunPage() {
   const settled = !jobResources || resources.isSuccess || resources.isError;
   // A specific finding from the readings is the Why, with its own advice, in place of the verdict's.
   const finding = resources.data?.sentence?.advice ? { why: resources.data.sentence.text, action: resources.data.sentence.advice } : null;
+  const bar = (
+    <PageBar title={run ? `${jobName(run)} #${run.runId}` : "Run"} trail={["All runs"]}>
+      <RangeMenu />
+    </PageBar>
+  );
   if (!run) {
-    return runs.data ? (
-      <Empty>
-        <EmptyHeader>
-        <EmptyTitle>This run isn't in the time range</EmptyTitle>
-        <EmptyDescription>Pick a longer range, or open it from All runs.</EmptyDescription>
-      </EmptyHeader>
-      </Empty>
-    ) : null;
+    return (
+      <>
+        {bar}
+        {runs.data ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>This run isn't in the time range</EmptyTitle>
+              <EmptyDescription>Pick a longer range, or open it from All runs.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : null}
+      </>
+    );
   }
   return (
-    <ThreadColumn key={run.jobId} subject={{ _tag: "run", repo: run.repo, jobId: run.jobId }} placeholder="Ask about this run">
-      {(thread) => (
-        <Reading.Root>
-          <Reading.Header>
-            <Reading.Title>
-              {jobName(run)} <span className="text-muted-foreground">#{run.runId}{run.attempt > 1 ? `, attempt ${run.attempt}` : ""}</span>
-            </Reading.Title>
-            <Reading.Meta>{[run.repo, run.headSha?.slice(0, 7), `${formatAge(run.createdAt)} ago`].filter(Boolean).join(", ")}</Reading.Meta>
-          </Reading.Header>
-          <Reading.Section heading="What happened">{runHappened(run)}</Reading.Section>
-          {resources.data ? (
-            <Reading.Section heading="Steps and what they used">
-              <JobResourcesView resources={resources.data} sentenceShown={finding === null} />
-            </Reading.Section>
-          ) : null}
-          {!settled ? null : finding ? (
-            <>
-              <Reading.Section heading="Why">{finding.why}</Reading.Section>
-              <Reading.Section heading="What you can do">{finding.action}</Reading.Section>
-            </>
-          ) : run.verdict ? (
-            <>
-              <Reading.Section heading="Why">{VERDICT_WHY[run.verdict]}</Reading.Section>
-              <Reading.Section heading="What you can do">{VERDICT_ACTION[run.verdict]}</Reading.Section>
-            </>
-          ) : null}
-          {settled && thread.view.items.length === 0 && thread.permitted && thread.provider?.available ? (
-            <Reading.Actions>
-              <Button onClick={() => void thread.send(run.verdict ? "Is the verdict right, and what should I do?" : "Anything unusual about this run?")}>Ask the agent about this run</Button>
-            </Reading.Actions>
-          ) : null}
-        </Reading.Root>
-      )}
-    </ThreadColumn>
+    <>
+      {bar}
+      <ThreadColumn key={run.jobId} subject={{ _tag: "run", repo: run.repo, jobId: run.jobId }} placeholder="Ask about this run">
+        {(thread) => (
+          <Reading.Root>
+            <Reading.Header>
+              <Reading.Title>
+                {jobName(run)} <span className="text-muted-foreground">#{run.runId}{run.attempt > 1 ? `, attempt ${run.attempt}` : ""}</span>
+              </Reading.Title>
+              <Reading.Meta>{[run.repo, run.headSha?.slice(0, 7), `${formatAge(run.createdAt)} ago`].filter(Boolean).join(", ")}</Reading.Meta>
+            </Reading.Header>
+            <Reading.Section heading="What happened">{runHappened(run)}</Reading.Section>
+            {resources.data ? (
+              <Reading.Section heading="Steps and what they used">
+                <JobResourcesView resources={resources.data} sentenceShown={finding === null} />
+              </Reading.Section>
+            ) : null}
+            {!settled ? null : finding ? (
+              <>
+                <Reading.Section heading="Why">{finding.why}</Reading.Section>
+                <Reading.Section heading="What you can do">{finding.action}</Reading.Section>
+              </>
+            ) : run.verdict ? (
+              <>
+                <Reading.Section heading="Why">{VERDICT_WHY[run.verdict]}</Reading.Section>
+                <Reading.Section heading="What you can do">{VERDICT_ACTION[run.verdict]}</Reading.Section>
+              </>
+            ) : null}
+            {settled && thread.view.items.length === 0 && thread.permitted && thread.provider?.available ? (
+              <Reading.Actions>
+                <Button onClick={() => void thread.send(run.verdict ? "Is the verdict right, and what should I do?" : "Anything unusual about this run?")}>Ask the agent about this run</Button>
+              </Reading.Actions>
+            ) : null}
+          </Reading.Root>
+        )}
+      </ThreadColumn>
+    </>
   );
 }

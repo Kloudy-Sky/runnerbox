@@ -28,7 +28,7 @@ export function PullTotals({ pulls }: { pulls: ReadonlyArray<PullRequest> }) {
   const repos = new Set(pulls.map((pull) => pull.repo)).size;
   const toFix = byStanding.get("fix") ?? [];
   return (
-    <div className="pt-4">
+    <div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(128px,1fr))] gap-x-7 gap-y-5">
         <Total label="Open" value={pulls.length} under={`on ${repos} ${repos === 1 ? "repository" : "repositories"}`} />
         <Total label="Safe to merge" value={count("safe")} under="checks and review clean" />

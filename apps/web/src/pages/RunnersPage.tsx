@@ -8,8 +8,12 @@ import { MachineSection } from "../components/runners/MachineSection.tsx";
 import { MoveCi } from "../components/runners/MoveCi.tsx";
 import { SectionTitle } from "../components/runners/SectionTitle.tsx";
 import { WaitingJobs } from "../components/runners/WaitingJobs.tsx";
+import { PageBar } from "../components/PageBar.tsx";
+import { PageBody } from "../components/PageBody.tsx";
+import { RangeMenu } from "../components/RangeMenu.tsx";
 import { ThreadColumn } from "../components/ThreadColumn.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { WorkspacePageContainer } from "../components/WorkspacePageContainer.tsx";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { useMoveCi } from "../hooks/useMoveCi.ts";
 import { useRange } from "../hooks/useRange.ts";
@@ -43,6 +47,12 @@ export function RunnersPage() {
     void navigate({ to: ".", search: (previous: RootSearch) => ({ ...previous, machine: machine?.key }) });
   };
   const view = (ask: Ask) => <Runners machines={machines} picked={picked} onPick={pick} ask={ask} />;
+  const bar = (
+    <PageBar title="Runners">
+      {machines.length > 1 ? <MachineFilter machines={machines} picked={picked?.key ?? null} onPick={pick} /> : null}
+      <RangeMenu />
+    </PageBar>
+  );
   const install = picked?.install;
   // Mounted while the install's first answer is still coming, so the page has its shape from the
   // start, and keyed by the install once known, so another install gets its own composer. A machine
@@ -50,14 +60,23 @@ export function RunnersPage() {
   const coming = picked !== null && picked.install === null && picked.note === null && picked.connection === "connected";
   if (picked && picked.environmentId === active?.environmentId && (install || coming)) {
     return (
-      <ThreadColumn key={install ? picked.key : picked.environmentId} subject={install ? { _tag: "runners", install: install.install } : null} placeholder="Ask about these runners">
-        {(thread) => view(thread.ready && thread.view.items.length === 0 && thread.permitted && thread.provider?.available ? { send: () => void thread.send(RUNNERS_QUESTION) } : null)}
-      </ThreadColumn>
+      <>
+        {bar}
+        <ThreadColumn key={install ? picked.key : picked.environmentId} subject={install ? { _tag: "runners", install: install.install } : null} placeholder="Ask about these runners">
+          {(thread) => <WorkspacePageContainer className="gap-9 pb-8 text-[13px]">{view(thread.ready && thread.view.items.length === 0 && thread.permitted && thread.provider?.available ? { send: () => void thread.send(RUNNERS_QUESTION) } : null)}</WorkspacePageContainer>}
+        </ThreadColumn>
+      </>
     );
   }
-  return <div className="min-h-0 flex-1 overflow-y-auto">{view(null)}</div>;
+  return (
+    <>
+      {bar}
+      <PageBody className="gap-9">{view(null)}</PageBody>
+    </>
+  );
 }
 
+// The page's body, the same in a thread's column or alone.
 function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<RunnerMachine>; picked: RunnerMachine | null; onPick: (machine: RunnerMachine | null) => void; ask: Ask }) {
   const { days } = useRange();
   const environments = useStore(runtime.store, (state) => state.environments);
@@ -85,12 +104,8 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
     .flatMap((machine) => machine.install.episodes.map((episode) => ({ episode, machine: several ? machine.name : null, now: machine.now })))
     .toSorted((a, b) => Date.parse(b.episode.endedAt) - Date.parse(a.episode.endedAt));
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-9 px-4 pt-6 pb-8 text-[13px] sm:px-6">
+    <>
       <header className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="font-medium text-lg">Runners</h1>
-          {machines.length > 1 ? <MachineFilter machines={machines} picked={picked?.key ?? null} onPick={onPick} /> : null}
-        </div>
         {answered.length > 0 ? (
           <div className="flex flex-col gap-1 text-[15px] leading-relaxed">
             {answered.map((machine) => (
@@ -135,7 +150,7 @@ function Runners({ machines, picked, onPick, ask }: { machines: ReadonlyArray<Ru
           <Episodes episodes={episodes} />
         </section>
       ) : null}
-    </div>
+    </>
   );
 }
 

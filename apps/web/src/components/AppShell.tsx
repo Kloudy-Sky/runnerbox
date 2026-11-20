@@ -1,27 +1,28 @@
 import { Outlet, useRouterState } from "@tanstack/react-router";
-import { type CSSProperties, useEffect, useState } from "react";
+import { useAtom } from "@effect/atom-react";
+import { type CSSProperties, useEffect } from "react";
 import { useStore } from "zustand";
 import { useActiveEnvironment } from "../hooks/useEnvironment.ts";
 import { useNeedsYouNotifications } from "../hooks/useNeedsYouNotifications.ts";
 import { ConnectPage } from "../pages/ConnectPage.tsx";
 import { PanelAnimationSuppressionProvider, usePanelAnimationSettings, usePanelNavigationSuppression } from "../panelAnimations.ts";
+import { appAtomRegistry } from "../rpc/atomRegistry.ts";
 import { runtime } from "../runtime.ts";
 import { AppSidebar } from "./AppSidebar.tsx";
 import { CommandPalette } from "./CommandPalette.tsx";
 import { ConnectionNotice } from "./ConnectionNotice.tsx";
-import { RangePicker } from "./RangePicker.tsx";
-import { Button } from "./ui/button.tsx";
-import { Kbd } from "./ui/kbd.tsx";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "./ui/sidebar.tsx";
+import { commandPaletteOpenAtom } from "../state/commandPalette.ts";
+import { SidebarInset, SidebarProvider } from "./ui/sidebar.tsx";
 import { ToastProvider } from "./ui/toast.tsx";
-import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip.tsx";
+import { TooltipProvider } from "./ui/tooltip.tsx";
 
-// T3 Code's layout: a sidebar of pages that narrows to a rail, and the open page in the main column.
+// T3 Code's layout: a sidebar of pages that narrows to a rail, and the open page in the main column,
+// which draws its own bar.
 export function AppShell() {
   const loaded = useStore(runtime.store, (state) => state.loaded);
   const { environment } = useActiveEnvironment();
   const path = useRouterState({ select: (state) => state.location.pathname });
-  const [commandOpen, setCommandOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useAtom(commandPaletteOpenAtom);
   // As T3 Code's AppSidebarLayout: the sidebar eases open and shut, except under reduced motion
   // and for the two frames after a route change, so a new page never animates in.
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } = usePanelAnimationSettings();
@@ -32,7 +33,7 @@ export function AppShell() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        setCommandOpen((open) => !open);
+        appAtomRegistry.update(commandPaletteOpenAtom, (open) => !open);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -54,19 +55,6 @@ export function AppShell() {
           >
             <AppSidebar />
             <SidebarInset>
-              <div className="flex h-10 shrink-0 items-center gap-2 px-2">
-                <Tooltip>
-                  <TooltipTrigger render={<SidebarTrigger aria-label="Toggle sidebar" />} />
-                  <TooltipPopup side="bottom">Toggle sidebar (⌘B)</TooltipPopup>
-                </Tooltip>
-                <div className="ml-auto flex items-center gap-1">
-                  {/* Overview has its own range beside its machine filter. */}
-                  {path !== "/" ? <RangePicker /> : null}
-                  <Button variant="ghost-muted" size="xs" onClick={() => setCommandOpen(true)} aria-label="Jump to a page, item or run" title="Jump to a page, item or run">
-                    <Kbd>⌘K</Kbd>
-                  </Button>
-                </div>
-              </div>
               <ConnectionNotice />
               <Outlet />
             </SidebarInset>
