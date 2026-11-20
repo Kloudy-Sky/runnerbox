@@ -12,6 +12,7 @@ import { HealthRows } from "../components/speed/HealthRows.tsx";
 import { JobPanel } from "../components/speed/JobPanel.tsx";
 import { ALL_MACHINES, MachinePicker } from "../components/speed/MachinePicker.tsx";
 import { Savings } from "../components/speed/Savings.tsx";
+import { FactsGhost, HealthGhost, SavingsGhost, TimeGhost, WaitGhost } from "../components/speed/SpeedGhosts.tsx";
 import { Section } from "../components/speed/Section.tsx";
 import { TimeByJob, trendKey } from "../components/speed/TimeByJob.tsx";
 import { WaitGrid } from "../components/speed/WaitGrid.tsx";
@@ -23,7 +24,7 @@ import { useKept } from "../hooks/useKept.ts";
 import { useRange } from "../hooks/useRange.ts";
 import { useRepo } from "../hooks/useRepo.ts";
 import { useRuns } from "../hooks/useRuns.ts";
-import { useServerCapabilities } from "../hooks/useServerCapabilities.ts";
+import { useServerCapabilityState } from "../hooks/useServerCapabilities.ts";
 import { answerOf } from "../lib/answer.ts";
 import { dailyTotalsEverywhereAtom } from "../state/history.ts";
 import { healthEverywhereAtom, jobTrendsAtom, kindUsageEverywhereAtom, overviewAtom } from "../state/speed.ts";
@@ -41,7 +42,7 @@ const HEALTH_DAYS = 30;
 export function SpeedPage() {
   const { days } = useRange();
   const { repo, loaded } = useRepo();
-  const { speed } = useServerCapabilities();
+  const { capabilities, known } = useServerCapabilityState();
   const { environment } = useActiveEnvironment();
   const [machine, setMachine] = useState(ALL_MACHINES);
   const [picked, setPicked] = useState<string | null>(null);
@@ -75,7 +76,9 @@ export function SpeedPage() {
       </>
     );
   }
-  if (!speed) {
+  // Only a server that has said it's older gets the tables alone; before it answers, the page holds
+  // the shape a current server fills.
+  if (known && !capabilities.speed) {
     return (
       <>
         {bar}
@@ -113,58 +116,72 @@ export function SpeedPage() {
   const allSpend = spend(totals);
   const repoSpend = spend(repoTotals);
   const reviews = allSpend.reviews > 0 || allSpend.usd > 0 ? { ...allSpend, repo: repo && repoTotals.some((answer) => answer.data) && repoSpend.usd !== allSpend.usd ? { name: repo, ...repoSpend } : null } : null;
+  // The repository the answers are for, once they're all in; until then, the page holds its shape.
+  const shownRepo = ready ? repo : undefined;
   return (
     <>
       {bar}
       <PageBody width="wide">
-        {ready && repo ? (
-          // While a new range loads, the last answer stays and dims after 150 ms, so a fast reload never shows.
-          <div className={`flex flex-col gap-10 transition-opacity ${reloading ? "opacity-40 delay-150" : ""}`}>
-            <div className="flex flex-col gap-7">
-              <Savings usd={priced.length > 0 ? priced.reduce((total, usd) => total + usd, 0) : null} ownMs={ownMs} pricesReadOn={reports[0]?.pricesReadOn ?? null} days={days} reviewUsd={reviews?.usd ?? null} />
-              <Facts ownMs={ownMs} githubMs={summary?.githubMachinesMs ?? null} ownShare={ownShare} typicalJobMs={overview.data?.p50Ms ?? null} typicalWaitMs={summary?.typicalWaitMs ?? null} />
-            </div>
-            <Section title="Health, machine by machine" note={`last ${HEALTH_DAYS} days`}>
+        {/* The sections draw at once and their insides fill in together, so the page keeps its
+            shape as answers arrive. While a new range loads, the last answer stays and dims after
+            150 ms, so a fast reload never shows. */}
+        <div className={`flex flex-col gap-10 transition-opacity ${reloading ? "opacity-40 delay-150" : ""}`}>
+          <div className="flex flex-col gap-7">
+            {shownRepo ? <Savings usd={priced.length > 0 ? priced.reduce((total, usd) => total + usd, 0) : null} ownMs={ownMs} pricesReadOn={reports[0]?.pricesReadOn ?? null} days={days} reviewUsd={reviews?.usd ?? null} /> : <SavingsGhost />}
+            {shownRepo ? <Facts ownMs={ownMs} githubMs={summary?.githubMachinesMs ?? null} ownShare={ownShare} typicalJobMs={overview.data?.p50Ms ?? null} typicalWaitMs={summary?.typicalWaitMs ?? null} /> : <FactsGhost />}
+          </div>
+          <Section title="Health, machine by machine" note={`last ${HEALTH_DAYS} days`}>
+            {shownRepo ? (
               <HealthRows
                 length={HEALTH_DAYS}
                 machines={health.flatMap((answer) =>
                   shown(answer.environment.environmentId) ? [{ environmentId: answer.environment.environmentId, label: answer.environment.label, health: answer.data, isError: answer.isError }] : [],
                 )}
               />
-            </Section>
-            <Section title="Where the time goes" note={trends && trends.length > 0 ? `${hours(trends.reduce((total, trend) => total + trend.runnerMs, 0))} on ${trends.length} jobs` : undefined}>
+            ) : (
+              <HealthGhost />
+            )}
+          </Section>
+          <Section title="Where the time goes" note={shownRepo && trends && trends.length > 0 ? `${hours(trends.reduce((total, trend) => total + trend.runnerMs, 0))} on ${trends.length} jobs` : undefined}>
+            {shownRepo ? (
               <div className="grid gap-x-10 gap-y-6 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <TimeByJob trends={trends ?? []} picked={pickedTrend ? trendKey(pickedTrend) : null} onPick={setPicked} />
-                {pickedTrend ? <JobPanel trend={pickedTrend} runs={runs.data} repo={repo} days={days} /> : null}
+                {pickedTrend ? <JobPanel trend={pickedTrend} runs={runs.data} repo={shownRepo} days={days} /> : null}
               </div>
-            </Section>
-            <Section title="When jobs wait for a runner" note="typical wait, by weekday and hour">
-              {runs.data && runs.data.length > 0 ? (
-                <div className="grid items-start gap-x-10 gap-y-4 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                  <WaitGrid grid={grid} />
-                  <div className="flex flex-col gap-2 text-foreground/90">
-                    {[...sentences].map((sentence) => (
-                      <p key={sentence}>{sentence}</p>
-                    ))}
-                  </div>
+            ) : (
+              <TimeGhost />
+            )}
+          </Section>
+          <Section title="When jobs wait for a runner" note="typical wait, by weekday and hour">
+            {!shownRepo ? (
+              <WaitGhost />
+            ) : runs.data && runs.data.length > 0 ? (
+              <div className="grid items-start gap-x-10 gap-y-4 min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <WaitGrid grid={grid} />
+                <div className="flex flex-col gap-2 text-foreground/90">
+                  {[...sentences].map((sentence) => (
+                    <p key={sentence}>{sentence}</p>
+                  ))}
                 </div>
-              ) : (
-                <p className="text-muted-foreground">{runs.isError ? "Couldn't read the job history." : "No jobs ran in this repository in this time."}</p>
-              )}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">{runs.isError ? "Couldn't read the job history." : "No jobs ran in this repository in this time."}</p>
+            )}
+          </Section>
+          {shownRepo && reports[0] && (priced.length > 0 || reviews) ? (
+            <Section title="What it costs" note={rangeWords(days)}>
+              <Costs machines={answered.map(({ report, ...machine }) => ({ ...machine, kinds: report.kinds }))} pricesReadOn={reports[0].pricesReadOn} reviews={reviews} />
             </Section>
-            {reports[0] && (priced.length > 0 || reviews) ? (
-              <Section title="What it costs" note={rangeWords(days)}>
-                <Costs machines={answered.map(({ report, ...machine }) => ({ ...machine, kinds: report.kinds }))} pricesReadOn={reports[0].pricesReadOn} reviews={reviews} />
-              </Section>
-            ) : null}
+          ) : null}
+          {repo ? (
             <details>
               <summary className="cursor-default text-muted-foreground">All numbers</summary>
               <div className="pt-2">
                 <AllNumbers repo={repo} days={days} />
               </div>
             </details>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </PageBody>
     </>
   );

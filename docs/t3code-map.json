@@ -177,6 +177,7 @@
     "apps/web/src/components/Reading.tsx": {"relation":"follows","upstream":"apps/web/src/components/chat/ComposerBanner.tsx","commit":"4ae66e2e86deb303cc1728cece1b5a68f1073721"},
     "apps/web/src/components/SidebarToggle.tsx": {"relation":"follows","upstream":"apps/web/src/components/AppSidebarLayout.tsx","commit":"fa31b66bbb2ae5234205a8628a78e038d917202f"},
     "apps/web/src/components/ThreadColumn.tsx": {"relation":"follows","upstream":"apps/web/src/components/chat/useTimelineFollow.ts","commit":"4ae66e2e86deb303cc1728cece1b5a68f1073721"},
+    "apps/web/src/components/speed/SpeedGhosts.tsx": {"relation":"follows","upstream":"apps/web/src/components/usage/UsagePage.tsx","note":"UsageSkeleton's shape, with runnerbox's still ghosts","commit":"fa31b66bbb2ae5234205a8628a78e038d917202f"},
     "apps/web/src/components/inbox/CustomSnoozeDialog.tsx": {"relation":"follows","upstream":"apps/web/src/components/CustomSnoozeDialog.tsx"},
     "apps/web/src/components/inbox/InboxDraftLine.tsx": {"relation":"follows","upstream":"apps/web/src/components/sidebar/SidebarDraftBlock.tsx"},
     "apps/web/src/components/inbox/InboxRow.tsx": {"relation":"follows","upstream":"apps/web/src/components/sidebar/SidebarThreadRow.tsx"},
